@@ -97,6 +97,7 @@ async function command(action, args) {
     case 'clear-data': await session.defaultSession.clearStorageData(); await session.defaultSession.clearCache(); break;
     case 'capture': return (await wc.capturePage()).toPNG().toString('base64');
     case 'evaluate': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); return wc.executeJavaScript(args.code, true);
+    case 'test-wheel': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseWheel', x: args.x || 100, y: args.y || 150, deltaX: 0, deltaY: -args.deltaY, modifiers: 2 }); break;
     case 'close': shuttingDown = true; window.close(); app.quit(); return;
     default: throw new Error('Unsupported native Flash command');
   }
@@ -113,6 +114,7 @@ app.whenReady().then(async () => {
   wc.on('new-window', (event, url) => { event.preventDefault(); if (isWeb(url)) send({ type: 'new-tab', url }); });
   wc.on('will-navigate', (event, url) => {
     if (!isWeb(url)) { event.preventDefault(); return; }
+    if (/\.pdf$/i.test(new URL(url).pathname)) { event.preventDefault(); send({ type: 'open-pdf', url }); return; }
     if (!isFlashFallbackURL(url)) return;
     event.preventDefault();
     // Old Macromedia detectors recognize versions 2–9 and misread 32 as 2.
@@ -138,7 +140,10 @@ app.whenReady().then(async () => {
     const key = input.key.toLowerCase();
     if (((input.control || input.meta) && ['l','t','w','o','r','f','d','h','j','p','+','=','-','0','tab','1','2','3','4','5','6','7','8','9'].includes(key)) || (input.alt && ['arrowleft','arrowright'].includes(key)) || ['f11','f5','escape'].includes(key)) { event.preventDefault(); send({ type: 'key', input }); }
   });
-  session.defaultSession.on('will-download', (event, item) => { event.preventDefault(); send({ type: 'download', url: item.getURL() }); });
+  wc.on('zoom-changed', (_event, direction) => send({ type: 'zoom-wheel', direction }));
+  ipcMain.on('browser:wheel', (event, direction) => { if (event.sender === wc && [-1, 1].includes(direction)) send({ type: 'zoom-wheel', direction: direction === 1 ? 'in' : 'out', source: 'dom' }); });
+  ipcMain.on('browser:drop-files', (event, paths) => { if (event.sender === wc && Array.isArray(paths)) send({ type: 'drop-files', paths }); });
+  session.defaultSession.on('will-download', (event, item) => { event.preventDefault(); send({ type: item.getMimeType() === 'application/pdf' ? 'open-pdf' : 'download', url: item.getURL() }); });
   ipcMain.handle('player:mute', event => { if (event.sender !== wc || wc.getURL() !== 'flashnative://player/index.html') throw new Error('Untrusted player'); wc.setAudioMuted(!wc.isAudioMuted()); publish(); return wc.isAudioMuted(); });
   const reader = readline.createInterface({ input: channel });
   reader.on('line', async line => { let message; try { message = JSON.parse(line); const value = await command(message.action, message.args || {}); if (message.id) send({ reply: message.id, value }); } catch (e) { if (message && message.id) send({ reply: message.id, error: e.message }); else send({ type: 'error', message: e.message }); } });

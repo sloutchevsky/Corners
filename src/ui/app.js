@@ -1,6 +1,10 @@
 'use strict';
 let state, viewKey = '', filter = '', toastTimer;
 let aboutBolt, lastTheme, themeTurns = 0;
+let dragging = null;
+let suggestionTimer, typedAddress = '';
+let inlineAddress = null;
+let tabRenderKey = '', listRenderKey = '';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -29,7 +33,11 @@ function render(next) {
   loadingBolt.setLoading(!!t?.loading, t?.id);
   document.title = (t?.title || 'New tab') + ' · Flashborn';
   $('#tab-count').textContent = state.tabs.length;
-  $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.id === state.activeId && !state.panel ? 'active' : ''}" title="${escape(tab.url || 'New tab')}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}"><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.kind === 'flash' ? icon('flash') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" title="Close tab" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
+  const nextTabKey = JSON.stringify([state.tabs, state.activeId, state.panel]);
+  if (!dragging && nextTabKey !== tabRenderKey) {
+    tabRenderKey = nextTabKey;
+    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}" title="${escape(tab.url || 'New tab')}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}" aria-description="Drag to reorder, or press Alt and Up or Down"><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.kind === 'flash' ? icon('flash') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" title="Close tab" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
+  }
   document.querySelectorAll('[data-panel]').forEach(el => el.classList.toggle('active', el.dataset.panel === state.panel));
   $('#back').disabled = !t?.canBack;
   $('#forward').disabled = !t?.canForward;
@@ -45,10 +53,9 @@ function render(next) {
   $('#native-mode').classList.toggle('native-active', !!t?.native);
   $('#native-mode').setAttribute('aria-pressed', String(!!t?.native));
   $('#menu-button').setAttribute('aria-expanded', String(state.menuOpen));
+  $('#address').setAttribute('aria-expanded', String(!!state.suggestions));
   const downloads = state.downloads.filter(d => d.state === 'progressing').length;
   $('#download-count').textContent = downloads || '';
-  $('#flash-status').textContent = state.flashReady ? 'Adobe Flash ready' : 'Native player missing';
-  $('#flash-dot').style.background = state.flashReady ? '#94baa7' : '#b8a88a';
   $('#page-status').textContent = state.panel ? ({ library: 'Your Flash collection', bookmarks: 'Saved for later', history: 'Recently visited', downloads: 'Your downloads', settings: 'Make it yours', about: 'Flashborn ' + state.version }[state.panel]) : t?.loading ? 'Loading…' : t?.kind === 'home' ? 'Make yourself at home.' : t?.kind === 'flash' ? 'Adobe Flash Player ' + state.flashVersion : t?.url || '';
   $('#status-right').textContent = t?.audible ? (t.muted ? 'Audio muted' : 'Audio playing') : t?.native ? 'Native Adobe Flash' : 'Chromium · Adobe Flash';
   const key = state.panel || (t?.error ? 'error:' + t.id + t.error : t?.kind === 'home' ? 'home' : 'web');
@@ -68,6 +75,7 @@ function panelHeader(name, description, actions) {
   return `<section class="panel"><div class="panel-eyebrow">Your space</div><h1>${name}</h1><p class="description">${description}</p>${actions ? '<div class="panel-actions">' + actions + '</div>' : ''}<div id="item-list" class="item-list"></div></section>`;
 }
 function renderContent() {
+  listRenderKey = '';
   if (aboutBolt) { aboutBolt.dispose(); aboutBolt = null; }
   const t = current();
   let html = '';
@@ -96,9 +104,13 @@ function confirmAction(action, message) {
 }
 function empty(name, title, description, button = '') { return `<div class="empty">${icon(name)}<h2>${title}</h2><p>${description}</p>${button}</div>`; }
 function renderList() {
+  if (dragging) return;
   const container = $('#item-list'); if (!container) return;
   const p = state.panel; const collection = p === 'library' ? state.library : state[p] || [];
   const items = collection.filter(e => !filter || `${e.title || e.filename || ''} ${e.url || e.path || ''}`.toLowerCase().includes(filter));
+  const nextListKey = JSON.stringify([p, filter, items]);
+  if (nextListKey === listRenderKey) return;
+  listRenderKey = nextListKey;
   if (!items.length) {
     container.innerHTML = filter ? empty('search', 'Nothing here yet.', 'Try a different search.') : ({ library: empty('flash', 'Your favorites live here.', 'Open a .swf file from your computer to get started.<br>Original files stay right where you put them.', `<button class="primary-button" data-action="open-file">${icon('folder')}Open a Flash file</button>`), bookmarks: empty('star', 'A place for good finds.', 'Bookmark a page with the star in the address bar.'), history: empty('history', 'A clean slate.', 'The websites you visit will appear here.'), downloads: empty('download', 'All caught up.', 'Downloads from websites will appear here.') }[p] || '');
     return;
@@ -112,17 +124,20 @@ function renderList() {
       open = `data-download-open="${item.id}"`; detail = `${size(item.received)}${item.total ? ' / ' + size(item.total) : ''} · ${item.state === 'completed' ? 'Saved' : item.state === 'progressing' ? 'Downloading' : item.state === 'cancelled' ? 'Cancelled' : 'Interrupted'}`;
       actions = item.state === 'progressing' ? `<button class="icon-button" data-download-cancel="${item.id}" title="Cancel download" aria-label="Cancel download">${icon('close')}</button>` : item.state === 'completed' ? `<button class="icon-button" data-download-reveal="${item.id}" title="Show in folder" aria-label="Show in folder">${icon('folder')}</button>` : '';
     }
-    return `<article class="list-item"><span class="item-icon">${icon(name)}</span><div class="item-copy"><button class="item-title" ${open}>${escape(title)}</button><p class="item-detail" title="${escape(item.path || item.url || '')}">${escape(detail)}</p>${p === 'downloads' && item.state === 'progressing' ? `<div class="progress"><span style="--progress:${item.total ? Math.min(100, Math.round(item.received / item.total * 100)) : 15}%"></span></div>` : ''}</div><div class="item-actions">${actions}</div></article>`;
+    const reorder = ['library', 'downloads'].includes(p);
+    return `<article class="list-item" ${reorder ? `draggable="true" data-collection="${p}" data-reorder-id="${item.id}"` : ''}>${reorder ? `<button class="reorder-handle" title="Drag to reorder (Alt+↑ / Alt+↓)" aria-label="Reorder ${escape(title)}">${icon('grip')}</button>` : ''}<span class="item-icon">${icon(name)}</span><div class="item-copy"><button class="item-title" ${open}>${escape(title)}</button><p class="item-detail" title="${escape(item.path || item.url || '')}">${escape(detail)}</p>${p === 'downloads' && item.state === 'progressing' ? `<div class="progress"><span style="--progress:${item.total ? Math.min(100, Math.round(item.received / item.total * 100)) : 15}%"></span></div>` : ''}</div><div class="item-actions">${actions}</div></article>`;
   }).join('');
 }
 function settings() {
   const s = state.settings;
-  return `<section class="panel"><div class="panel-eyebrow">Make it yours</div><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open SWF · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
+  return `<section class="panel"><div class="panel-eyebrow">Make it yours</div><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open SWF or PDF · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
 }
 function about() {
-  return `<section class="panel about-panel"><canvas id="about-bolt" class="about-bolt" width="336" height="336" role="img" aria-label="Spinning gold lightning bolt"></canvas><h1 class="brand-wordmark about-wordmark" role="img" aria-label="flashborn"></h1><p class="description">A quieter kind of browsing. Original Adobe Flash playback.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Modern browser</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash player</dt><dd>Adobe Flash ${escape(state.flashVersion)} · PPAPI</dd><dt>Flash runtime</dt><dd>Electron ${escape(state.flashRuntime)} · separate process</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Native Flash</dt><dd>${state.flashReady ? 'Bundled and ready' : 'Runtime missing — reinstall Flashborn'}</dd></dl><p class="about-note">The original Adobe player from your installed Flash Browser is bundled without modification. Adobe Flash and its required legacy Chromium runtime no longer receive security updates. Ordinary pages use the current browser engine; Flash pages use the legacy runtime. The lightning button switches a website between modes.</p><p class="about-copyright">© 2026 Vas Sloutchevsky</p><details class="about-license"><summary>MIT open source license</summary><p>Flashborn’s application source is free to use, copy, modify, merge, publish, distribute, sublicense, and sell under the MIT License. Third-party components, including Adobe Flash Player, retain their own licenses.</p><p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p><p>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p><p>THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p></details></section>`;
+  return `<section class="panel about-panel"><canvas id="about-bolt" class="about-bolt" width="336" height="336" role="img" aria-label="Spinning gold lightning bolt"></canvas><h1 class="brand-wordmark about-wordmark" role="img" aria-label="flashborn"></h1><p class="description">A quieter kind of browsing. Original Adobe Flash playback.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Modern browser</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash player</dt><dd>Adobe Flash ${escape(state.flashVersion)} · PPAPI</dd><dt>Flash runtime</dt><dd>Electron ${escape(state.flashRuntime)} · separate process</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Native Flash</dt><dd>${state.flashReady ? 'Bundled and ready' : 'Runtime missing — reinstall Flashborn'}</dd></dl><p class="about-note">The original Adobe player from your installed Flash Browser is bundled without modification. Adobe Flash and its required legacy Chromium runtime no longer receive security updates. Ordinary pages use the current browser engine; Flash pages use the legacy runtime. The lightning button switches a website between modes.</p><a class="about-copyright" data-browser-url href="https://www.sloutchevsky.com/">© 2026 Vas Sloutchevsky</a><details class="about-license"><summary>MIT open source license</summary><p>Flashborn’s application source is free to use, copy, modify, merge, publish, distribute, sublicense, and sell under the MIT License. Third-party components, including Adobe Flash Player, retain their own licenses.</p><p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p><p>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p><p>THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p></details></section>`;
 }
 document.addEventListener('click', async e => {
+  const link = e.target.closest('a[data-browser-url]');
+  if (link) { e.preventDefault(); await call('navigate', { value: link.href }); return; }
   const button = e.target.closest('button'); if (!button || button.disabled) return;
   const d = button.dataset;
   if (d.action) await call(d.action);
@@ -138,10 +153,85 @@ document.addEventListener('click', async e => {
   else if (d.downloadCancel) await call('download-cancel', { id: d.downloadCancel });
   else if (d.zoom) await call('zoom', { direction: Number(d.zoom) });
 });
-function submitAddress() { const value = $('#address').value.trim(); call('navigate', { value }); $('#address').blur(); }
+function clearDropIndicators() { document.querySelectorAll('.drop-before,.drop-after').forEach(row => row.classList.remove('drop-before', 'drop-after')); }
+function finishDragging() { dragging = null; clearDropIndicators(); document.querySelectorAll('.dragging').forEach(row => row.classList.remove('dragging')); }
+document.addEventListener('dragstart', event => {
+  const row = event.target.closest('[data-reorder-id]'); if (!row) return;
+  dragging = { collection: row.dataset.collection, id: row.dataset.reorderId };
+  event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragging.id);
+  row.classList.add('dragging');
+});
+document.addEventListener('dragover', event => {
+  const row = event.target.closest('[data-reorder-id]');
+  if (!dragging || !row || row.dataset.collection !== dragging.collection) return;
+  event.preventDefault(); event.dataTransfer.dropEffect = 'move'; clearDropIndicators();
+  if (row.dataset.reorderId !== dragging.id) {
+    const rect = row.getBoundingClientRect();
+    row.classList.add(event.clientY < rect.y + rect.height / 2 ? 'drop-before' : 'drop-after');
+  }
+});
+document.addEventListener('drop', event => {
+  const row = event.target.closest('[data-reorder-id]');
+  if (!dragging || !row || row.dataset.collection !== dragging.collection) return;
+  event.preventDefault();
+  const move = { ...dragging, targetId: row.dataset.reorderId, position: row.classList.contains('drop-after') ? 'after' : 'before' };
+  finishDragging(); call('reorder', move);
+});
+document.addEventListener('dragend', () => { finishDragging(); if (state) render(state); });
+document.addEventListener('keydown', event => {
+  if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+  const row = event.target.closest('[data-reorder-id]'); if (!row) return;
+  event.preventDefault();
+  const items = state[row.dataset.collection], index = items.findIndex(item => item.id === row.dataset.reorderId);
+  const target = items[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (!target) return;
+  call('reorder', { collection: row.dataset.collection, id: row.dataset.reorderId, targetId: target.id, position: event.key === 'ArrowUp' ? 'before' : 'after' }).then(() => {
+    document.querySelector(`[data-reorder-id="${row.dataset.reorderId}"] button`)?.focus();
+  });
+});
+function submitAddress() {
+  clearTimeout(suggestionTimer);
+  const selected = state?.suggestions?.selected ?? -1;
+  if (selected >= 0) call('suggest-open', { index: selected });
+  else call('navigate', { value: inlineAddress?.value === $('#address').value ? inlineAddress.url : $('#address').value.trim() });
+  inlineAddress = null;
+  $('#address').blur();
+}
 $('#address-form').addEventListener('submit', e => { e.preventDefault(); submitAddress(); });
 $('#address').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); submitAddress(); } });
 $('#address').addEventListener('focus', e => e.target.select());
+$('#address').setAttribute('aria-autocomplete', 'both');
+$('#address').addEventListener('input', event => {
+  typedAddress = event.target.value; inlineAddress = null; clearTimeout(suggestionTimer);
+  const query = typedAddress, inline = event.inputType === 'insertText' && !/\s/.test(query);
+  suggestionTimer = setTimeout(async () => {
+    const rect = $('#address-form').getBoundingClientRect();
+    const result = await window.browser.call('suggest', { query, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    if (!result.ok || document.activeElement !== $('#address') || typedAddress !== query) return;
+    render(result.state);
+    const suggestion = result.state.suggestions?.items[0];
+    if (inline && suggestion) {
+      let completion = suggestion.url;
+      if (!/^https?:\/\//i.test(query)) completion = completion.replace(/^https?:\/\//, '');
+      if (!/^www\./i.test(query) && !/^https?:\/\//i.test(query)) completion = completion.replace(/^www\./, '');
+      if (completion.toLowerCase().startsWith(query.toLowerCase()) && completion.length > query.length) {
+        inlineAddress = { value: completion, url: suggestion.url };
+        $('#address').value = completion; $('#address').setSelectionRange(query.length, completion.length);
+      }
+    }
+  }, 90);
+});
+$('#address').addEventListener('keydown', async event => {
+  if (event.key === 'Escape') {
+    event.preventDefault(); inlineAddress = null; clearTimeout(suggestionTimer); $('#address').value = typedAddress; call('suggest-close'); return;
+  }
+  if (!state?.suggestions) return;
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const next = await call('suggest-select', { direction: event.key === 'ArrowDown' ? 1 : -1 });
+    if (next?.suggestions) $('#address').value = next.suggestions.items[next.suggestions.selected]?.url || typedAddress;
+  }
+});
+$('#address').addEventListener('blur', () => { clearTimeout(suggestionTimer); setTimeout(() => { if (document.activeElement !== $('#address')) call('suggest-close'); }, 120); });
 $('#menu-button').addEventListener('click', () => call('menu'));
 function find(next = false, forward = true) { call('find', { text: $('#find-input').value, next, forward }); }
 $('#find-input').addEventListener('input', () => find());
@@ -150,6 +240,7 @@ $('#find-prev').addEventListener('click', () => find(true, false));
 $('#find-close').addEventListener('click', () => { $('#find-form').classList.add('hidden'); call('find', { text: '' }); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#find-form').classList.contains('hidden')) $('#find-close').click(); });
 window.browser.onState(render);
+window.browser.onNotice(toast);
 window.browser.onFocusAddress(() => { $('#address').focus(); $('#address').select(); });
 window.browser.onFind(result => {
   if (result.open) { $('#find-form').classList.remove('hidden'); $('#find-input').focus(); $('#find-input').select(); }

@@ -1,11 +1,11 @@
-# Flashborn 1.2.0
+# Flashborn 1.3.0
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.2.0-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.3.0-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -16,7 +16,19 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 ## Use
 
 - Enter an address or search in the top bar. Press **Enter** or click **Go**.
-- Open local SWFs with **Ctrl+O**, **Open a SWF**, or the three-dot menu.
+- Open local files with **Ctrl+O**, **Open a SWF**, or the three-dot menu.
+- Drop Flash, HTML, PDF, image or video files onto the browser to open them in new tabs.
+  Local HTML can load companion files within its folder.
+- PDF links, PDF MIME responses and local PDF files display in Chromium’s PDF viewer.
+- Image formats include PNG, JPEG, GIF, WebP, SVG, AVIF, BMP and ICO. Video formats
+  include MP4/M4V, WebM, OGV and MOV; playback depends on Chromium codec support.
+- The address bar completes known URLs from bookmarks, history and open tabs.
+  Use Up/Down and Enter, click a suggestion, or press Escape to dismiss.
+- Drag tabs, downloads and Flash library entries to reorder them. With an item
+  focused, Alt+Up/Down also moves it. Download and library order is saved.
+- Ctrl+mouse wheel zooms with a Chrome-style percentage popup and Reset button.
+- Right-click the address, home search or find field for Select all, Cut, Copy and Paste.
+- Click the upper-left logo to open About. The copyright line opens sloutchevsky.com.
 - Direct SWF URLs and Flash MIME responses open in the native player.
 - Pages with embedded Flash, including framesets, are detected and opened in native mode.
 - Click the **lightning button** for pages that hide Flash behind detection scripts,
@@ -68,7 +80,7 @@ There is no analytics service or automatic updater. This custom browser does
 not provide Chrome account sync, general extension installation or DRM video.
 
 The application source is MIT licensed, copyright © 2026 Vas Sloutchevsky.
-The spaced logo and round “f” use outlines from the user-installed
+The spaced logo uses outlines from the user-installed
 HelveticaNeueLT Com 53 Extended font, so the installer does not require or
 redistribute that font. Regenerate those outlines with `scripts/create-brand.ps1`
 when the original font is installed.
@@ -84,7 +96,7 @@ when the original font is installed.
 | Ctrl+1…9 | Select tab |
 | Alt+Left / Alt+Right | Back / forward |
 | Ctrl+R / F5 | Reload |
-| Ctrl+O | Open SWF |
+| Ctrl+O | Open Flash, HTML, PDF, image or video |
 | Ctrl+D | Bookmark |
 | Ctrl+F | Find in page |
 | Ctrl+H / Ctrl+J | History / downloads |
@@ -107,21 +119,24 @@ npm ci
 npm run prepare:assets
 npm test
 npm run test:smoke
+npm run test:files
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.1.1-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.3.0-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
 Unit tests cover URL parsing, forbidden schemes, path containment, SWF headers
-and profile persistence. Runtime tests launch the actual application with a
+and profile persistence, reordering, supported file formats and autocomplete. Runtime tests launch the actual application with a
 disposable profile and fixture server. They cover Enter/Go, navigation, tabs,
 bookmarks, history, find, downloads, genuine Adobe version detection and frame
 execution, player controls, remote and MIME SWFs, embedded objects, native mode,
 menus and renderer isolation. It also verifies actual on-screen Flash pixels,
 visibility after tab switching, framesets, and classic plugin detection scripts.
-Results and screenshots are in `test-output`.
+The file/UI checks cover real HTML, image, video, PDF and SWF drops, relative assets,
+URL suggestions, keyboard selection and the copyright link. Results and screenshots
+are in `test-output`.
 
 Version 1.1.1 fixes native windows that were rendering while Electron considered
 them hidden. Visibility is now synchronized with the legacy BrowserWindow itself.

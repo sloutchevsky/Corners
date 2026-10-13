@@ -5,7 +5,8 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { fileURLToPath, pathToFileURL } = require('node:url');
-const { resolveInput, isWebURL, containedPath, isSWF } = require('./core');
+const { resolveInput, isWebURL, containedPath, isSWF, isPDFURL, reorderItems } = require('./core');
+const { contentType, supportedLocalFile, urlSuggestions } = require('./files');
 const { Store } = require('./store');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
 const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
@@ -22,6 +23,8 @@ nativeTheme.themeSource = 'dark';
 
 const UI_URL = 'flashborn://ui/index.html';
 const MENU_URL = 'flashborn://ui/menu.html';
+const ZOOM_URL = 'flashborn://ui/zoom.html';
+const SUGGEST_URL = 'flashborn://ui/suggestions.html';
 const MAX_SWF_SIZE = 256 * 1024 * 1024;
 const mimeTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.swf': 'application/x-shockwave-flash', '.json': 'application/json', '.mp3': 'audio/mpeg', '.xml': 'text/xml', '.txt': 'text/plain' };
 let win, store, browsingSession, activeId, panel = null, collapsed = false, closing = false;
@@ -29,7 +32,10 @@ const tabs = [];
 const downloadItems = new Map();
 const permissions = new Map();
 const closedTabs = [];
-let stateTimer, menuWindow, menuOpen = false;
+const documents = new Map();
+let stateTimer, menuWindow, menuOpen = false, zoomWindow, zoomTimer, editMenu;
+let zoomQueue = Promise.resolve();
+let suggestionWindow, suggestionData = null;
 
 const activeTab = () => tabs.find(t => t.id === activeId);
 const live = t => !!t?.view?.webContents && !t.view.webContents.isDestroyed();
@@ -42,7 +48,7 @@ function publicTab(t) {
     canBack: wc?.navigationHistory.canGoBack() || false, canForward: wc?.navigationHistory.canGoForward() || false, zoom: Math.round((wc?.getZoomFactor() || 1) * 100) };
 }
 function getState() {
-  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
+  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, suggestions: suggestionData, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
     history: store.data.history, library: store.data.library, downloads: store.data.downloads, settings: store.data.settings,
     flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: '32.0.0.363', flashRuntime: '9.4.4' };
 }
@@ -54,6 +60,8 @@ function sendState(immediate = false) {
     const state = getState();
     if (win && !win.isDestroyed()) win.webContents.send('browser:state', state);
     if (menuWindow && !menuWindow.isDestroyed()) menuWindow.webContents.send('browser:state', state);
+    if (zoomWindow && !zoomWindow.isDestroyed()) zoomWindow.webContents.send('browser:state', state);
+    if (suggestionWindow && !suggestionWindow.isDestroyed()) suggestionWindow.webContents.send('browser:state', state);
   } else if (!stateTimer) {
     stateTimer = setTimeout(() => { stateTimer = null; sendState(true); }, 40);
   }
@@ -77,6 +85,8 @@ function layout() {
 function selectTab(id) {
   const t = tabs.find(t => t.id === id);
   if (!t) return;
+  closeZoomPopup();
+  closeSuggestions();
   activeId = id;
   panel = null;
   layout();
@@ -88,6 +98,7 @@ function closeTab(id) {
   const index = tabs.findIndex(t => t.id === id);
   if (index < 0) return;
   const t = tabs[index];
+  for (const [token, document] of documents) if (document.tabId === id) documents.delete(token);
   clearTimeout(t.flashDetectionTimer);
   if (t.native) t.native.dispose();
   if (t.kind === 'web') closedTabs.push(t.url);
@@ -105,6 +116,8 @@ function closeTab(id) {
 }
 function wireContents(t) {
   const wc = t.view.webContents;
+  wc.setZoomMode('manual');
+  wc.on('zoom-changed', (_event, direction) => wheelZoom(t, direction === 'in' ? 1 : -1, 'browser'));
   wc.setWindowOpenHandler(({ url }) => {
     if (isWebURL(url)) createTab(url);
     return { action: 'deny' };
@@ -112,11 +125,12 @@ function wireContents(t) {
   wc.on('will-attach-webview', event => event.preventDefault());
   wc.on('will-frame-navigate', (event, url) => {
     const destination = event.url || url;
-    if (isWebURL(destination) || destination === 'about:blank' || destination.startsWith('blob:')) return;
+    if (isWebURL(destination) || isDocumentURL(destination) || destination === 'about:blank' || destination.startsWith('blob:') || destination.startsWith('chrome-extension:')) return;
     event.preventDefault();
   });
   wc.on('will-navigate', (event, url) => {
     const destination = event.url || url;
+    if (isDocumentURL(destination)) return;
     if (!isWebURL(destination)) { event.preventDefault(); return; }
     if (store.data.settings.flashEnabled && !t.native && !t.forceModern && isFlashFallbackURL(destination)) {
       const original = isWebURL(wc.getURL()) ? wc.getURL() : t.url;
@@ -127,16 +141,16 @@ function wireContents(t) {
   });
   wc.on('will-redirect', (event, url) => {
     const destination = event.url || url;
-    if (!isWebURL(destination)) event.preventDefault();
+    if (!isWebURL(destination) && !isDocumentURL(destination)) event.preventDefault();
     else if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); loadFlash(t, { url: destination }).catch(e => showError(t, e.message)); }
   });
   wc.on('did-start-loading', () => { t.loading = true; sendState(true); });
   wc.on('did-stop-loading', () => { t.loading = false; sendState(); });
-  wc.on('page-title-updated', (_event, title) => { if (t.kind === 'web') t.title = title.slice(0, 200); sendState(); });
+  wc.on('page-title-updated', (_event, title) => { if (['web', 'local'].includes(t.kind)) t.title = title.slice(0, 200); sendState(); });
   const navigated = () => {
-    if (t.kind === 'web') {
+    if (['web', 'pdf', 'local'].includes(t.kind)) {
       const url = wc.getURL();
-      if (isWebURL(url)) { t.url = url; t.title = wc.getTitle() || new URL(url).hostname; t.error = null; }
+      if (isWebURL(url)) { t.kind = 'web'; t.url = url; t.title = wc.getTitle() || new URL(url).hostname; t.error = null; }
       persistTabs();
     }
     layout(); sendState();
@@ -154,7 +168,7 @@ function wireContents(t) {
   wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
     if (isMainFrame && code !== -3) showError(t, description === 'ERR_INTERNET_DISCONNECTED' ? 'You appear to be offline. Check your connection and try again.' : `Could not load this page (${description}).`);
   });
-  wc.on('did-frame-finish-load', () => detectFlashFrames(t));
+  wc.on('did-frame-finish-load', () => { detectFlashFrames(t); wirePDFZoom(t); });
   wc.on('render-process-gone', (_event, details) => showError(t, `This tab stopped responding (${details.reason}). Reload to continue.`));
   wc.on('found-in-page', (_event, result) => { if (t.id === activeId) win.webContents.send('browser:find', result); });
   wc.on('audio-state-changed', () => sendState());
@@ -181,9 +195,24 @@ function detectFlashFrames(t) {
     if (found.some(Boolean) && live(t) && !t.native) activateNative(t, t.url).catch(e => showError(t, e.message));
   }, 120);
 }
+function wirePDFZoom(t) {
+  if (!live(t)) return;
+  const wc = t.view.webContents, frames = wc.mainFrame.framesInSubtree;
+  if (!frames.some(frame => frame.url.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/'))) return;
+  const token = t.pdfZoomToken ||= crypto.randomUUID();
+  wc.send('browser:pdf-token', token);
+  // The built-in viewer owns PDF scaling. Observe its trusted wheel input while
+  // leaving Chromium's document zoom, fit-to-page and toolbar controls intact.
+  const code = `(()=>{if(window.__flashbornPDFWheel)return;window.__flashbornPDFWheel=true;window.addEventListener('wheel',event=>{if(event.isTrusted&&event.ctrlKey&&event.deltaY)window.top.postMessage({type:'flashborn-pdf-zoom',token:${JSON.stringify(token)}},'*');},{capture:true,passive:true});})()`;
+  for (const frame of frames.slice(1)) {
+    let ancestor = frame;
+    while (ancestor && !ancestor.url.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/')) ancestor = ancestor.parent;
+    if (ancestor) frame.executeJavaScript(code).catch(() => {});
+  }
+}
 function ensureView(t) {
   if (live(t)) return;
-  t.view = new WebContentsView({ webPreferences: { session: browsingSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, spellcheck: true, navigateOnDragDrop: false, backgroundThrottling: !testMode } });
+  t.view = new WebContentsView({ webPreferences: { session: browsingSession, preload: path.join(__dirname, 'content-preload.js'), plugins: true, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, spellcheck: true, navigateOnDragDrop: false, backgroundThrottling: !testMode } });
   t.view.setBackgroundColor('#212121');
   win.contentView.addChildView(t.view);
   wireContents(t);
@@ -218,7 +247,8 @@ function createTab(value = '', background = false) {
 
 async function openLocal(filename, existing) {
   const absolute = path.resolve(filename);
-  if (path.extname(absolute).toLowerCase() !== '.swf') throw new Error('Choose a .swf Flash movie or game.');
+  if (!supportedLocalFile(absolute)) throw new Error('Choose a Flash, HTML, PDF, image or video file.');
+  if (path.extname(absolute).toLowerCase() !== '.swf') { await openDocument(absolute, existing); return; }
   const stats = await fsp.stat(absolute);
   if (!stats.isFile() || stats.size > MAX_SWF_SIZE) throw new Error('Choose a SWF file smaller than 256 MB.');
   const handle = await fsp.open(absolute, 'r');
@@ -234,6 +264,28 @@ async function openLocal(filename, existing) {
   store.save();
   const t = existing || createTab();
   await loadFlash(t, { path: absolute, title: entry.title });
+}
+function isDocumentURL(value) {
+  try { const url = new URL(value); return url.protocol === 'flashborn:' && url.hostname === 'document' && documents.has(url.pathname.split('/')[1]); } catch { return false; }
+}
+async function openDocument(absolute, existing) {
+  const stats = await fsp.stat(absolute);
+  if (!stats.isFile()) throw new Error('Choose a file to open.');
+  const pdf = path.extname(absolute).toLowerCase() === '.pdf';
+  if (pdf) {
+    if (stats.size > MAX_SWF_SIZE) throw new Error('Choose a PDF file smaller than 256 MB.');
+    const handle = await fsp.open(absolute, 'r'), header = Buffer.alloc(1024);
+    try { await handle.read(header, 0, header.length, 0); } finally { await handle.close(); }
+    if (!header.includes(Buffer.from('%PDF-'))) throw new Error('This file does not contain a valid PDF header.');
+  }
+  const t = existing || createTab();
+  if (t.native) { t.native.dispose(); t.native = null; }
+  const token = crypto.randomUUID();
+  const real = await fsp.realpath(absolute);
+  documents.set(token, { path: real, root: path.dirname(real), assets: /\.html?$/i.test(real), tabId: t.id });
+  t.kind = pdf ? 'pdf' : 'local'; t.title = path.basename(absolute); t.url = pathToFileURL(absolute).href; t.loading = true; t.error = null;
+  panel = null; ensureView(t); layout(); sendState(true);
+  await t.view.webContents.loadURL(`flashborn://document/${token}/${encodeURIComponent(t.title)}`);
 }
 async function loadFlash(t, source) {
   t.flashSource = source; t.kind = 'flash'; t.error = null; t.loading = true;
@@ -261,6 +313,9 @@ async function ensureNative(t) {
       }
       sendState(started);
     } else if (message.type === 'new-tab') { const created = createTab(); activateNative(created, message.url).catch(e => showError(created, e.message)); }
+    else if (message.type === 'open-pdf' && isWebURL(message.url)) { navigate(t, message.url).catch(e => showError(t, e.message)); }
+    else if (message.type === 'zoom-wheel') wheelZoom(t, message.direction === 'in' ? 1 : -1, message.source || 'browser');
+    else if (message.type === 'drop-files') openDroppedFiles(message.paths).catch(e => win?.webContents.send('browser:notice', e.message));
     else if (message.type === 'download' && isWebURL(message.url)) { ensureView(t); t.view.webContents.downloadURL(message.url); }
     else if (message.type === 'key') handleKeys({ preventDefault() {} }, message.input);
     else if (message.type === 'fullscreen') win.setFullScreen(message.value);
@@ -274,6 +329,7 @@ async function ensureNative(t) {
   layout();
 }
 async function activateNative(t, url) {
+  if (isPDFURL(url)) { await navigate(t, url); return; }
   t.kind = 'web'; t.url = url; t.title = new URL(url).hostname; t.error = null; t.loading = true;
   await ensureNative(t);
   if (live(t)) { win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; }
@@ -293,6 +349,19 @@ function reload(t = activeTab()) {
 async function handleProtocol(request) {
   try {
     const url = new URL(request.url);
+    if (url.hostname === 'document') {
+      const document = documents.get(url.pathname.split('/')[1]);
+      if (!document) return new Response('Document is no longer open.', { status: 404 });
+      const relative = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
+      const filename = await fsp.realpath(containedPath(document.root, relative));
+      containedPath(document.root, path.relative(document.root, filename));
+      if (!document.assets && filename !== document.path) return new Response('Not found', { status: 404 });
+      const response = await net.fetch(pathToFileURL(filename).href, { headers: request.headers });
+      const headers = new Headers(response.headers);
+      headers.set('Content-Type', contentType(filename)); headers.set('Content-Disposition', 'inline');
+      headers.set('X-Content-Type-Options', 'nosniff');
+      return new Response(response.body, { status: response.status, headers });
+    }
     if (url.hostname !== 'ui') return new Response('Not found', { status: 404 });
     const filename = containedPath(path.join(__dirname, 'ui'), decodeURIComponent(url.pathname.slice(1) || 'index.html'));
     return new Response(await fsp.readFile(filename), { headers: {
@@ -301,6 +370,45 @@ async function handleProtocol(request) {
       'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-src 'none'"
     } });
   } catch (e) { return new Response(e.message, { status: 400 }); }
+}
+async function openDroppedFiles(paths) {
+  if (!Array.isArray(paths) || paths.length > 30 || paths.some(file => typeof file !== 'string' || !path.isAbsolute(file))) throw new Error('Invalid dropped files.');
+  const errors = [];
+  for (const file of paths) { try { await openLocal(file); } catch (e) { errors.push(`${path.basename(file)}: ${e.message}`); } }
+  if (errors.length) win.webContents.send('browser:notice', errors.join('\n'));
+}
+function wheelZoom(t, direction, source) {
+  if (!t || t.id !== activeId) return;
+  const last = t.lastWheel, now = Date.now();
+  if (last && last.source !== source && last.direction === direction && now - last.time < 60) return;
+  t.lastWheel = { source, direction, time: now };
+  zoom(direction).catch(e => win?.webContents.send('browser:notice', e.message));
+}
+function closeSuggestions() {
+  const popup = suggestionWindow; suggestionWindow = null; suggestionData = null;
+  if (popup && !popup.isDestroyed()) popup.close();
+}
+async function showSuggestions(args) {
+  const items = urlSuggestions(args.query, [...store.data.bookmarks, ...store.data.history, ...tabs]);
+  if (!items.length || typeof args.query !== 'string' || !args.bounds) { closeSuggestions(); return; }
+  suggestionData = { query: args.query, items, selected: -1 };
+  const bounds = win.getContentBounds(), rect = args.bounds, work = screen.getDisplayMatching(bounds).workArea;
+  if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) throw new Error('Invalid address field bounds.');
+  const width = Math.min(work.width, Math.max(250, Math.min(bounds.width, Math.round(rect.width))));
+  const height = items.length * 48 + 12;
+  const x = Math.max(work.x, Math.min(work.x + work.width - width, bounds.x + Math.round(rect.x)));
+  const y = Math.max(work.y, Math.min(work.y + work.height - height, bounds.y + Math.round(rect.y + rect.height) + 5));
+  if (!suggestionWindow || suggestionWindow.isDestroyed()) {
+    const popup = suggestionWindow = new BrowserWindow({ x, y, width, height, parent: win, frame: false, show: false, skipTaskbar: true,
+      resizable: false, minimizable: false, maximizable: false, focusable: false, alwaysOnTop: true,
+      backgroundColor: store.data.settings.theme === 'light' ? '#f0f0f0' : '#282828',
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
+    popup.setAlwaysOnTop(true, 'pop-up-menu'); popup.setMenu(null);
+    popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); popup.webContents.on('will-navigate', event => event.preventDefault());
+    popup.on('closed', () => { if (suggestionWindow === popup) { suggestionWindow = null; suggestionData = null; } });
+    await popup.loadURL(SUGGEST_URL);
+    if (suggestionWindow === popup && !popup.isDestroyed()) popup.showInactive();
+  } else suggestionWindow.setBounds({ x, y, width, height });
 }
 
 function configureSession() {
@@ -359,7 +467,7 @@ function handleKeys(event, input) {
   else if (mod && key === 'w') closeTab(activeId);
   else if (mod && key === 'o') command('open-file');
   else if (mod && key === 'r' || key === 'f5') reload();
-  else if (mod && key === 'f') { panel = null; win.webContents.focus(); win.webContents.send('browser:find', { open: true }); }
+  else if (mod && key === 'f') { panel = null; layout(); sendState(true); win.webContents.focus(); win.webContents.send('browser:find', { open: true }); }
   else if (mod && key === 'd') command('bookmark');
   else if (mod && key === 'h') command('panel', { name: 'history' });
   else if (mod && key === 'j') command('panel', { name: 'downloads' });
@@ -375,12 +483,54 @@ function handleKeys(event, input) {
   else handled = false;
   if (handled) event.preventDefault();
 }
-async function zoom(direction) {
-  if (activeTab()?.native) { await activeTab().native.call('zoom', { direction }); sendState(true); return; }
-  const t = activeTab(); if (!live(t)) return;
-  const wc = t.view.webContents;
-  wc.setZoomFactor(nextZoom(wc.getZoomFactor() * 100, direction) / 100);
-  sendState(true);
+function zoom(direction, popup = true) {
+  const t = activeTab();
+  const task = zoomQueue.then(async () => {
+    if (!t || !tabs.includes(t)) return;
+    if (t.native) await t.native.call('zoom', { direction });
+    else if (live(t)) { const wc = t.view.webContents; wc.setZoomFactor(nextZoom(wc.getZoomFactor() * 100, direction) / 100); }
+    else return;
+    sendState(true);
+    if (popup && t.id === activeId) await showZoomPopup();
+  });
+  zoomQueue = task.catch(() => {});
+  return task;
+}
+function closeZoomPopup() {
+  clearTimeout(zoomTimer);
+  const popup = zoomWindow; zoomWindow = null;
+  if (popup && !popup.isDestroyed()) popup.close();
+}
+async function showZoomPopup() {
+  clearTimeout(zoomTimer);
+  if (!zoomWindow || zoomWindow.isDestroyed()) {
+    const bounds = win.getContentBounds(), work = screen.getDisplayMatching(bounds).workArea;
+    const width = 280, height = 58;
+    const popup = zoomWindow = new BrowserWindow({ width, height, x: Math.max(work.x, Math.min(work.x + work.width - width, bounds.x + bounds.width - width - 106)),
+      y: Math.max(work.y, Math.min(work.y + work.height - height, bounds.y + 96)), parent: win, frame: false, show: false, skipTaskbar: true,
+      resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, focusable: false,
+      backgroundColor: store.data.settings.theme === 'light' ? '#f0f0f0' : '#282828',
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
+    popup.setAlwaysOnTop(true, 'pop-up-menu'); popup.setMenu(null);
+    popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    popup.webContents.on('will-navigate', event => event.preventDefault());
+    popup.on('closed', () => { if (zoomWindow === popup) zoomWindow = null; });
+    await popup.loadURL(ZOOM_URL);
+    if (zoomWindow === popup && !popup.isDestroyed()) { popup.showInactive(); sendState(true); }
+  }
+  zoomTimer = setTimeout(closeZoomPopup, 2500);
+}
+function showEditMenu(wc, params) {
+  if (!params.isEditable) return;
+  const flags = params.editFlags;
+  const actions = [
+    { label: 'Select all', enabled: flags.canSelectAll, click: () => wc.selectAll() }, { type: 'separator' },
+    { label: 'Cut', enabled: flags.canCut, click: () => wc.cut() },
+    { label: 'Copy', enabled: flags.canCopy, click: () => wc.copy() },
+    { label: 'Paste', enabled: flags.canPaste, click: () => wc.paste() }
+  ];
+  editMenu = Menu.buildFromTemplate(actions);
+  editMenu.popup({ window: win });
 }
 
 function closeBrowserMenu(restoreFocus = false) {
@@ -391,6 +541,8 @@ function closeBrowserMenu(restoreFocus = false) {
   sendState(true);
 }
 async function showBrowserMenu() {
+  closeZoomPopup();
+  closeSuggestions();
   if (menuWindow && !menuWindow.isDestroyed()) { closeBrowserMenu(true); return; }
   const bounds = win.getContentBounds();
   const work = screen.getDisplayMatching(bounds).workArea;
@@ -436,9 +588,20 @@ async function command(action, args = {}) {
       break;
     }
     case 'native-mode': if (t && isWebURL(t.url)) { if (t.native) { t.native.dispose(); t.native = null; t.forceModern = true; await navigate(t, t.url); } else { t.forceModern = false; await activateNative(t, t.url); } } break;
-    case 'navigate': panel = null; await navigate(t, args.value); break;
+    case 'navigate': closeSuggestions(); closeZoomPopup(); panel = null; await navigate(t, args.value); break;
+    case 'suggest': await showSuggestions(args); break;
+    case 'suggest-close': closeSuggestions(); break;
+    case 'suggest-select': if (suggestionData) { const index = suggestionData.selected + (args.direction === -1 ? -1 : 1); suggestionData.selected = index < -1 ? suggestionData.items.length - 1 : index >= suggestionData.items.length ? -1 : index; } break;
+    case 'suggest-open': { const item = suggestionData?.items[args.index]; if (item) { closeSuggestions(); panel = null; await navigate(t, item.url); } break; }
     case 'new-tab': createTab(typeof args.url === 'string' ? args.url : ''); break;
     case 'select-tab': selectTab(args.id); break;
+    case 'reorder': {
+      const items = args.collection === 'tabs' ? tabs : ['library', 'downloads'].includes(args.collection) ? store.data[args.collection] : null;
+      if (!items) throw new Error('That collection cannot be reordered.');
+      reorderItems(items, args.id, args.targetId, args.position);
+      if (args.collection === 'tabs') persistTabs(); else store.save();
+      break;
+    }
     case 'close-tab': closeTab(args.id); break;
     case 'back': if (t?.native) await t.native.call('back'); else if (wc?.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); break;
     case 'forward': if (t?.native) await t.native.call('forward'); else if (wc?.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); break;
@@ -446,9 +609,9 @@ async function command(action, args = {}) {
     case 'stop': if (t?.native) await t.native.call('stop'); else wc?.stop(); break;
     case 'home': panel = null; await navigate(t, ''); break;
     case 'collapse': collapsed = !collapsed; layout(); break;
-    case 'panel': panel = ['bookmarks', 'history', 'downloads', 'library', 'settings', 'about'].includes(args.name) ? args.name : null; layout(); break;
+    case 'panel': closeZoomPopup(); closeSuggestions(); panel = ['bookmarks', 'history', 'downloads', 'library', 'settings', 'about'].includes(args.name) ? args.name : null; layout(); if (panel) win.webContents.focus(); break;
     case 'open-file': {
-      const result = await dialog.showOpenDialog(win, { title: 'Open Flash movie or game', filters: [{ name: 'Flash files', extensions: ['swf'] }], properties: ['openFile', 'multiSelections'] });
+      const result = await dialog.showOpenDialog(win, { title: 'Open file', filters: [{ name: 'Browser files', extensions: ['swf', 'html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico', 'mp4', 'm4v', 'webm', 'ogv', 'mov'] }, { name: 'Flash files', extensions: ['swf'] }, { name: 'PDF documents', extensions: ['pdf'] }], properties: ['openFile', 'multiSelections'] });
       for (const file of result.filePaths) await openLocal(file);
       break;
     }
@@ -476,12 +639,14 @@ async function command(action, args = {}) {
       store.save(); break;
     }
     case 'download-cancel': downloadItems.get(args.id)?.cancel(); break;
-    case 'download-open': { const d = store.data.downloads.find(d => d.id === args.id && d.state === 'completed'); if (d?.path) { const error = await shell.openPath(d.path); if (error) throw new Error(error); } break; }
+    case 'download-open': { const d = store.data.downloads.find(d => d.id === args.id && d.state === 'completed'); if (d?.path) { if (/\.pdf$/i.test(d.path)) await openLocal(d.path); else { const error = await shell.openPath(d.path); if (error) throw new Error(error); } } break; }
     case 'download-reveal': { const d = store.data.downloads.find(d => d.id === args.id); if (d?.path) shell.showItemInFolder(d.path); break; }
     case 'download-clear': store.data.downloads = store.data.downloads.filter(d => downloadItems.has(d.id)); store.save(); break;
     case 'find': if (t?.native) await t.native.call('find', args); else if (wc && typeof args.text === 'string') { if (args.text) wc.findInPage(args.text.slice(0, 2000), { forward: args.forward !== false, findNext: args.next !== true }); else wc.stopFindInPage('clearSelection'); } break;
     case 'mute': if (t?.native) await t.native.call('mute'); else if (wc) wc.setAudioMuted(!wc.isAudioMuted()); break;
-    case 'zoom': await zoom([-1, 0, 1].includes(args.direction) ? args.direction : 0); break;
+    case 'zoom': await zoom([-1, 0, 1].includes(args.direction) ? args.direction : 0, !menuOpen); break;
+    case 'zoom-hold': clearTimeout(zoomTimer); break;
+    case 'zoom-release': clearTimeout(zoomTimer); zoomTimer = setTimeout(closeZoomPopup, 1500); break;
     case 'print': if (t?.native) await t.native.call('print'); else wc?.print(); break;
     case 'minimize': win.minimize(); break;
     case 'maximize': win.isMaximized() ? win.unmaximize() : win.maximize(); break;
@@ -506,42 +671,62 @@ async function boot() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
   win.webContents.on('before-input-event', handleKeys);
-  for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeBrowserMenu(); layout(); sendState(true); });
-  win.on('move', () => closeBrowserMenu());
+  win.webContents.setZoomMode('manual');
+  win.webContents.on('zoom-changed', (_event, direction) => wheelZoom(activeTab(), direction === 'in' ? 1 : -1, 'browser'));
+  win.webContents.on('context-menu', (_event, params) => showEditMenu(win.webContents, params));
+  for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); layout(); sendState(true); });
+  win.on('move', () => { closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); });
+  win.on('minimize', () => { closeZoomPopup(); closeSuggestions(); });
   win.on('close', event => {
     if (!closing && downloadItems.size) {
       const response = dialog.showMessageBoxSync(win, { type: 'question', message: 'Downloads are still running.', detail: 'Closing Flashborn will cancel them.', buttons: ['Keep browsing', 'Close browser'], defaultId: 0, cancelId: 0 });
       if (response === 0) { event.preventDefault(); return; }
     }
-    closeBrowserMenu(); persistTabs(); closing = true;
+    closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); persistTabs(); closing = true;
     for (const t of tabs) { if (t.native) t.native.dispose(); if (live(t)) t.view.webContents.close(); }
   });
   win.on('closed', () => { win = null; });
   ipcMain.handle('browser:command', async (event, action, args) => {
     const fromMenu = event.sender === menuWindow?.webContents && event.senderFrame?.url === MENU_URL;
-    if (!fromMenu && (event.sender !== win?.webContents || event.senderFrame?.url !== UI_URL)) throw new Error('Untrusted command source.');
+    const fromZoom = event.sender === zoomWindow?.webContents && event.senderFrame?.url === ZOOM_URL;
+    const fromSuggestions = event.sender === suggestionWindow?.webContents && event.senderFrame?.url === SUGGEST_URL;
+    if (!fromMenu && !fromZoom && !fromSuggestions && (event.sender !== win?.webContents || event.senderFrame?.url !== UI_URL)) throw new Error('Untrusted command source.');
     if (typeof action !== 'string' || !args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid browser command.');
+    if (fromZoom && !['state', 'zoom', 'zoom-hold', 'zoom-release'].includes(action)) throw new Error('Unsupported zoom command.');
+    if (fromSuggestions && !['state', 'suggest-open'].includes(action)) throw new Error('Unsupported address suggestion command.');
     if (fromMenu && !['state', 'menu-close', 'new-tab', 'open-file', 'native-mode', 'panel', 'menu-find', 'print', 'zoom', 'mute', 'flash-quality', 'fullscreen'].includes(action)) throw new Error('Unsupported menu command.');
     if (fromMenu && !['state', 'zoom', 'flash-quality', 'mute', 'menu-close'].includes(action)) closeBrowserMenu(true);
     try { return { ok: true, state: await command(action, args) }; }
     catch (e) { return { ok: false, error: e.message }; }
   });
+  const trustedInput = event => event.sender === win?.webContents && event.senderFrame?.url === UI_URL || tabs.some(tab => live(tab) && tab.view.webContents === event.sender && event.sender.mainFrame === event.senderFrame);
+  ipcMain.on('browser:wheel', (event, direction) => { if (trustedInput(event) && [-1, 1].includes(direction)) wheelZoom(activeTab(), direction, 'dom'); });
+  ipcMain.on('browser:pdf-zoom', (event, token) => {
+    const t = tabs.find(tab => live(tab) && tab.view.webContents === event.sender);
+    if (!t || t.id !== activeId || token !== t.pdfZoomToken) return;
+    clearTimeout(t.pdfZoomTimer);
+    t.pdfZoomTimer = setTimeout(() => {
+      if (!live(t) || t.id !== activeId || !t.view.webContents.mainFrame.framesInSubtree.some(frame => frame.url.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/'))) return;
+      sendState(true); showZoomPopup().catch(() => {});
+    }, 150);
+  });
+  ipcMain.handle('browser:drop-files', async (event, paths) => { if (!trustedInput(event)) throw new Error('Untrusted file drop.'); await openDroppedFiles(paths); });
   await win.loadURL(UI_URL);
   const saved = [...store.data.tabs];
   createTab();
   if (store.data.settings.restoreTabs) for (const tab of saved.slice(0, 20)) if (isWebURL(tab.url)) { const restored = createTab(tab.native ? '' : tab.url, true); if (tab.native) activateNative(restored, tab.url).catch(e => showError(restored, e.message)); }
-  const file = process.argv.find(arg => arg.toLowerCase().endsWith('.swf') && fs.existsSync(arg));
+  const file = process.argv.find(arg => /\.(swf|pdf)$/i.test(arg) && fs.existsSync(arg));
   if (file) await openLocal(file);
   if (testMode) {
     // Accessible only from main-process Playwright evaluation in a test launch.
-    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get menuWindow() { return menuWindow; } };
+    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get menuWindow() { return menuWindow; }, get zoomWindow() { return zoomWindow; }, get editMenu() { return editMenu; }, get suggestionWindow() { return suggestionWindow; } };
   }
 }
 if (gotLock) app.whenReady().then(boot).catch(error => { console.error(error); dialog.showErrorBox('Flashborn could not start', error.stack || error.message); app.quit(); });
 app.on('second-instance', async (_event, argv) => {
   if (!win) return;
   if (win.isMinimized()) win.restore(); win.focus();
-  const file = argv.find(arg => arg.toLowerCase().endsWith('.swf') && fs.existsSync(arg));
-  if (file) try { await openLocal(file); } catch (e) { dialog.showErrorBox('Could not open Flash file', e.message); }
+  const file = argv.find(arg => /\.(swf|pdf)$/i.test(arg) && fs.existsSync(arg));
+  if (file) try { await openLocal(file); } catch (e) { dialog.showErrorBox('Could not open file', e.message); }
 });
 app.on('window-all-closed', () => app.quit());

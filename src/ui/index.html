@@ -31,6 +31,7 @@
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8z"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><path d="M8 6h.01M16 6h.01M8 12h.01M16 12h.01M8 18h.01M16 18h.01" stroke-width="3"/></symbol>
     <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" stroke="none"/></symbol>
   </defs></svg>
   <header class="titlebar">
@@ -43,7 +44,7 @@
     </div>
   </header>
   <aside class="sidebar">
-    <div class="sidebar-top"><button class="icon-button" data-action="collapse" title="Toggle sidebar" aria-label="Toggle sidebar"><svg class="icon"><use href="#i-sidebar"/></svg></button><span class="sidebar-wordmark brand-wordmark" role="img" aria-label="flashborn"></span></div>
+    <div class="sidebar-top"><button class="icon-button" data-action="collapse" title="Toggle sidebar" aria-label="Toggle sidebar"><svg class="icon"><use href="#i-sidebar"/></svg></button><button class="sidebar-wordmark brand-wordmark" data-panel="about" title="About" aria-label="flashborn — About"></button></div>
     <button class="new-tab nav-button" data-action="new-tab" title="New tab (Ctrl+T)"><svg class="icon"><use href="#i-plus"/></svg><span>New tab</span><kbd>Ctrl T</kbd></button>
     <div class="tabs-label"><span>Your tabs</span><span id="tab-count"></span></div>
     <div id="tabs" class="tabs" aria-label="Open tabs"></div>
@@ -54,7 +55,7 @@
       <button class="nav-button" data-panel="downloads" title="Downloads (Ctrl+J)"><svg class="icon"><use href="#i-download"/></svg><span>Downloads</span><span id="download-count" class="count"></span></button>
       <div class="sidebar-rule"></div>
       <button class="nav-button" data-panel="settings" title="Settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></button>
-      <button class="profile" data-panel="about" title="About Flashborn"><span class="profile-icon" aria-hidden="true"><span class="brand-f"></span></span><span class="profile-text"><strong class="brand-wordmark profile-wordmark" role="img" aria-label="flashborn"></strong><small><i id="flash-dot"></i><span id="flash-status">Flash ready</span></small></span><svg class="icon profile-more"><use href="#i-more"/></svg></button>
+      <button class="nav-button" data-panel="about" title="About"><svg class="icon"><use href="#i-info"/></svg><span>About</span></button>
     </div>
   </aside>
   <nav class="toolbar" aria-label="Navigation">

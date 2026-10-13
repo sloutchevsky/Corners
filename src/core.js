@@ -18,7 +18,7 @@ function resolveInput(value, engine = 'duckduckgo') {
   }
   if (/^[a-z][\w+.-]*:/i.test(text) && !/^(localhost|[\w.-]+\.\w+):\d/i.test(text)) {
     const url = new URL(text);
-    if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Enter an http or https address, or open a local SWF file.');
+    if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Enter an http or https address, or open a local SWF or PDF file.');
     if (url.username || url.password) throw new Error('Addresses containing passwords are not supported.');
     return { type: /\.swf$/i.test(url.pathname) ? 'flash' : 'web', url: url.href };
   }
@@ -45,4 +45,20 @@ function isSWF(buffer) {
   return buffer.length >= 8 && ['FWS', 'CWS', 'ZWS'].includes(buffer.subarray(0, 3).toString('ascii'));
 }
 
-module.exports = { resolveInput, isWebURL, containedPath, isSWF, SEARCH_ENGINES };
+// Move the existing object, retaining live tab views and download references.
+function reorderItems(items, id, targetId, position = 'before') {
+  if (!['before', 'after'].includes(position)) throw new Error('Invalid reorder position.');
+  const from = items.findIndex(item => item.id === id);
+  const target = items.findIndex(item => item.id === targetId);
+  if (from < 0 || target < 0) throw new Error('That item is no longer available.');
+  if (from === target) return;
+  const [item] = items.splice(from, 1);
+  const to = items.findIndex(entry => entry.id === targetId) + (position === 'after' ? 1 : 0);
+  items.splice(to, 0, item);
+}
+
+function isPDFURL(value) {
+  try { return isWebURL(value) && /\.pdf$/i.test(new URL(value).pathname); } catch { return false; }
+}
+
+module.exports = { resolveInput, isWebURL, containedPath, isSWF, isPDFURL, reorderItems, SEARCH_ENGINES };

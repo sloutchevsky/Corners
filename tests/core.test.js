@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-const { resolveInput, isWebURL, containedPath, isSWF } = require('../src/core');
+const { resolveInput, isWebURL, containedPath, isSWF, isPDFURL, reorderItems } = require('../src/core');
 const { Store } = require('../src/store');
 
 test('address bar distinguishes searches, websites, ports and Flash files', () => {
@@ -45,4 +45,23 @@ test('profile persists preferences and marks unfinished downloads interrupted', 
     fs.writeFileSync(path.join(dir, 'browser.json'), '{corrupt');
     assert.equal(new Store(dir).data.settings.searchEngine, 'duckduckgo');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('reordering retains records, object identities and active references; invalid moves leave order intact', () => {
+  const active = { id: 'b', view: { live: true } }, entries = [{ id: 'a' }, active, { id: 'c' }];
+  reorderItems(entries, 'b', 'a', 'before');
+  assert.deepEqual(entries.map(item => item.id), ['b', 'a', 'c']); assert.equal(entries[0], active);
+  reorderItems(entries, 'b', 'c', 'after');
+  assert.deepEqual(entries.map(item => item.id), ['a', 'c', 'b']); assert.equal(entries[2].view.live, true);
+  reorderItems(entries, 'b', 'b', 'before');
+  assert.throws(() => reorderItems(entries, 'b', 'missing')); assert.throws(() => reorderItems(entries, 'b', 'a', 'invalid'));
+  assert.deepEqual(entries.map(item => item.id), ['a', 'c', 'b']);
+});
+
+test('PDF links and local paths retain navigation restrictions', () => {
+  assert.equal(isPDFURL('https://example.com/paper.PDF?download=false'), true);
+  assert.equal(isPDFURL('javascript:paper.pdf'), false);
+  assert.equal(isPDFURL('https://user:pass@example.com/paper.pdf'), false);
+  assert.equal(resolveInput('https://example.com/paper.pdf').type, 'web');
+  assert.equal(resolveInput('C:\\Documents\\paper.pdf').type, 'file');
 });

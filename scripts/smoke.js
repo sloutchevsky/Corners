@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const demo = require('./create-demo');
+const pdfDemo = require('./create-pdf-demo');
 const captureVisible = require('./capture-visible');
 const root = path.join(__dirname, '..');
 const output = path.join(root, 'test-output');
@@ -19,6 +20,7 @@ async function poll(fn, predicate, timeout = 30000) {
 
 async function run() {
   const server = http.createServer((req, res) => {
+    if (req.url === '/document.pdf' || req.url === '/pdf-mime') { res.writeHead(200, { 'Content-Type': 'application/pdf' }); res.end(pdfDemo); return; }
     if (req.url === '/slow') { res.writeHead(200, { 'Content-Type': 'text/html' }); res.write('<!doctype html><title>Loading test</title>'); setTimeout(() => res.end('<p>Complete</p>'), 900); return; }
     if (req.url === '/movie.swf' || req.url === '/mime-flash') { res.writeHead(200, { 'Content-Type': 'application/x-shockwave-flash' }); res.end(demo); return; }
     if (req.url === '/download') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="browser-test.txt"' }); res.end('Flashborn download verified.'); return; }
@@ -47,6 +49,24 @@ async function run() {
     const state = () => app.evaluate(() => global.__flashborn.getState());
     const pageScript = code => app.evaluate(({ }, code) => {const t=global.__flashborn.activeTab(); return t.native ? t.native.evaluate(code) : t.view.webContents.executeJavaScript(code,true);}, code);
     const saveView = async filename => { await new Promise(resolve => setTimeout(resolve, 700)); const bytes = await app.evaluate(async () => {const t=global.__flashborn.activeTab();return t.native ? t.native.screenshot() : (await t.view.webContents.capturePage()).toPNG().toString('base64');}); fs.writeFileSync(path.join(output, filename), Buffer.from(bytes, 'base64')); };
+    const wheel = (deltaY=120) => app.evaluate(async ({}, deltaY) => {
+      const t=global.__flashborn.activeTab();
+      if(t.native) await t.native.call('test-wheel',{deltaY,x:150,y:170});
+      else {const wc=t.view.webContents;wc.focus();if(!wc.debugger.isAttached())wc.debugger.attach('1.3');await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseWheel',x:450,y:300,deltaX:0,deltaY:-deltaY,modifiers:2});}
+    },deltaY);
+    const dragReorder = async (collection,id,targetId,position='before') => {
+      const target=ui.locator(`[data-collection="${collection}"][data-reorder-id="${targetId}"]`);
+      const height=await target.evaluate(el=>el.getBoundingClientRect().height);
+      const source=ui.locator(`[data-collection="${collection}"][data-reorder-id="${id}"]`);
+      const sourceHeight=await source.evaluate(el=>el.getBoundingClientRect().height);
+      await source.dragTo(target,{sourcePosition:{x:24,y:sourceHeight/2},targetPosition:{x:24,y:position==='before'?3:height-3}});
+      await poll(state,s=>{const items=s[collection],a=items.findIndex(item=>item.id===id),b=items.findIndex(item=>item.id===targetId);return position==='before'?a<b:a>b;});
+    };
+    const pdfRendered = () => app.evaluate(async () => {
+      const wc=global.__flashborn.activeTab().view.webContents,image=await wc.capturePage(),pixels=image.toBitmap();let blue=0;
+      for(let i=0;i<pixels.length;i+=4) if(pixels[i]>150&&pixels[i+1]>70&&pixels[i+1]<150&&pixels[i+2]<60) blue++;
+      return {blue,frames:wc.mainFrame.framesInSubtree.map(frame=>frame.url)};
+    });
     await app.evaluate(() => {const w=global.__flashborn.win;w.setBounds({x:80,y:80,width:1280,height:820});w.show();w.focus();});
 
     await ui.locator('.home h1').waitFor();
@@ -54,7 +74,7 @@ async function run() {
     assert.equal((await state()).tabs.length, 1);
     assert.equal((await state()).flashReady, true);
     results.push('Desktop shell and bundled native Adobe Flash load');
-    const sidebarPositions = () => ui.evaluate(() => ({ profile:document.querySelector('.profile-icon').getBoundingClientRect().x, selection:document.querySelector('.tab.active').getBoundingClientRect().x, newTab:document.querySelector('.new-tab').getBoundingClientRect().x }));
+    const sidebarPositions = () => ui.evaluate(() => ({ about:document.querySelector('.nav-button[data-panel="about"] .icon').getBoundingClientRect().x, selection:document.querySelector('.tab.active').getBoundingClientRect().x, newTab:document.querySelector('.new-tab').getBoundingClientRect().x }));
     const expanded = await sidebarPositions();
     await command('collapse');
     assert.deepEqual(await sidebarPositions(), expanded);
@@ -73,15 +93,23 @@ async function run() {
     await poll(state,s=>s.settings.theme==='current');
     assert.equal(await ui.locator('#theme-icon').evaluate(el=>el.style.transform),'rotate(360deg)');
     results.push('Theme button switches dark grey/light grey and turns 180 degrees on each toggle');
-    await command('panel',{name:'about'});
+    assert.equal(await ui.locator('.nav-button[data-panel="about"]').innerText(), 'About');
+    assert.equal(await ui.locator('.profile').count(), 0);
+    await ui.locator('.sidebar-wordmark').click();
+    await poll(state,s=>s.panel==='about');
     const aboutAngle = await ui.locator('#about-bolt').getAttribute('data-angle');
     await new Promise(resolve=>setTimeout(resolve,300));
     assert.notEqual(await ui.locator('#about-bolt').getAttribute('data-angle'),aboutAngle);
     assert.ok(await ui.locator('.about-copyright').innerText().then(text=>text.includes('2026 Vas Sloutchevsky')));
+    assert.equal(await ui.locator('.about-copyright').getAttribute('href'), 'https://www.sloutchevsky.com/');
+    const copyrightStyle = await ui.locator('.about-copyright').evaluate(el => ({ color:getComputedStyle(el).color, decoration:getComputedStyle(el).textDecoration }));
+    await ui.locator('.about-copyright').hover();
+    assert.deepEqual(await ui.locator('.about-copyright').evaluate(el => ({ color:getComputedStyle(el).color, decoration:getComputedStyle(el).textDecoration })), copyrightStyle);
     await ui.locator('.about-license summary').click();
     await saveUI('about.png');
     await command('panel',{name:null});
     results.push('About has a larger continuously spinning bolt, copyright and complete MIT license');
+    results.push('About button has only the info icon and label; logo opens About and copyright link has no hover change');
     await command('navigate',{value:base+'/slow'});
     await poll(state,s=>!s.tabs.find(t=>t.id===s.activeId)?.loading);
     await poll(()=>ui.locator('#loading-bolt').getAttribute('data-motion'),motion=>motion==='finishing',1500);
@@ -132,9 +160,27 @@ async function run() {
     assert.ok((await state()).tabs[0].zoom >= 110);
     await command('zoom', { direction: 0 });
     results.push('Bookmarks, history, panels and page zoom work');
+    await wheel();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===110);
+    const zoomBubble=await poll(()=>app.windows().find(page=>page.url()==='flashborn://ui/zoom.html'),Boolean);
+    await poll(()=>zoomBubble.locator('#zoom-level').innerText(),text=>text==='110%');
+    await wheel(-120);
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===100);
+    await zoomBubble.locator('[data-zoom="1"]').click();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===110);
+    await zoomBubble.locator('[data-zoom="0"]').click();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===100);
+    await poll(()=>app.evaluate(()=>!!global.__flashborn.zoomWindow),open=>!open,5000);
+    results.push('Ctrl+wheel changes browser zoom and shows a Chrome-style minus/percentage/plus/Reset popup that dismisses');
 
     await pageScript('document.getElementById("popup").click()');
     await poll(state, s => s.tabs.length === 2 && s.tabs.find(t => t.id === s.activeId)?.title === 'First page');
+    const beforeReorder=await state(),firstId=beforeReorder.tabs[0].id,secondId=beforeReorder.tabs[1].id;
+    await dragReorder('tabs',secondId,firstId);
+    assert.equal((await state()).tabs[0].id,secondId);assert.equal((await state()).activeId,secondId);
+    await ui.locator(`[data-tab="${secondId}"]`).press('Alt+ArrowDown');
+    await poll(state,s=>s.tabs[1].id===secondId);
+    results.push('Tabs reorder by dragging and Alt+arrow keys while retaining the active page');
     await command('close-tab', { id: (await state()).activeId });
     assert.equal((await state()).tabs.length, 1);
     results.push('Popup links become tabs; tabs switch and close');
@@ -146,6 +192,16 @@ async function run() {
     });
     assert.equal(found.matches, 2);
     results.push('Find in page reports the correct matches');
+    await app.evaluate(()=>global.__flashborn.win.webContents.send('browser:find',{open:true}));
+    for(const selector of ['#address','#find-input']) {
+      await ui.locator(selector).fill('Field editing test');await ui.locator(selector).click({button:'right'});
+      const labels=await app.evaluate(()=>global.__flashborn.editMenu.items.filter(item=>item.type!=='separator').map(item=>item.label));
+      assert.deepEqual(labels,['Select all','Cut','Copy','Paste']);
+      await app.evaluate(()=>{const b=global.__flashborn;b.win.webContents.focus();b.editMenu.items.find(item=>item.label==='Select all').click();b.editMenu.closePopup(b.win);});
+      await poll(()=>ui.locator(selector).evaluate(el=>el.selectionEnd-el.selectionStart),n=>n==='Field editing test'.length);
+    }
+    await ui.locator('#find-close').click();
+    results.push('Address and find fields have native Select all, Cut, Copy and Paste menus; Select all works');
 
     const downloadPath = path.join(output, 'browser-test-' + Date.now() + '.txt');
     await app.evaluate(({ }, filename) => { global.__flashborn.browsingSession.once('will-download', (_event, item) => item.setSavePath(filename)); }, downloadPath);
@@ -153,6 +209,41 @@ async function run() {
     await poll(state, s => s.downloads.some(d => d.state === 'completed'));
     assert.equal(fs.readFileSync(downloadPath, 'utf8'), 'Flashborn download verified.');
     results.push('Download saves the exact file and records completion');
+    const secondDownload=path.join(output,'second-download-'+Date.now()+'.txt');
+    await app.evaluate(({},filename)=>{global.__flashborn.browsingSession.once('will-download',(_event,item)=>item.setSavePath(filename));},secondDownload);
+    await pageScript('document.getElementById("download").click()');
+    await poll(state,s=>s.downloads.length===2&&s.downloads.every(d=>d.state==='completed'));
+    await command('panel',{name:'downloads'});
+    const downloads=(await state()).downloads;
+    await dragReorder('downloads',downloads[1].id,downloads[0].id);
+    assert.equal((await state()).downloads[0].path,downloadPath);
+    const persistedDownloads=JSON.parse(fs.readFileSync(path.join(env.FLASHBORN_PROFILE,'browser.json'))).downloads;
+    assert.equal(persistedDownloads[0].id,downloads[1].id);
+    results.push('Downloads reorder by dragging and the saved order retains paths and completion records');
+    await command('panel',{name:null});
+
+    const downloadsBeforePDF=(await state()).downloads.length;
+    await command('navigate',{value:base+'/document.pdf'});
+    await poll(pdfRendered,result=>result.blue>2000,30000);
+    await saveView('pdf-online.png');
+    assert.equal((await state()).downloads.length,downloadsBeforePDF);
+    await command('navigate',{value:base+'/pdf-mime'});
+    await poll(pdfRendered,result=>result.blue>2000,30000);
+    const pdfPath=path.join(output,'Flashborn-Test.pdf');fs.writeFileSync(pdfPath,pdfDemo);
+    await command('navigate',{value:pdfPath});
+    await poll(pdfRendered,result=>result.blue>2000,30000);
+    await saveView('pdf-local.png');
+    const localPDFState=await state();assert.equal(localPDFState.tabs.find(t=>t.id===localPDFState.activeId).kind,'pdf');
+    const pdfZoomBefore=localPDFState.tabs.find(t=>t.id===localPDFState.activeId).zoom;
+    await wheel();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom!==pdfZoomBefore);
+    await poll(()=>app.evaluate(()=>!!global.__flashborn.zoomWindow),Boolean);
+    results.push('Ctrl+wheel inside PDF pages retains the viewer zoom and displays the browser zoom popup');
+    assert.equal(await pageScript('typeof require'),'undefined');
+    const routeAccess=await app.evaluate(async()=>{const r=await global.__flashborn.browsingSession.fetch('flashborn://document/unknown/file.pdf');return r.status;});
+    assert.equal(routeAccess,404);
+    results.push('Online PDF URLs, PDF MIME responses and local PDFs display real rendered pages without downloading');
+    await command('navigate',{value:base+'/one'});
 
     await command('navigate', { value: 'javascript:alert(1)' }).then(() => assert.fail('Scheme should be rejected'), () => {});
     results.push('Executable navigation schemes are rejected');
@@ -177,6 +268,23 @@ async function run() {
     results.push('Genuine Adobe WIN 32,0,0,363 executes SWF frames; pause, mute, restart and library work');
 
     const flashId=(await state()).activeId;
+    await wheel();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===110);
+    assert.ok(await app.evaluate(()=>global.__flashborn.zoomWindow.isAlwaysOnTop()));
+    await command('zoom',{direction:0});
+    results.push('Ctrl+wheel also zooms genuine Flash content and its zoom popup stays above the native player');
+    const secondMovie=path.join(output,'Flashborn-Second.swf');fs.writeFileSync(secondMovie,demo);
+    await app.evaluate(async({},filename)=>global.__flashborn.openLocal(filename),secondMovie);
+    await poll(()=>pageScript('document.body.dataset.ready'),value=>value==='true',60000);
+    const secondFlashId=(await state()).activeId;
+    await command('panel',{name:'library'});
+    const library=(await state()).library;
+    await dragReorder('library',library[1].id,library[0].id);
+    assert.equal((await state()).library[0].path,path.join(root,'assets','Flashborn-Demo.swf'));
+    const persistedLibrary=JSON.parse(fs.readFileSync(path.join(env.FLASHBORN_PROFILE,'browser.json'))).library;
+    assert.equal(persistedLibrary[0].id,library[1].id);
+    await command('close-tab',{id:secondFlashId});await command('select-tab',{id:flashId});
+    results.push('Flash library reorders by dragging and persists the selected order without changing files');
     await new Promise(r=>setTimeout(r,400));
     let visible=await captureVisible(app);
     assert.ok(visible.creamPixels>1000,'Flash square must be visible on the physical display, not just an offscreen render');
