@@ -1,0 +1,48 @@
+{
+  "name": "flashborn-browser",
+  "version": "1.0.0",
+  "description": "A minimal dark Windows browser with built-in Ruffle Flash playback",
+  "main": "src/main.js",
+  "author": "Flashborn",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "prepare:assets": "node scripts/prepare-assets.js",
+    "test": "node --test tests/*.test.js",
+    "test:smoke": "node scripts/smoke.js",
+    "dist": "npm run prepare:assets && electron-builder --win nsis --x64",
+    "dist:portable": "npm run prepare:assets && electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "@ruffle-rs/ruffle": "0.7.1",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "playwright": "1.56.1"
+  },
+  "build": {
+    "appId": "com.flashborn.browser",
+    "productName": "Flashborn",
+    "directories": { "output": "release", "buildResources": "assets" },
+    "files": ["src/**/*", "assets/icon.png", "LICENSE", "THIRD-PARTY-NOTICES.md", "package.json"],
+    "extraResources": [{ "from": "vendor/flash-extension", "to": "flash-extension" }, { "from": "node_modules/@ruffle-rs/ruffle", "to": "ruffle" }],
+    "asar": true,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico",
+      "artifactName": "Flashborn-Setup-${version}-${arch}.${ext}",
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Flashborn",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    },
+    "fileAssociations": [{ "ext": "swf", "name": "Flash movie", "description": "Flash movie or game", "role": "Viewer", "icon": "assets/icon.ico" }]
+  }
+}
