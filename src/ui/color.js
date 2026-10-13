@@ -61,6 +61,8 @@ document.getElementById('color-pick').addEventListener('click', async () => {
   try {
     const result = await window.browser.call('color-picking', { value: true });
     if (!result.ok) throw new Error(result.error);
+    // Let the host paint the Flash snapshot before Chromium starts screen picking.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     status.textContent = 'Click a color on your screen. Esc cancels.';
     pickAbort = new AbortController();
     const selected = await new EyeDropper().open({ signal: pickAbort.signal });

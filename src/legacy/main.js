@@ -14,7 +14,7 @@ app.commandLine.appendSwitch('ppapi-flash-version', '32.0.0.363');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashnative', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
-let window, source = null, shuttingDown = false, quality = 'high', theme = 'current', pluginLoading = false, sampling = false, hostFullscreen = false;
+let window, runtimeSession, source = null, shuttingDown = false, quality = 'high', theme = 'current', pluginLoading = false, sampling = false, hostFullscreen = false;
 const channel = nodeNet.connect(process.env.FLASHBORN_NATIVE_CHANNEL);
 const connected = new Promise(resolve => channel.once('connect', () => { channel.write(JSON.stringify({token:process.env.FLASHBORN_NATIVE_TOKEN})+'\n'); resolve(); }));
 channel.on('error', () => app.quit());
@@ -41,7 +41,7 @@ async function applySettings() {
 }
 function remoteBytes(url) {
   return new Promise((resolve, reject) => {
-    const request = net.request({ url, session: session.defaultSession });
+    const request = net.request({ url, session: runtimeSession });
     const timer = setTimeout(() => { request.abort(); reject(new Error('Flash download timed out.')); }, 60000);
     request.on('error', error => { clearTimeout(timer); reject(error); });
     request.on('response', response => {
@@ -55,7 +55,7 @@ function remoteBytes(url) {
   });
 }
 function registerProtocol() {
-  session.defaultSession.protocol.registerBufferProtocol('flashnative', async (request, callback) => {
+  runtimeSession.protocol.registerBufferProtocol('flashnative', async (request, callback) => {
     try {
       const url = new URL(request.url); let data, mimeType;
       if (url.hostname === 'document' && source && source.kind === 'html' && url.pathname.split('/')[1] === source.token) {
@@ -113,7 +113,7 @@ async function command(action, args) {
     case 'theme': theme = args.theme === 'light' ? 'light' : 'current'; nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark'; await applySettings(); break;
     case 'print': wc.print(); break;
     case 'find': if (args.text) wc.findInPage(args.text, { forward: args.forward !== false, findNext: !args.next }); else wc.stopFindInPage('clearSelection'); break;
-    case 'clear-data': await session.defaultSession.clearStorageData(); await session.defaultSession.clearCache(); break;
+    case 'clear-data': await runtimeSession.clearStorageData(); await runtimeSession.clearCache(); break;
     case 'capture': return (await wc.capturePage()).toPNG().toString('base64');
     case 'evaluate': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); return wc.executeJavaScript(args.code, true);
     case 'test-wheel': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseWheel', x: args.x || 100, y: args.y || 150, deltaX: 0, deltaY: -args.deltaY, modifiers: 2 }); break;
@@ -124,10 +124,11 @@ async function command(action, args) {
 }
 app.whenReady().then(async () => {
   await connected;
+  runtimeSession = process.env.FLASHBORN_NATIVE_PRIVATE === '1' ? session.fromPartition('flashcognito', { cache: false }) : session.defaultSession;
   registerProtocol();
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'fullscreen'));
+  runtimeSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'fullscreen'));
   window = new BrowserWindow({ width: 1100, height: 700, frame: false, show: false, skipTaskbar: true, backgroundColor: '#191919',
-    webPreferences: { plugins: true, sandbox: true, nodeIntegration: false, contextIsolation: true, enableRemoteModule: false, webSecurity: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') } });
+    webPreferences: { session: runtimeSession, plugins: true, sandbox: true, nodeIntegration: false, contextIsolation: true, enableRemoteModule: false, webSecurity: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') } });
   Menu.setApplicationMenu(null);
   const wc = window.webContents;
   wc.on('new-window', (event, url) => { event.preventDefault(); if (isWeb(url)) send({ type: 'new-tab', url }); });
@@ -159,12 +160,12 @@ app.whenReady().then(async () => {
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const key = input.key.toLowerCase();
-    if (((input.control || input.meta) && ['l','t','w','o','r','f','d','h','j','p','+','=','-','0','tab','1','2','3','4','5','6','7','8','9'].includes(key)) || (input.alt && ['arrowleft','arrowright'].includes(key)) || ['f11','f5','escape'].includes(key)) { event.preventDefault(); send({ type: 'key', input }); }
+    if (((input.control || input.meta) && (input.shift && key === 'n' || ['l','t','w','o','r','f','d','h','j','p','+','=','-','0','tab','1','2','3','4','5','6','7','8','9'].includes(key))) || (input.alt && ['arrowleft','arrowright'].includes(key)) || ['f11','f5','escape'].includes(key)) { event.preventDefault(); send({ type: 'key', input }); }
   });
   wc.on('zoom-changed', (_event, direction) => send({ type: 'zoom-wheel', direction }));
   ipcMain.on('browser:wheel', (event, direction) => { if (event.sender === wc && [-1, 1].includes(direction)) send({ type: 'zoom-wheel', direction: direction === 1 ? 'in' : 'out', source: 'dom' }); });
   ipcMain.on('browser:drop-files', (event, paths) => { if (event.sender === wc && Array.isArray(paths)) send({ type: 'drop-files', paths }); });
-  session.defaultSession.on('will-download', (event, item) => { event.preventDefault(); send({ type: item.getMimeType() === 'application/pdf' ? 'open-pdf' : 'download', url: item.getURL() }); });
+  runtimeSession.on('will-download', (event, item) => { event.preventDefault(); send({ type: item.getMimeType() === 'application/pdf' ? 'open-pdf' : 'download', url: item.getURL() }); });
   ipcMain.handle('player:mute', event => { if (event.sender !== wc || wc.getURL() !== 'flashnative://player/index.html') throw new Error('Untrusted player'); wc.setAudioMuted(!wc.isAudioMuted()); publish(); return wc.isAudioMuted(); });
   ipcMain.on('player:fullscreen', event => { if (event.sender === wc && wc.getURL() === 'flashnative://player/index.html') send({ type: 'player-fullscreen' }); });
   ipcMain.on('player:color', event => { if (event.sender === wc && wc.getURL() === 'flashnative://player/index.html') send({ type: 'player-color' }); });

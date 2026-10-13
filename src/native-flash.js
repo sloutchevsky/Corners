@@ -28,7 +28,8 @@ const directory = name => app.isPackaged ? path.join(process.resourcesPath, name
 const nativeAvailable = () => fs.existsSync(path.join(directory('native-flash'), 'pepflashplayer64.dll')) && fs.existsSync(path.join(directory('native-runtime'), 'FlashRuntime.exe'));
 
 class NativeFlash {
-  constructor(host, tabId, onEvent) {
+  constructor(host, tabId, onEvent, options = {}) {
+    this.private = !!options.private;
     this.host = host; this.tabId = tabId; this.onEvent = onEvent; this.pending = new Map(); this.sequence = 0; this.hwnd = null; this.disposed = false; this.state = {};
     this.ready = new Promise((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
     this.readyTimer = setTimeout(() => this.rejectReady(new Error('Native Flash runtime did not start.')), 30000);
@@ -61,7 +62,7 @@ class NativeFlash {
     });
     await new Promise((resolve, reject) => { this.server.once('error', reject); this.server.listen(channel, resolve); });
     if (this.disposed) { this.server.close(); return; }
-    const env = { ...process.env, FLASHBORN_NATIVE_CHANNEL: channel, FLASHBORN_NATIVE_TOKEN: token, FLASHBORN_NATIVE_PLUGIN: path.join(directory('native-flash'), 'pepflashplayer64.dll'), FLASHBORN_NATIVE_PROFILE: this.profile, FLASHBORN_NATIVE_TEST: process.env.FLASHBORN_TEST || '' };
+    const env = { ...process.env, FLASHBORN_NATIVE_CHANNEL: channel, FLASHBORN_NATIVE_TOKEN: token, FLASHBORN_NATIVE_PLUGIN: path.join(directory('native-flash'), 'pepflashplayer64.dll'), FLASHBORN_NATIVE_PROFILE: this.profile, FLASHBORN_NATIVE_PRIVATE: this.private ? '1' : '0', FLASHBORN_NATIVE_TEST: process.env.FLASHBORN_TEST || '' };
     delete env.ELECTRON_RUN_AS_NODE;
     delete env.NODE_OPTIONS;
     this.child = spawn(executable, [], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });

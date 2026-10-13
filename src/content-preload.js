@@ -6,6 +6,11 @@ window.addEventListener('message', event => {
   if (pdfToken && event.data?.type === 'flashborn-pdf-zoom' && event.data.token === pdfToken) ipcRenderer.send('browser:pdf-zoom', pdfToken);
 });
 // These controls stay in the isolated preload world; websites receive no API.
+window.addEventListener('keydown', event => {
+  if (event.isTrusted && (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'n') {
+    event.preventDefault(); ipcRenderer.send('browser:private-key');
+  }
+}, true);
 window.addEventListener('wheel', event => {
   if (event.isTrusted && event.ctrlKey && event.deltaY) { event.preventDefault(); ipcRenderer.send('browser:wheel', event.deltaY < 0 ? 1 : -1); }
 }, { capture: true, passive: false });

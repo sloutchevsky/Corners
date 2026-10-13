@@ -6,6 +6,7 @@
 </head>
 <body>
   <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg"><defs>
+    <linearGradient id="nav-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#94621b"/><stop offset=".38" stop-color="#d6aa4e"/><stop offset=".53" stop-color="#f5e1a2"/><stop offset=".7" stop-color="#c29435"/><stop offset="1" stop-color="#916020"/></linearGradient>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
@@ -50,11 +51,11 @@
     <div id="tabs" class="tabs" aria-label="Open tabs"></div>
     <div class="sidebar-bottom">
       <button class="nav-button" data-panel="library" title="Flash library"><svg class="icon"><use href="#i-flash"/></svg><span>Flash library</span><span class="pill">SWF</span></button>
-      <button class="nav-button" data-panel="bookmarks" title="Bookmarks"><svg class="icon"><use href="#i-star"/></svg><span>Bookmarks</span></button>
-      <button class="nav-button" data-panel="history" title="History (Ctrl+H)"><svg class="icon"><use href="#i-history"/></svg><span>History</span></button>
-      <button class="nav-button" data-panel="downloads" title="Downloads (Ctrl+J)"><svg class="icon"><use href="#i-download"/></svg><span>Downloads</span><span id="download-count" class="count"></span></button>
+      <button class="nav-button" data-panel="bookmarks" title="Bookmarks"><svg class="icon nav-gold nav-gold-bookmarks"><use href="#i-star"/></svg><span>Bookmarks</span></button>
+      <button class="nav-button" data-panel="history" title="History (Ctrl+H)"><svg class="icon nav-gold nav-gold-history"><use href="#i-history"/></svg><span>History</span></button>
+      <button class="nav-button" data-panel="downloads" title="Downloads (Ctrl+J)"><svg class="icon nav-gold nav-gold-downloads"><use href="#i-download"/></svg><span>Downloads</span><span id="download-count" class="count"></span></button>
       <div class="sidebar-rule"></div>
-      <button class="nav-button" data-panel="settings" title="Settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></button>
+      <button class="nav-button" data-panel="settings" title="Settings"><svg class="icon nav-gold nav-gold-settings"><use href="#i-settings"/></svg><span>Settings</span></button>
       <button class="nav-button" data-panel="about" title="About"><svg class="icon"><use href="#i-info"/></svg><span>About</span></button>
     </div>
   </aside>
@@ -65,12 +66,14 @@
       <button id="reload" class="icon-button" data-action="reload" title="Reload (Ctrl+R)" aria-label="Reload"><svg class="icon"><use href="#i-reload"/></svg></button>
     </div>
     <form id="address-form" class="address"><svg id="address-icon" class="icon"><use href="#i-search"/></svg><input id="address" spellcheck="false" autocomplete="off" aria-label="Search or enter address" placeholder="Search or enter an address"><button id="address-go" type="submit" class="icon-button" title="Go to address" aria-label="Go to address"><svg class="icon"><use href="#i-forward"/></svg></button><button id="bookmark" type="button" class="icon-button" data-action="bookmark" title="Bookmark this page (Ctrl+D)" aria-label="Bookmark this page"><svg class="icon"><use href="#i-star"/></svg></button></form>
+    <span id="private-badge" class="private-badge hidden" title="Flashcognito: this tab uses a temporary session"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>Flashcognito</span>
     <button id="native-mode" type="button" class="icon-button native-bolt-button" data-action="native-mode" title="Switch this page to native Adobe Flash" aria-label="Toggle native Adobe Flash mode"><canvas id="loading-bolt" class="loading-bolt" width="96" height="96" aria-hidden="true"></canvas></button>
     <button id="theme-button" class="icon-button" data-action="theme" title="Change theme" aria-label="Change theme"><svg id="theme-icon" class="icon"><use href="#i-theme"/></svg></button>
     <button id="menu-button" class="icon-button" title="Browser menu" aria-label="Browser menu"><svg class="icon"><use href="#i-more"/></svg></button>
     <form id="find-form" class="find hidden"><input id="find-input" placeholder="Find in page" aria-label="Find in page"><small id="find-count"></small><button type="button" id="find-prev" aria-label="Previous match">↑</button><button type="submit" aria-label="Next match">↓</button><button type="button" id="find-close" aria-label="Close find">×</button></form>
   </nav>
   <main id="content" class="content"></main>
+  <img id="color-pick-preview" class="color-pick-preview hidden" alt="" aria-hidden="true">
   <footer class="statusbar"><span id="page-status">Make yourself at home.</span><span id="status-right">Chromium · Adobe Flash</span></footer>
   <div id="toast" role="status" class="toast hidden"></div>
   <script src="lightning.js"></script><script src="app.js"></script>

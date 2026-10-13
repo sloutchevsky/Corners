@@ -1,11 +1,11 @@
-# Flashborn 1.5.1
+# Flashborn 1.6.0
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.5.1-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.6.0-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -16,6 +16,16 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 ## Use
 
 - Enter an address or search in the top bar. Press **Enter** or click **Go**.
+- Right-click any tab for **Duplicate Tab** and **Close Tab**. Duplicates open
+  immediately beside the original and keep its modern/native and private mode.
+- Choose **New Flashcognito tab** from the three-dot menu, or press **Ctrl+Shift+N**.
+  Silver bolts and a quiet new-tab page identify private tabs. Browsing history,
+  restored tabs, automatic library additions and download records are not saved.
+  Modern sites use a separate in-memory session; the native Flash engine also
+  uses an in-memory session and removes its temporary profile when it exits.
+  Closing the last private tab clears its temporary site data and download list.
+  Bookmarks and downloaded files you explicitly keep remain on disk. Websites
+  and your network can still see your activity.
 - Open local files with **Ctrl+O**, **Open a SWF**, or the three-dot menu.
 - Drop Flash, HTML, PDF, image or video files onto the browser to open them in new tabs.
   Local HTML can load companion files within its folder.
@@ -46,8 +56,12 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
   inline Chrome-style zoom controls, fullscreen, and Adobe High/Medium/Low Flash quality.
 - High/Medium/Low quality is saved and applies to open native movies and future loads.
 - The sidebar provides tabs, bookmarks, history, downloads, settings and a SWF library.
+  Bookmarks, History, Downloads and Settings use small gold icons that animate
+  on hover; the system's reduced-motion preference disables their animations.
 - The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
   Its controls stay visible in fullscreen. Background opens a color wheel with a screen eyedropper, defaulting to white.
+  Screen picking temporarily holds the visible Flash image as a snapshot so
+  native Flash cannot cover the eyedropper; live playback returns on selection or cancellation.
   Each library movie saves its background. Color changes recreate the Flash instance and
   restore its timeline position; interactive game/script state is restarted.
 - Flash library offers **Open HTML with SWF** and **Open a SWF**. Both reveal an
@@ -106,6 +120,7 @@ when the original font is installed.
 | --- | --- |
 | Ctrl+L | Address bar |
 | Ctrl+T / Ctrl+W | New / close tab |
+| Ctrl+Shift+N | New Flashcognito tab |
 | Ctrl+Shift+T | Reopen closed website tab |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+1…9 | Select tab |
@@ -138,10 +153,11 @@ npm run test:smoke
 npm run test:files
 npm run test:refinements
 npm run test:polish
+npm run test:privacy
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.5.1-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.6.0-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -159,6 +175,13 @@ are in `test-output`.
 The polish checks verify the exact first-frame title bolt, the smaller About branding, 40px text offset, theme-independent grey metadata,
 real Adobe Low/Medium/High quality, native eyedropper opening and cancellation,
 selected-color application, and quality/background persistence after restart.
+
+The privacy checks exercise the tab context menu and duplication, private cookie
+and local-storage isolation, download records, real Adobe execution in private
+tabs, temporary-profile deletion, clean sessions after the last private tab closes,
+and ordinary-only restoration after restart. They also verify the gold hover
+icons, reduced motion, real Flash pixels in the eyedropper snapshot, native-window
+visibility during picking, and the Flash control spacing and swatch alignment.
 
 Version 1.1.1 fixes native windows that were rendering while Electron considered
 them hidden. Visibility is now synchronized with the legacy BrowserWindow itself.

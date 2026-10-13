@@ -36,8 +36,9 @@
     return mesh;
   }
   class GoldLightning {
-    constructor(canvas, { continuous = false, thickness = 14, period = 2000 } = {}) {
+    constructor(canvas, { continuous = false, thickness = 14, period = 2000, metal = 'gold' } = {}) {
       this.canvas = canvas;
+      this.metal = metal;
       this.mesh = buildMesh(thickness);
       this.period = period;
       this.continuous = continuous;
@@ -58,6 +59,11 @@
       document.addEventListener('visibilitychange', this.visibility);
       this.draw(0);
       this.schedule();
+    }
+    setMetal(metal) {
+      if (this.metal === metal) return;
+      this.metal = metal === 'silver' ? 'silver' : 'gold';
+      this.draw(this.reducedMotion.matches ? 0 : this.angle);
     }
     setLoading(loading, key) {
       if (key !== this.key) {
@@ -106,16 +112,18 @@
         const brightness = 0.63 + 0.36 * illumination + 0.22 * specular;
         const reflection = 0.48 + 0.25 * Math.sin(angle * 2 + face.normal[0] * 1.5);
         const gradient = ctx.createLinearGradient(-53, 60, 53, -60);
-        gradient.addColorStop(0, metalColor([171, 94, 9], brightness));
-        gradient.addColorStop(reflection - 0.19, metalColor([241, 175, 37], brightness));
-        gradient.addColorStop(reflection, metalColor([255, 237, 168], brightness + 0.08));
-        gradient.addColorStop(reflection + 0.085, metalColor([241, 185, 49], brightness));
-        gradient.addColorStop(1, metalColor([174, 102, 12], brightness));
+        const palette = this.metal === 'silver' ? [[85,91,104], [173,182,194], [248,250,255], [191,201,214], [105,112,126]] : [[171,94,9], [241,175,37], [255,237,168], [241,185,49], [174,102,12]];
+        gradient.addColorStop(0, metalColor(palette[0], brightness));
+        gradient.addColorStop(reflection - 0.19, metalColor(palette[1], brightness));
+        gradient.addColorStop(reflection, metalColor(palette[2], brightness + 0.08));
+        gradient.addColorStop(reflection + 0.085, metalColor(palette[3], brightness));
+        gradient.addColorStop(1, metalColor(palette[4], brightness));
         ctx.beginPath(); points.forEach((point, i) => i ? ctx.lineTo(...point) : ctx.moveTo(...point)); ctx.closePath();
         ctx.fillStyle = gradient; ctx.fill(); ctx.lineWidth = 0.38; ctx.strokeStyle = gradient; ctx.stroke();
       });
       ctx.restore();
       canvas.dataset.angle = angle.toFixed(4);
+      canvas.dataset.metal = this.metal;
       canvas.dataset.motion = this.reducedMotion.matches ? 'reduced' : this.loading ? 'spinning' : this.target !== null ? 'finishing' : 'idle';
     }
     dispose() {

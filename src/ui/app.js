@@ -32,13 +32,20 @@ function render(next) {
   $('#theme-button').title = `Theme: ${theme === 'current' ? 'dark grey' : theme === 'light' ? 'light grey' : 'dark'} — click to change`;
   $('#theme-button').setAttribute('aria-label', $('#theme-button').title);
   const t = current();
+  document.body.classList.toggle('flashcognito', !!t?.private);
+  loadingBolt.setMetal(t?.private ? 'silver' : 'gold');
+  titleBolt.setMetal(t?.private ? 'silver' : 'gold');
+  $('#private-badge').classList.toggle('hidden', !t?.private);
+  const preview = $('#color-pick-preview');
+  if (state.colorPreview) { if (preview.src !== state.colorPreview) preview.src = state.colorPreview; preview.classList.remove('hidden'); }
+  else { preview.classList.add('hidden'); preview.removeAttribute('src'); }
   loadingBolt.setLoading(!!t?.loading, t?.id);
   document.title = (t?.title || 'New tab') + ' · Flashborn';
   $('#tab-count').textContent = state.tabs.length;
   const nextTabKey = JSON.stringify([state.tabs, state.activeId, state.panel]);
   if (!dragging && nextTabKey !== tabRenderKey) {
     tabRenderKey = nextTabKey;
-    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}" title="${escape(tab.url || 'New tab')}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}" aria-description="Drag to reorder, or press Alt and Up or Down"><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.kind === 'flash' ? icon('flash') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" title="Close tab" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
+    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.private ? 'private-tab' : ''} ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}" title="${escape((tab.private ? 'Flashcognito · ' : '') + (tab.url || 'New tab'))}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}${tab.private ? ' (Flashcognito)' : ''}" aria-description="Drag to reorder, or press Alt and Up or Down. Right-click to duplicate or close."><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.private ? icon('lock') : tab.kind === 'flash' ? icon('flash') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" title="Close tab" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
   }
   document.querySelectorAll('[data-panel]').forEach(el => el.classList.toggle('active', el.dataset.panel === state.panel));
   $('#back').disabled = !t?.canBack;
@@ -59,13 +66,14 @@ function render(next) {
   const downloads = state.downloads.filter(d => d.state === 'progressing').length;
   $('#download-count').textContent = downloads || '';
   $('#page-status').textContent = state.panel ? ({ library: 'Your Flash collection', bookmarks: 'Saved for later', history: 'Recently visited', downloads: 'Your downloads', settings: 'Make it yours', about: 'Flashborn ' + state.version }[state.panel]) : t?.loading ? 'Loading…' : t?.kind === 'home' ? 'Make yourself at home.' : t?.kind === 'flash' ? 'Adobe Flash Player ' + state.flashVersion : t?.url || '';
-  $('#status-right').textContent = t?.audible ? (t.muted ? 'Audio muted' : 'Audio playing') : t?.native ? 'Native Adobe Flash' : 'Chromium · Adobe Flash';
-  const key = state.panel || (t?.error ? 'error:' + t.id + t.error : t?.kind === 'home' ? 'home' : 'web');
+  $('#status-right').textContent = t?.private ? 'Flashcognito · temporary session' : t?.audible ? (t.muted ? 'Audio muted' : 'Audio playing') : t?.native ? 'Native Adobe Flash' : 'Chromium · Adobe Flash';
+  const key = state.panel ? state.panel + (t?.private ? ':private' : '') : (t?.error ? 'error:' + t.id + t.error : t?.kind === 'home' ? t.private ? 'private-home' : 'home' : 'web');
   if (key !== viewKey) { filter = ''; viewKey = key; renderContent(); }
   else if (state.panel && !['settings', 'about'].includes(state.panel)) renderList();
   else if (key === 'home') renderQuickLinks();
 }
 function home() {
+  if (current()?.private) return `<section class="home flashcognito-home"><div class="private-emblem"><span class="flash-card-icon"><canvas id="home-bolt" width="192" height="192" role="img" aria-label="Silver lightning bolt"></canvas></span></div><div class="private-eyebrow">Flashcognito</div><h1>A little more private.</h1><p class="home-description">A fresh session. No saved browsing trail.</p><form id="home-search" class="search-box">${icon('search')}<input id="home-input" aria-label="Search the web privately" placeholder="Search the web or paste a link" spellcheck="false" autocomplete="off"><button class="search-submit" title="Go" aria-label="Go">${icon('arrow')}</button></form><div class="private-details"><div><h2>No saved trail</h2><p>These tabs stay out of your browsing history and won’t reopen when you return.</p></div><div><h2>Fresh site sessions</h2><p>Temporary cookies and site data are cleared when you close your last Flashcognito tab.</p></div></div><button class="private-library-link" data-panel="library">Old favorites are still welcome. <span>Open your Flash library ${icon('forward')}</span></button><p class="private-footnote">Bookmarks and downloaded files you choose to keep remain on your device.<br>Flashcognito doesn’t hide your activity from websites or your network.</p></section>`;
   return `<section class="home"><h1>Where would you like to go?</h1><p class="home-description">A fresh start. An old favorite. Something unexpected.</p><form id="home-search" class="search-box">${icon('search')}<input id="home-input" aria-label="Search the web" placeholder="Search the web or paste a link" spellcheck="false" autocomplete="off"><button class="search-submit" title="Go" aria-label="Go">${icon('arrow')}</button></form><div id="quick-links" class="quick-links"></div><div class="home-divider"></div><div class="home-bottom"><button class="flash-library-link" data-panel="library"><span class="flash-card-icon"><canvas id="home-bolt" width="128" height="128" aria-hidden="true"></canvas></span><span class="flash-copy"><span class="flash-card-title">Some things never get old.</span><span class="flash-card-description">Your Flash games and movies, ready to play again.</span></span></button><button class="subtle-button" data-action="open-file">Open a SWF ${icon('forward')}</button></div><div class="home-footnote">${icon('lock')}Your history and bookmarks stay on this device.</div></section>`;
 }
 function renderQuickLinks() {
@@ -84,15 +92,15 @@ function renderContent() {
   let html = '';
   if (state.panel === 'library') html = panelHeader('Flash library', 'Your Flash movies and pages, from local files or the web.', `<input class="filter-input" id="filter" placeholder="Find in your collection" aria-label="Filter Flash library"><div class="library-open-buttons"><button class="secondary-button" data-open-library="html">${icon('plus')}Open HTML with SWF</button><button class="primary-button" data-open-library="swf">${icon('plus')}Open a SWF</button></div><form id="library-open-form" class="library-open-form hidden"><label id="library-open-label" for="library-open-address">Open a SWF</label><div><input id="library-open-address" placeholder="Web URL or local file path" aria-label="Flash URL or local file path" spellcheck="false" autocomplete="off"><button type="button" class="secondary-button" id="library-browse">Browse…</button><button class="primary-button" type="submit">Open</button></div></form>`);
   else if (state.panel === 'bookmarks') html = panelHeader('Bookmarks', 'Good places, saved for later. Press Ctrl+D on any page to bookmark it.', '<input class="filter-input" id="filter" placeholder="Find a bookmark" aria-label="Filter bookmarks">');
-  else if (state.panel === 'history') html = panelHeader('History', 'Pick up where you left off.', '<input class="filter-input" id="filter" placeholder="Search history" aria-label="Filter history"><button class="secondary-button danger-button" id="clear-history">Clear history</button>');
-  else if (state.panel === 'downloads') html = panelHeader('Downloads', 'Everything you have saved from the web.', '<span></span><button class="secondary-button" data-action="download-clear">Clear finished</button>');
+  else if (state.panel === 'history') html = panelHeader('History', t?.private ? 'Flashcognito doesn’t save your browsing history.' : 'Pick up where you left off.', t?.private ? '' : '<input class="filter-input" id="filter" placeholder="Search history" aria-label="Filter history"><button class="secondary-button danger-button" id="clear-history">Clear history</button>');
+  else if (state.panel === 'downloads') html = panelHeader('Downloads', t?.private ? 'Downloads from this Flashcognito session. Saved files remain after these tabs close.' : 'Everything you have saved from the web.', '<span></span><button class="secondary-button" data-action="download-clear">Clear finished</button>');
   else if (state.panel === 'settings') html = settings();
   else if (state.panel === 'about') html = about();
   else if (t?.error) html = `<section class="error-page">${icon('globe')}<h1>This page couldn’t open.</h1><p>${escape(t.error)}</p><button class="primary-button" data-action="reload">${icon('reload')}Try again</button><code>${escape(t.url)}</code></section>`;
   else if (t?.kind === 'home') html = home();
   $('#content').innerHTML = html;
   if ($('#about-bolt')) aboutBolt = new GoldLightning($('#about-bolt'), { continuous: true });
-  if ($('#home-bolt')) homeBolt = new GoldLightning($('#home-bolt'));
+  if ($('#home-bolt')) homeBolt = new GoldLightning($('#home-bolt'), { metal: t?.private ? 'silver' : 'gold' });
   renderQuickLinks(); renderList();
   if ($('#home-search')) $('#home-search').addEventListener('submit', e => { e.preventDefault(); call('navigate', { value: $('#home-input').value }); });
   if ($('#library-open-form')) {
@@ -120,7 +128,7 @@ function renderList() {
   if (nextListKey === listRenderKey) return;
   listRenderKey = nextListKey;
   if (!items.length) {
-    container.innerHTML = filter ? empty('search', 'Nothing here yet.', 'Try a different search.') : ({ library: empty('flash', 'Your favorites live here.', 'Open a .swf file from your computer to get started.<br>Original files stay right where you put them.', `<button class="primary-button" data-action="open-file">${icon('folder')}Open a Flash file</button>`), bookmarks: empty('star', 'A place for good finds.', 'Bookmark a page with the star in the address bar.'), history: empty('history', 'A clean slate.', 'The websites you visit will appear here.'), downloads: empty('download', 'All caught up.', 'Downloads from websites will appear here.') }[p] || '');
+    container.innerHTML = filter ? empty('search', 'Nothing here yet.', 'Try a different search.') : ({ library: empty('flash', 'Your favorites live here.', 'Open a .swf file from your computer to get started.<br>Original files stay right where you put them.', `<button class="primary-button" data-action="open-file">${icon('folder')}Open a Flash file</button>`), bookmarks: empty('star', 'A place for good finds.', 'Bookmark a page with the star in the address bar.'), history: empty('history', 'A clean slate.', current()?.private ? 'Visits in Flashcognito aren’t recorded.' : 'The websites you visit will appear here.'), downloads: empty('download', 'All caught up.', 'Downloads from websites will appear here.') }[p] || '');
     return;
   }
   container.innerHTML = items.map(item => {
@@ -166,6 +174,12 @@ document.addEventListener('click', async e => {
   else if (d.downloadReveal) await call('download-reveal', { id: d.downloadReveal });
   else if (d.downloadCancel) await call('download-cancel', { id: d.downloadCancel });
   else if (d.zoom) await call('zoom', { direction: Number(d.zoom) });
+});
+document.addEventListener('contextmenu', event => {
+  const tab = event.target.closest('[data-collection="tabs"]');
+  if (!tab) return;
+  event.preventDefault();
+  call('tab-menu', { id: tab.dataset.reorderId, x: event.clientX, y: event.clientY });
 });
 function clearDropIndicators() { document.querySelectorAll('.drop-before,.drop-after').forEach(row => row.classList.remove('drop-before', 'drop-after')); }
 function finishDragging() { dragging = null; clearDropIndicators(); document.querySelectorAll('.dragging').forEach(row => row.classList.remove('dragging')); }

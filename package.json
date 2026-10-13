@@ -1,6 +1,6 @@
 {
   "name": "flashborn-browser",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "A minimal dark Windows browser with native Adobe Flash playback",
   "main": "src/main.js",
   "author": {
@@ -11,13 +11,14 @@
   "scripts": {
     "start": "electron .",
     "prepare:assets": "node scripts/prepare-native.js",
-    "test": "node --test tests/*.test.js",
+    "test": "node --test tests",
     "test:smoke": "node scripts/smoke.js",
     "dist": "npm run prepare:icon && npm run prepare:assets && electron-builder --win nsis --x64",
     "dist:portable": "npm run prepare:icon && npm run prepare:assets && electron-builder --win portable --x64",
     "test:files": "node scripts/file-ui-check.js",
     "test:refinements": "node scripts/refinements-check.js",
     "test:polish": "node scripts/polish-check.js",
+    "test:privacy": "node scripts/privacy-check.js",
     "prepare:icon": "node scripts/create-icon.js"
   },
   "dependencies": {

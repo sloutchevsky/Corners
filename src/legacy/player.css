@@ -5,11 +5,11 @@ header>div{display:flex;align-items:center;min-width:0}header>div>*+*{margin-lef
 .bolt{display:block;width:32px;height:32px;flex:none;object-fit:contain}strong{font-weight:500;max-width:300px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .engine{color:#757575;font-size:10px;white-space:nowrap}.controls>*+*{margin-left:7px}
 button{font:11px "Segoe UI",Arial,sans-serif;color:#bcbcbc;background:#2b2b2b;border:1px solid #404040;border-radius:7px;padding:8px 11px;cursor:pointer;white-space:nowrap}
-button:hover{background:#383838;color:white}button:focus{outline:2px solid #dfc8a4;outline-offset:2px}button:disabled{opacity:.35;cursor:default}
+button:hover{background:#383838;color:white}button:focus{outline:none}button:focus-visible{background:#383838}button:disabled{opacity:.35;cursor:default}
 main{min-height:0;flex:1;display:flex;align-items:center;justify-content:center;position:relative;background:#fff}embed{width:100%;height:100%;display:block}
 #loading{text-align:center;color:#878787;font-size:12px}footer{height:31px;display:flex;justify-content:space-between;align-items:center;padding:0 20px;color:#686868;font-size:10px;background:#202020;flex:none}
-.movie-label{flex:1}.controls{flex:none;max-width:100%;gap:7px;flex-wrap:wrap;justify-content:flex-end}.controls>*+*{margin-left:0}
-#background{display:inline-flex;align-items:center;gap:7px}#background-swatch{width:12px;height:12px;background:#fff;border:1px solid #999;border-radius:3px}
+.movie-label{flex:1}.controls{display:grid;grid-auto-flow:column;flex:none;max-width:100%;gap:14px;justify-content:end}.controls>*+*{margin-left:0}
+#background{display:inline-grid;grid-auto-flow:column;align-items:center;gap:12px}#background-swatch{display:block;width:12px;height:12px;background:#fff;border:1px solid #999;border-radius:3px}
 @media(max-width:650px){header{flex-wrap:wrap;gap:8px}.movie-label{flex-basis:100%}.controls{justify-content:flex-start}strong{max-width:calc(100vw - 90px)}}
 @media(max-width:850px){header{padding-left:15px;padding-right:15px}.engine{display:none}strong{max-width:200px}footer span:last-child{display:none}}
 :root[data-theme=light]{color-scheme:light;background:#e4e4e4;color:#292929}

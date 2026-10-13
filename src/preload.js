@@ -11,7 +11,9 @@ window.addEventListener('wheel', event => {
   if (event.isTrusted && event.ctrlKey && event.deltaY) { event.preventDefault(); ipcRenderer.send('browser:wheel', event.deltaY < 0 ? 1 : -1); }
 }, { capture: true, passive: false });
 window.addEventListener('keydown', event => {
-  if (!event.isTrusted || !(event.ctrlKey || event.metaKey) || !['+', '=', '-', '0'].includes(event.key)) return;
+  if (!event.isTrusted || !(event.ctrlKey || event.metaKey)) return;
+  if (event.shiftKey && event.key.toLowerCase() === 'n') { event.preventDefault(); ipcRenderer.send('browser:private-key'); return; }
+  if (!['+', '=', '-', '0'].includes(event.key)) return;
   event.preventDefault();
   ipcRenderer.send('browser:zoom-key', event.key === '0' ? 0 : event.key === '-' ? -1 : 1);
 }, true);
