@@ -12,6 +12,15 @@ the original Adobe Flash Player 32.0.0.363 for Flash content.
 See [the complete version history](CHANGELOG.md) for all 13 releases, from the
 initial Ruffle build to native Adobe playback and the current browser.
 
+## Preview
+
+| Dark theme · native Flash | Light theme · native Flash |
+| --- | --- |
+| ![KPF Flash website running in Flashborn's dark theme](previews/screenshots/screens_0009_Layer-2.png) | ![KPF Flash website running in Flashborn's light theme](previews/screenshots/screens_0008_Layer-3.png) |
+
+[View all 10 screenshots](previews/screenshots/README.md), including New Tab,
+Flashcognito, search summaries, bookmarks, settings, the Flash Library and About.
+
 ## Install
 
 Download and run `Flashborn-Setup-1.7.3-x64.exe` on Windows 10 or 11 x64. When

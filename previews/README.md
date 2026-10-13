@@ -1,4 +1,8 @@
-# Animation experiments
+# Previews
+
+[View the application screenshot gallery](screenshots/README.md).
+
+## Animation experiments
 
 These previews document work on the gold lightning bolt, lighting, and a proposed
 serif-shaped bolt. They are development artifacts and are not loaded by the app.
