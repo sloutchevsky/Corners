@@ -7,6 +7,7 @@ let activePrediction = null;
 let tabRenderKey = '', listRenderKey = '';
 const tabMemory = new Map();
 const memoryRequests = new Map();
+let summaryRenderKey = '';
 let libraryOpenKind = 'swf';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -50,6 +51,32 @@ document.getElementById('tabs').addEventListener('focusin', measureTab);
 const loadingBolt = new GoldLightning(document.getElementById('loading-bolt'));
 const titleBolt = new GoldLightning(document.getElementById('title-bolt'));
 const navigationIcons = [...document.querySelectorAll('[data-nav-icon]')].map(canvas => new GoldNavigation(canvas));
+function renderSummary() {
+  const section = $('#page-summary'), summary = state.pageSummary;
+  const visible = !!summary && !state.panel && !state.fullscreen && !current()?.error;
+  section.classList.toggle('hidden', !visible);
+  if (!visible) { document.documentElement.style.setProperty('--summary-height', '0px'); return; }
+  const key = JSON.stringify([state.activeId, summary]);
+  if (key !== summaryRenderKey) {
+    summaryRenderKey = key;
+    const numbers = new Map(summary.sources.map((source, i) => [source.index, i + 1]));
+    $('#summary-inner').innerHTML = '<div class="summary-heading">Page summary</div><p class="summary-text">' + summary.passages.map(item => escape(item.text) + (summary.provider ? '<sup>' + numbers.get(item.source) + '</sup>' : '')).join(' ') + '</p><div class="summary-sources"><span>From ' + (summary.provider ? 'these results' : 'this page') + '</span>' + summary.sources.map(source => '<a data-browser-url href="' + escape(source.url) + '" title="' + escape(source.title) + '">' + (summary.provider ? numbers.get(source.index) + ' · ' : '') + escape(source.domain) + '</a>').join('') + '</div>';
+  }
+  measureSummary();
+}
+function measureSummary() {
+  const section = $('#page-summary');
+  if (!state?.pageSummary || state.panel || state.fullscreen || section.classList.contains('hidden')) return;
+  const height = Math.ceil(section.getBoundingClientRect().height);
+  if (!height) return;
+  document.documentElement.style.setProperty('--summary-height', height + 'px');
+  const stamp = state.activeId + '|' + state.pageSummary.url + '|' + height;
+  if (section.dataset.measure !== stamp) {
+    section.dataset.measure = stamp;
+    window.browser.call('summary-height', { id: state.activeId, url: state.pageSummary.url, height }).catch(() => {});
+  }
+}
+new ResizeObserver(measureSummary).observe($('#page-summary'));
 function render(next) {
   state = next;
   for (const [id, measured] of tabMemory) if (measured.page !== memoryKey(state.tabs.find(t => t.id === id))) tabMemory.delete(id);
@@ -62,6 +89,7 @@ function render(next) {
   $('#theme-button').title = `Theme: ${theme === 'current' ? 'dark grey' : theme === 'light' ? 'light grey' : 'dark'} — click to change`;
   $('#theme-button').setAttribute('aria-label', $('#theme-button').title);
   const t = current();
+  renderSummary();
   document.body.classList.toggle('flashcognito', !!t?.private);
   loadingBolt.setMetal(t?.private ? 'silver' : 'gold');
   titleBolt.setMetal(t?.private ? 'silver' : 'gold');
@@ -149,7 +177,7 @@ function renderContent() {
   }
   if ($('#filter')) $('#filter').addEventListener('input', e => { filter = e.target.value.toLowerCase(); renderList(); });
   if ($('#search-engine')) $('#search-engine').addEventListener('change', e => call('settings', { searchEngine: e.target.value }));
-  for (const setting of ['restoreTabs', 'flashEnabled']) if ($(`#${setting}`)) $(`#${setting}`).addEventListener('change', e => { call('settings', { [setting]: e.target.checked }); if (setting === 'flashEnabled') toast('Reload open websites to apply the Flash setting.'); });
+  for (const setting of ['restoreTabs', 'pageSummaries', 'flashEnabled']) if ($(`#${setting}`)) $(`#${setting}`).addEventListener('change', e => { call('settings', { [setting]: e.target.checked }); if (setting === 'flashEnabled') toast('Reload open websites to apply the Flash setting.'); });
   if ($('#clear-history')) $('#clear-history').addEventListener('click', () => confirmAction('clear-history', 'Click again to clear history'));
   if ($('#clear-data')) $('#clear-data').addEventListener('click', () => confirmAction('clear-data', 'Click again to clear cookies and cached files. Websites will sign you out.'));
 }
@@ -187,7 +215,7 @@ function renderList() {
 }
 function settings() {
   const s = state.settings;
-  return `<section class="panel"><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open SWF or PDF · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
+  return `<section class="panel"><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Generate page summaries</h2><p>A brief overview above search results. Turn off to show pages without a summary.</p></div><label class="switch"><input id="pageSummaries" type="checkbox" ${s.pageSummaries?'checked':''} aria-label="Generate page summaries"><span></span></label></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open SWF or PDF · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
 }
 function about() {
   return `<section class="panel about-panel"><canvas id="about-bolt" class="about-bolt" width="336" height="336" role="img" aria-label="Spinning gold lightning bolt"></canvas><div class="about-copy"><h1 class="brand-wordmark about-wordmark" role="img" aria-label="flashborn"></h1><div class="about-text"><p class="about-motto">A quieter kind of browsing. Original Adobe Flash playback.</p><p class="about-dedication">This browser is dedicated to the team of <em>Firstborn</em> -- one of the first digital design groups to help shape UI design as we know it today. Back in the early 2000s, <em>Firstborn</em> mostly used Flash to create and share theirs work with the world. <strong>Flashborn</strong> was designed to preserve their legacy after browser support for Flash was discontinued in 2021. Please enjoy the browser, and send your comments or support to&nbsp;<span class="about-email-wrap"><a class="about-email" data-contact-email href="mailto:sloutchevsky@gmail.com" aria-label="Copy email address">sloutchevsky@gmail.com</a><span class="email-copied hidden" role="status" aria-live="polite"></span></span>.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Modern browser</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash player</dt><dd>Adobe Flash ${escape(state.flashVersion)} · PPAPI</dd><dt>Flash runtime</dt><dd>Electron ${escape(state.flashRuntime)} · separate process</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Native Flash</dt><dd>${state.flashReady ? 'Bundled and ready' : 'Runtime missing — reinstall Flashborn'}</dd></dl><p class="about-note">The original Adobe player from your installed Flash Browser is bundled without modification. Adobe Flash and its required legacy Chromium runtime no longer receive security updates. Ordinary pages use the current browser engine; Flash pages use the legacy runtime. The lightning button switches a website between modes.</p><a class="about-copyright" data-browser-url href="https://www.sloutchevsky.com/">© 2026 Vas Sloutchevsky</a><details class="about-license"><summary>MIT open source license</summary><p>Flashborn’s application source is free to use, copy, modify, merge, publish, distribute, sublicense, and sell under the MIT License. Third-party components, including Adobe Flash Player, retain their own licenses.</p><p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p><p>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p><p>THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p></details></div></div></section>`;

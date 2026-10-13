@@ -8,6 +8,7 @@ const { fileURLToPath, pathToFileURL } = require('node:url');
 const { resolveInput, isWebURL, containedPath, isSWF, isPDFURL, reorderItems } = require('./core');
 const { contentType, supportedLocalFile } = require('./files');
 const { canPredict, suggestions, SearchPredictions } = require('./search-suggestions');
+const { searchPage, readPageScript, makeSummary } = require('./page-summary');
 const { Store } = require('./store');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
 const { ScreenColorPicker } = require('./screen-color-picker');
@@ -45,6 +46,7 @@ const searchPredictions = new SearchPredictions((url, options) => net.fetch(url,
 let colorWindow, colorTabId, colorPicking = false, colorPreview = null, screenColorPicker, tabMenu;
 let privateSession;
 let layoutScale;
+const SUMMARY_MODE = 'search';
 const privateDownloads = [];
 
 const activeTab = () => tabs.find(t => t.id === activeId);
@@ -75,7 +77,7 @@ function publicTab(t) {
     canBack: wc?.navigationHistory.canGoBack() || false, canForward: wc?.navigationHistory.canGoForward() || false, zoom: Math.round((wc?.getZoomFactor() || 1) * 100) };
 }
 function getState() {
-  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, suggestions: suggestionData, flashBackground: activeTab()?.flashSource?.background || '#ffffff', colorPicking, colorPreview, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
+  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, flashBackground: activeTab()?.flashSource?.background || '#ffffff', colorPicking, colorPreview, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
     history: activeTab()?.private ? [] : store.data.history, library: store.data.library, downloads: tabDownloads(activeTab()), settings: store.data.settings,
     flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: '32.0.0.363', flashRuntime: '9.4.4' };
 }
@@ -105,11 +107,41 @@ function layout() {
   for (const t of tabs) {
     const full = win.isFullScreen();
     const left = full ? 0 : collapsed ? 68 : 248;
-    const top = full ? 0 : 100;
+    const summaryHeight = !full && !panel && t.id === activeId && summaryFor(t) ? t.summaryHeight || 140 : 0;
+    const top = full ? 0 : 100 + summaryHeight;
     const rect = { x: left, y: top, width: Math.max(1, width - left), height: Math.max(1, height - top - (full ? 0 : 24)) };
     if (live(t)) { t.view.setBounds(rect); t.view.setVisible(!t.native && t.id === activeId && !panel && !t.error); }
     if (t.native) t.native.bounds(rect, t.id === activeId && !panel && !t.error && !(colorPicking && colorTabId === t.id));
   }
+}
+function summaryFor(t) {
+  return store?.data.settings.pageSummaries && !t?.native && !t?.error && t?.summary && t.summary.url === t.url ? t.summary : null;
+}
+function clearSummary(t) {
+  if (!t) return;
+  clearTimeout(t.summaryTimer); t.summarySerial = (t.summarySerial || 0) + 1;
+  const hadSummary = !!t.summary; t.summary = null; t.summaryHeight = 0;
+  if (hadSummary) { layout(); sendState(true); }
+}
+function scheduleSummary(t, delay = 180) {
+  clearTimeout(t.summaryTimer);
+  const eligible = store.data.settings.pageSummaries && !t.native && t.kind === 'web' && live(t) && isWebURL(t.url) && (SUMMARY_MODE !== 'search' || !!searchPage(t.url));
+  if (live(t)) t.view.webContents.send('browser:summary-watch', !!eligible);
+  if (!eligible) { clearSummary(t); return; }
+  const serial = t.summarySerial = (t.summarySerial || 0) + 1, url = t.url;
+  const read = async attempt => {
+    if (serial !== t.summarySerial || !store.data.settings.pageSummaries || t.native || !live(t) || t.url !== url || t.view.webContents.getURL() !== url) return;
+    try {
+      const content = await t.view.webContents.executeJavaScript(readPageScript);
+      if (serial !== t.summarySerial || t.native || !live(t) || t.url !== url || !store.data.settings.pageSummaries) return;
+      const summary = makeSummary(content, url, SUMMARY_MODE);
+      if (summary) {
+        if (JSON.stringify(summary) !== JSON.stringify(t.summary)) { t.summary = summary; if (t.id === activeId) { layout(); sendState(true); } }
+      } else if (attempt < 5) t.summaryTimer = setTimeout(() => read(attempt + 1), 600);
+      else clearSummary(t);
+    } catch { /* Navigation destroys the previous page's execution context. */ }
+  };
+  t.summaryTimer = setTimeout(() => read(0), delay);
 }
 function selectTab(id) {
   const t = tabs.find(t => t.id === id);
@@ -131,6 +163,7 @@ function closeTab(id) {
   if (colorTabId === id) closeColorPicker();
   for (const [token, document] of documents) if (document.tabId === id) documents.delete(token);
   clearTimeout(t.flashDetectionTimer);
+  clearSummary(t);
   if (t.native) t.native.dispose();
   if (!t.private && t.kind === 'web') closedTabs.push(t.url);
   if (closedTabs.length > 20) closedTabs.shift();
@@ -177,7 +210,7 @@ function wireContents(t) {
     if (!isWebURL(destination) && !isDocumentURL(destination)) event.preventDefault();
     else if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); loadFlash(t, { url: destination }).catch(e => showError(t, e.message)); }
   });
-  wc.on('did-start-loading', () => { t.loading = true; sendState(true); });
+  wc.on('did-start-loading', () => { if (wc.isLoadingMainFrame()) clearSummary(t); t.loading = true; sendState(true); });
   wc.on('did-stop-loading', () => { t.loading = false; sendState(); });
   wc.on('page-title-updated', (_event, title) => { if (['web', 'local'].includes(t.kind)) t.title = title.slice(0, 200); sendState(); });
   const navigated = () => {
@@ -187,9 +220,11 @@ function wireContents(t) {
       persistTabs();
     }
     layout(); sendState();
+    scheduleSummary(t);
   };
   wc.on('did-navigate', navigated);
   wc.on('did-navigate-in-page', navigated);
+  wc.on('dom-ready', () => scheduleSummary(t));
   wc.on('did-finish-load', () => {
     if (t.kind === 'web' && isWebURL(t.url)) {
       const item = { id: crypto.randomUUID(), url: t.url, title: wc.getTitle() || t.title, visitedAt: new Date().toISOString() };
@@ -198,6 +233,7 @@ function wireContents(t) {
         store.save(); sendState();
       }
       detectFlashFrames(t);
+      scheduleSummary(t);
     }
   });
   wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
@@ -756,6 +792,12 @@ async function command(action, args = {}) {
   const t = activeTab(); const wc = live(t) ? t.view.webContents : null;
   switch (action) {
     case 'state': return getState();
+    case 'summary-height': {
+      if (t?.id !== args.id || summaryFor(t)?.url !== args.url || !Number.isFinite(args.height)) break;
+      const height = Math.max(64, Math.min(240, Math.ceil(args.height)));
+      if (t.summaryHeight !== height) { t.summaryHeight = height; layout(); }
+      break;
+    }
     case 'tab-memory': {
       const tab = tabs.find(item => item.id === args.id);
       if (!tab) throw new Error('This tab is closed.');
@@ -903,6 +945,11 @@ async function command(action, args = {}) {
     case 'settings': {
       if (['duckduckgo', 'google', 'bing'].includes(args.searchEngine)) store.data.settings.searchEngine = args.searchEngine;
       if (typeof args.restoreTabs === 'boolean') store.data.settings.restoreTabs = args.restoreTabs;
+      if (typeof args.pageSummaries === 'boolean' && args.pageSummaries !== store.data.settings.pageSummaries) {
+        store.data.settings.pageSummaries = args.pageSummaries;
+        for (const tab of tabs) scheduleSummary(tab, 0);
+        layout();
+      }
       if (typeof args.flashEnabled === 'boolean' && store.data.settings.flashEnabled !== args.flashEnabled) {
         store.data.settings.flashEnabled = args.flashEnabled;
       }
@@ -979,6 +1026,10 @@ async function boot() {
   });
   const trustedInput = event => event.sender === win?.webContents && event.senderFrame?.url === UI_URL || tabs.some(tab => live(tab) && tab.view.webContents === event.sender && event.sender.mainFrame === event.senderFrame);
   ipcMain.on('browser:private-key', event => { if (trustedInput(event)) createTab('', false, true); });
+  ipcMain.on('browser:summary-changed', event => {
+    const tab = tabs.find(t => live(t) && t.view.webContents === event.sender && event.senderFrame === event.sender.mainFrame);
+    if (tab && store.data.settings.pageSummaries && !tab.native) scheduleSummary(tab, 150);
+  });
   ipcMain.on('browser:wheel', (event, direction) => { if (trustedInput(event) && [-1, 1].includes(direction)) wheelZoom(activeTab(), direction, 'dom'); });
   ipcMain.on('browser:zoom-key', (event, direction) => { if (event.sender === win?.webContents && event.senderFrame?.url === UI_URL && [-1, 0, 1].includes(direction)) zoom(direction).catch(e => win?.webContents.send('browser:notice', e.message)); });
   ipcMain.on('browser:pdf-zoom', (event, token) => {

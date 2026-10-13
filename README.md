@@ -1,16 +1,26 @@
-# Flashborn 1.7.2
+# Flashborn Browser
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
-the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
+the original Adobe Flash Player 32.0.0.363 for Flash content.
+
+**Current version: 1.7.3 · Windows 10/11 · x64 · MIT application source**
+
+[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.7.3/Flashborn-Setup-1.7.3-x64.exe)
+· [Releases and update notes](https://github.com/sloutchevsky/Flashborn-Browser/releases)
+· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.7.3/Flashborn-Source-1.7.3-GitHub.zip)
+
+See [the complete version history](CHANGELOG.md) for all 13 releases, from the
+initial Ruffle build to native Adobe playback and the current browser.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.7.2-x64.exe` on Windows 10 or 11 x64. The installer
+Download and run `Flashborn-Setup-1.7.3-x64.exe` on Windows 10 or 11 x64. When
+building locally, the same file is produced in `release/`. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
 
-This personal local build is unsigned; Windows can show an unknown publisher
+This build is unsigned; Windows can show an unknown publisher
 or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 
 The Windows install/uninstall consent prompt takes its verified publisher from
@@ -50,6 +60,14 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   DuckDuckGo, Google or Bing search engine, with no AI mode. Only search phrases
   are sent; full URLs and local paths are excluded. Private predictions use no
   cookies or persistent prediction cache. Local results remain usable offline.
+- Google, DuckDuckGo and Bing result pages receive a compact **Page summary**
+  above the original page. It uses excerpts from the loaded result snippets,
+  with numbered source links, and sends nothing to an external summary service.
+  The summary matches the browser theme immediately and pushes the page down.
+  **Settings → Generate page summaries** is on by default; turn it off to remove
+  summaries from existing and future pages. Summary text stays in memory, including
+  in Flashcognito. Empty results, verification pages and unsupported page layouts
+  show the original page without a summary.
 - Drag tabs, bookmarks, downloads and Flash library entries to reorder them. With an item
   focused, Alt+Up/Down also moves it. Bookmark, download and library order is saved.
 - When the sidebar collapses, its tabs heading shows only the number of open tabs.
@@ -116,7 +134,7 @@ Missing game servers, external assets and site dependencies can still prevent pl
 
 ## Compatibility and security
 
-The bundled DLL was copied from your installed Flash Browser 0.8.1. Its Adobe
+The bundled DLL was copied without modification from an installed Flash Browser 0.8.1. Its Adobe
 signature is valid and its SHA-256 is:
 
 `4acafedca8bb62529527029aeb485318866e4fd71bf298e73f735bc75f6d720d`
@@ -196,12 +214,43 @@ npm run test:predictions
 npm run test:eyedropper
 npm run test:sidebar
 npm run test:window
+npm run test:summaries
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.7.2-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.7.3-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
+
+## Languages and environment
+
+| Component | Technology |
+| --- | --- |
+| Application, browser integration, tests and build scripts | JavaScript / Node.js |
+| Interface and player pages | HTML and CSS |
+| Gold and silver animations | JavaScript Canvas rendering, SVG assets |
+| Logo outline generation | PowerShell and Windows font APIs |
+| Windows installer customization | NSIS |
+| Modern browser | Electron 44.7.0 / Chromium 152.0.7977.130 |
+| Native Flash process | Electron 9.4.4 / Chromium 83 / Adobe Flash 32.0.0.363 PPAPI |
+| Windows native integration | Koffi 3.3.2 / Win32 APIs |
+| Packaging and browser checks | electron-builder 26.15.3 / Playwright 1.56.1 |
+
+Experimental artwork in `previews/` is separate from the shipped UI. The
+production app uses the simple lightning bolt, not the experimental serif shape.
+
+## Release history and packaging
+
+[CHANGELOG.md](CHANGELOG.md) lists the user-visible updates and relevant validation
+for every archived release. [docs/version-manifest.json](docs/version-manifest.json)
+records the original source archive and installer sizes and SHA-256 checksums.
+The imported historical Git commits and tags are reconstructed from those source
+archives; their commit dates record the import, not the original development dates.
+
+The installer belongs in a GitHub Release, rather than the Git source tree.
+`node_modules/`, generated release output, native third-party binaries and test
+profiles are excluded from version control. See [third-party notices](THIRD-PARTY-NOTICES.md)
+for the licenses and provenance of bundled components.
 
 Unit tests cover URL parsing, forbidden schemes, path containment, SWF headers
 and profile persistence, reordering, supported file formats and autocomplete. Runtime tests launch the actual application with a
@@ -231,6 +280,12 @@ The window checks count native frame/resize messages during physical moves,
 verify real viewport resizing, and exercise hover memory for normal, inactive,
 shared and Flash tabs. A touched 64 MB renderer allocation verifies the estimate
 responds to actual usage. Set `FLASHBORN_KPF=1` to include the live KPF website.
+
+The summary checks cover all three result layouts, exact viewport displacement,
+theme changes, source navigation, settings persistence, delayed DOM changes,
+private-session isolation, and the absence of additional network requests.
+Live Bing and DuckDuckGo were also verified; Google presented a verification
+page during the live test, so its results adapter is verified with fixtures.
 
 The polish checks verify the exact first-frame title bolt, the smaller About branding, 40px text offset, theme-independent grey metadata,
 real Adobe Low/Medium/High quality, topmost eyedropper opening and cancellation,

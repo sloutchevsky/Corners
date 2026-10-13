@@ -1,6 +1,21 @@
 'use strict';
 const { ipcRenderer, webUtils } = require('electron');
 let pdfToken;
+let summaryEnabled = false, summaryObserver, summaryTimer;
+function watchSummary() {
+  summaryObserver?.disconnect(); clearTimeout(summaryTimer);
+  if (!summaryEnabled || !document.body) return;
+  summaryObserver = new MutationObserver(() => {
+    clearTimeout(summaryTimer);
+    summaryTimer = setTimeout(() => ipcRenderer.send('browser:summary-changed'), 550);
+  });
+  summaryObserver.observe(document.body, { childList: true, characterData: true, subtree: true });
+}
+ipcRenderer.on('browser:summary-watch', (_event, enabled) => {
+  const changed = summaryEnabled !== (enabled === true); summaryEnabled = enabled === true;
+  if (changed || summaryEnabled && !summaryObserver) watchSummary();
+});
+document.addEventListener('DOMContentLoaded', () => { if (summaryEnabled) watchSummary(); }, { once: true });
 ipcRenderer.on('browser:pdf-token', (_event, token) => { pdfToken = token; });
 window.addEventListener('message', event => {
   if (pdfToken && event.data?.type === 'flashborn-pdf-zoom' && event.data.token === pdfToken) ipcRenderer.send('browser:pdf-zoom', pdfToken);

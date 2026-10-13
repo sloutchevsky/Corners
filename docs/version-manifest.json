@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "product": "Flashborn Browser",
+  "currentVersion": "1.7.3",
+  "historyProvenance": "Reconstructed from retained source archives; Git commits record import time, not original development time.",
+  "dates": "Original installer file timestamps; buildDate uses the local New York calendar date.",
+  "versions": [
+    {
+      "version": "1.0.0",
+      "buildDate": "2026-10-08",
+      "installer": {
+        "file": "Flashborn-Setup-1.0.0-x64.exe",
+        "bytes": 126213547,
+        "sha256": "526f28ca10340a51508ebdad9927d7fa5f56b8ca13685999f43c3c9ffae9c79f",
+        "buildTimestampUtc": "2026-10-08T20:46:41.6730816Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.0.0.zip",
+        "bytes": 79918,
+        "sha256": "9a819c7ebdb3f935d11861c95301d67292655dd656083d9cb6dcc5283ed1b48f"
+      }
+    },
+    {
+      "version": "1.1.0",
+      "buildDate": "2026-10-09",
+      "installer": {
+        "file": "Flashborn-Setup-1.1.0-x64.exe",
+        "bytes": 168796329,
+        "sha256": "e084a065f3814d41b7fc6a35735098129ebf0d14a792248e72d6cd00d15da71a",
+        "buildTimestampUtc": "2026-10-09T13:51:15.6436041Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.1.0.zip",
+        "bytes": 91417,
+        "sha256": "1e7652459cae43511c00c3cea474af939cfa71836e364c7ced56fc23fb9c0e09"
+      }
+    },
+    {
+      "version": "1.1.1",
+      "buildDate": "2026-10-09",
+      "installer": {
+        "file": "Flashborn-Setup-1.1.1-x64.exe",
+        "bytes": 168798257,
+        "sha256": "51478cdd68bdc19c411a7cc99ac5cfd1711fcedd94ad1d6e88800765e22a0277",
+        "buildTimestampUtc": "2026-10-09T14:28:24.1507537Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.1.1.zip",
+        "bytes": 96772,
+        "sha256": "df18b92dd77880eba31739eac37d606ecf3d5debfbe0884b1943ffc35be425b2"
+      }
+    },
+    {
+      "version": "1.2.0",
+      "buildDate": "2026-10-10",
+      "installer": {
+        "file": "Flashborn-Setup-1.2.0-x64.exe",
+        "bytes": 168809324,
+        "sha256": "ab33c792a85c464bec872b6d540a87b9c6f4454a34d5825d5f8519b39f5fc7a1",
+        "buildTimestampUtc": "2026-10-10T13:10:16.5497031Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.2.0.zip",
+        "bytes": 114116,
+        "sha256": "b56f276ab7fe4f4745997303a3a49c582ce95e61d678873bfb06c59323c2ac0a"
+      }
+    },
+    {
+      "version": "1.3.0",
+      "buildDate": "2026-10-10",
+      "installer": {
+        "file": "Flashborn-Setup-1.3.0-x64.exe",
+        "bytes": 168815933,
+        "sha256": "4656723737a4db3320a6d0bb8435d3541f00704d03f2857b62abf1a833539e2c",
+        "buildTimestampUtc": "2026-10-10T17:00:30.9169245Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.3.0.zip",
+        "bytes": 132428,
+        "sha256": "7ddb99733df463fb38baa9e2e269baa0ba079731d6cfbc513ef8a5d5dee1635d"
+      }
+    },
+    {
+      "version": "1.4.0",
+      "buildDate": "2026-10-10",
+      "installer": {
+        "file": "Flashborn-Setup-1.4.0-x64.exe",
+        "bytes": 168822370,
+        "sha256": "199736c85351ff6a7051b062a8617cc11c9d6c4641ee359018bb70b28013925a",
+        "buildTimestampUtc": "2026-10-10T18:43:07.7296065Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.4.0.zip",
+        "bytes": 146094,
+        "sha256": "1ed9c5eba8537dc654a718340f2eb5b00c71529f72df3688f11798c67c7b3bce"
+      }
+    },
+    {
+      "version": "1.5.0",
+      "buildDate": "2026-10-11",
+      "installer": {
+        "file": "Flashborn-Setup-1.5.0-x64.exe",
+        "bytes": 168823073,
+        "sha256": "fec76152b5a831ffc7da9304154fcd799027d0ff58a5f179fcdd21cba879a06b",
+        "buildTimestampUtc": "2026-10-11T12:34:14.3064527Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.5.0.zip",
+        "bytes": 151051,
+        "sha256": "f650d279e35d16e04903d0258bc2435b6998f15a9729e8142bbeb54d112e5da7"
+      }
+    },
+    {
+      "version": "1.5.1",
+      "buildDate": "2026-10-11",
+      "installer": {
+        "file": "Flashborn-Setup-1.5.1-x64.exe",
+        "bytes": 168942460,
+        "sha256": "d47d9e742fb144556c37c510cd0841a9da9453237098d15b31b7dfd13a8673e8",
+        "buildTimestampUtc": "2026-10-11T15:09:29.2331446Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.5.1.zip",
+        "bytes": 218128,
+        "sha256": "a6b0007b2297796ec3a95175d2675b5a69afecdaa7ae5f7e49d6fbb06c351988"
+      }
+    },
+    {
+      "version": "1.6.0",
+      "buildDate": "2026-10-11",
+      "installer": {
+        "file": "Flashborn-Setup-1.6.0-x64.exe",
+        "bytes": 168945359,
+        "sha256": "5f78234598f2dd36a571ef1ccb7ac5f191e00a3f3427d910a521b896ad99b41e",
+        "buildTimestampUtc": "2026-10-11T17:12:31.8723274Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.6.0.zip",
+        "bytes": 456457,
+        "sha256": "a499c6e2deae93cf3a4da6b1884b9fbe592a370d11a60e5aeaea226fb78cc96f"
+      }
+    },
+    {
+      "version": "1.7.0",
+      "buildDate": "2026-10-12",
+      "installer": {
+        "file": "Flashborn-Setup-1.7.0-x64.exe",
+        "bytes": 168947825,
+        "sha256": "85c57858ca5220909567835147137925c5035f9204dab8beaf14c014b205be5e",
+        "buildTimestampUtc": "2026-10-12T14:30:06.6139402Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.7.0.zip",
+        "bytes": 243301,
+        "sha256": "022cb299a40b5429a5056a843f3928a645b098696933bff3ebe601f4793c5fb5"
+      }
+    },
+    {
+      "version": "1.7.1",
+      "buildDate": "2026-10-12",
+      "installer": {
+        "file": "Flashborn-Setup-1.7.1-x64.exe",
+        "bytes": 168950662,
+        "sha256": "948fe2a4856b48bb00f919228be69345d6630c36aaa11d07e6fdd416eb5e7a02",
+        "buildTimestampUtc": "2026-10-12T16:07:23.8631739Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.7.1.zip",
+        "bytes": 254551,
+        "sha256": "c7ceda7e998db3b47d23e84627aaa194ea964305ac12c8743a5d1c7edb26526c"
+      }
+    },
+    {
+      "version": "1.7.2",
+      "buildDate": "2026-10-13",
+      "installer": {
+        "file": "Flashborn-Setup-1.7.2-x64.exe",
+        "bytes": 168952160,
+        "sha256": "d894173851d6c5b991406fd58fbbc7360fc88b07fb58521afd210e2305ee78dc",
+        "buildTimestampUtc": "2026-10-13T12:05:35.0904192Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.7.2.zip",
+        "bytes": 259896,
+        "sha256": "11a73bda71cf0b82088ee936828173e117f584e48a6427afcd2ed0abe5214822"
+      }
+    },
+    {
+      "version": "1.7.3",
+      "buildDate": "2026-10-13",
+      "installer": {
+        "file": "Flashborn-Setup-1.7.3-x64.exe",
+        "bytes": 168955715,
+        "sha256": "8da216476ce1fd3fadf94b4767e4081686a29630f423afe29f83da7f78a64420",
+        "buildTimestampUtc": "2026-10-13T12:41:34.1214905Z"
+      },
+      "archivedSource": {
+        "file": "Flashborn-Source-1.7.3.zip",
+        "bytes": 269695,
+        "sha256": "ce182675abf5179ef1758d73f77bfa64c1da18adea7aea59591fb0ae92947da3"
+      }
+    }
+  ]
+}
