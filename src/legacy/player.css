@@ -10,3 +10,8 @@ main{min-height:0;flex:1;display:flex;align-items:center;justify-content:center;
 #loading{text-align:center;color:#878787;font-size:12px}footer{height:31px;display:flex;justify-content:space-between;align-items:center;padding:0 20px;color:#686868;font-size:10px;background:#202020;flex:none}
 main:fullscreen{background:#000}main:fullscreen embed{width:100vw;height:100vh}
 @media(max-width:850px){header{padding-left:15px;padding-right:15px}.engine{display:none}strong{max-width:200px}footer span:last-child{display:none}}
+:root[data-theme=light]{color-scheme:light;background:#e4e4e4;color:#292929}
+:root[data-theme=light] header,:root[data-theme=light] footer{background:#dedede;border-color:#c5c5c5}
+:root[data-theme=light] button{color:#333;background:#eee;border-color:#bbb}
+:root[data-theme=light] button:hover{background:#d2d2d2}
+:root[data-theme=light] .engine,:root[data-theme=light] footer{color:#666}

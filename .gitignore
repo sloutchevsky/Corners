@@ -1,6 +1,0 @@
-node_modules/
-release/
-vendor/
-.cache/
-test-output/
-*.log

@@ -1,11 +1,11 @@
-# Flashborn 1.1.1
+# Flashborn 1.2.0
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.1.1-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.2.0-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -16,12 +16,18 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 ## Use
 
 - Enter an address or search in the top bar. Press **Enter** or click **Go**.
-- Open local SWFs with **Ctrl+O**, the folder button, or **Open a SWF**.
+- Open local SWFs with **Ctrl+O**, **Open a SWF**, or the three-dot menu.
 - Direct SWF URLs and Flash MIME responses open in the native player.
 - Pages with embedded Flash, including framesets, are detected and opened in native mode.
 - Click the **lightning button** for pages that hide Flash behind detection scripts,
   or to switch a website between modern and native mode.
-- The three-dot menu uses a separate native popup above Flash content.
+- The gold lightning button spins once every two seconds while loading, then
+  finishes its current turn. The About screen uses a larger continuous animation.
+- The half-filled circle switches between dark grey and light grey, rotating
+  180 degrees each time. Theme choice is saved.
+- The three-dot menu uses a separate popup window above Flash content, with
+  inline Chrome-style zoom controls, fullscreen, and Adobe High/Low Flash quality.
+- High/Low quality is saved and applies to open native movies and future loads.
 - The sidebar provides tabs, bookmarks, history, downloads, settings and a SWF library.
 - The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
 
@@ -60,6 +66,12 @@ History, bookmarks, settings and library entries stay under
 `%APPDATA%/flashborn-browser`. Uninstall keeps user data.
 There is no analytics service or automatic updater. This custom browser does
 not provide Chrome account sync, general extension installation or DRM video.
+
+The application source is MIT licensed, copyright © 2026 Vas Sloutchevsky.
+The spaced logo and round “f” use outlines from the user-installed
+HelveticaNeueLT Com 53 Extended font, so the installer does not require or
+redistribute that font. Regenerate those outlines with `scripts/create-brand.ps1`
+when the original font is installed.
 
 ## Keyboard shortcuts
 

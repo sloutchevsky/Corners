@@ -1,10 +1,12 @@
 'use strict';
-const { app, BrowserWindow, session, Menu, ipcMain, protocol, net } = require('electron');
+const { app, BrowserWindow, session, Menu, ipcMain, protocol, net, nativeTheme } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const nodeNet = require('net');
 const { isFlashFallbackURL, legacyFlashTarget } = require('./compat');
+const { nextZoom } = require('./zoom');
+const { settingsScript } = require('./flash-settings');
 const { pathToFileURL, fileURLToPath } = require('url');
 app.setPath('userData', process.env.FLASHBORN_NATIVE_PROFILE);
 app.commandLine.appendSwitch('ppapi-flash-path', process.env.FLASHBORN_NATIVE_PLUGIN);
@@ -12,7 +14,7 @@ app.commandLine.appendSwitch('ppapi-flash-version', '32.0.0.363');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashnative', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
-let window, source = null, shuttingDown = false;
+let window, source = null, shuttingDown = false, quality = 'high', theme = 'current', pluginLoading = false, sampling = false;
 const channel = nodeNet.connect(process.env.FLASHBORN_NATIVE_CHANNEL);
 const connected = new Promise(resolve => channel.once('connect', () => { channel.write(JSON.stringify({token:process.env.FLASHBORN_NATIVE_TOKEN})+'\n'); resolve(); }));
 channel.on('error', () => app.quit());
@@ -22,9 +24,21 @@ const isWeb = value => { try { return ['http:', 'https:'].includes(new URL(value
 function state() {
   if (!window || window.isDestroyed()) return {};
   const wc = window.webContents;
-  return { url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(), canBack: wc.canGoBack(), canForward: wc.canGoForward(), zoom: Math.round(wc.getZoomFactor() * 100), muted: wc.isAudioMuted(), audible: wc.isCurrentlyAudible() };
+  return { url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading() || pluginLoading, quality, canBack: wc.canGoBack(), canForward: wc.canGoForward(), zoom: Math.round(wc.getZoomFactor() * 100), muted: wc.isAudioMuted(), audible: wc.isCurrentlyAudible() };
 }
 function publish() { send({ type: 'state', state: state() }); }
+async function applySettings() {
+  if (sampling || !window || window.isDestroyed()) return;
+  const wc = window.webContents, url = wc.getURL();
+  if ((!isWeb(url) && !url.startsWith('flashnative:')) || wc.isLoadingMainFrame()) return;
+  sampling = true;
+  try {
+    const result = await window.webContents.executeJavaScript(settingsScript(quality, theme));
+    if (pluginLoading !== result.loading) { pluginLoading = result.loading; publish(); }
+    return result;
+  } catch { /* A navigation destroys its previous JavaScript context. */ }
+  finally { sampling = false; }
+}
 function remoteBytes(url) {
   return new Promise((resolve, reject) => {
     const request = net.request({ url, session: session.defaultSession });
@@ -67,7 +81,7 @@ async function command(action, args) {
   const wc = window.webContents;
   switch (action) {
     case 'navigate': if (!isWeb(args.url)) throw new Error('Only HTTP and HTTPS pages can use native Flash mode.'); source = null; await wc.loadURL(args.url).catch(e => { if (e.code !== 'ERR_ABORTED') throw e; }); break;
-    case 'movie': source = args; await wc.loadURL('flashnative://player/index.html'); break;
+    case 'movie': source = args; quality = args.quality === 'low' ? 'low' : 'high'; await wc.loadURL('flashnative://player/index.html'); await applySettings(); break;
     case 'back': if (wc.canGoBack()) wc.goBack(); break;
     case 'forward': if (wc.canGoForward()) wc.goForward(); break;
     case 'reload': wc.reload(); break;
@@ -75,7 +89,9 @@ async function command(action, args) {
     case 'focus': wc.focus(); break;
     case 'visibility': args.value ? window.showInactive() : window.hide(); break;
     case 'mute': wc.setAudioMuted(args.value === undefined ? !wc.isAudioMuted() : !!args.value); break;
-    case 'zoom': wc.setZoomFactor(args.direction === 0 ? 1 : Math.max(.25, Math.min(3, wc.getZoomFactor() + args.direction * .1))); break;
+    case 'zoom': wc.setZoomFactor(nextZoom(wc.getZoomFactor() * 100, args.direction) / 100); break;
+    case 'quality': quality = args.quality === 'low' ? 'low' : 'high'; await applySettings(); break;
+    case 'theme': theme = args.theme === 'light' ? 'light' : 'current'; nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark'; await applySettings(); break;
     case 'print': wc.print(); break;
     case 'find': if (args.text) wc.findInPage(args.text, { forward: args.forward !== false, findNext: !args.next }); else wc.stopFindInPage('clearSelection'); break;
     case 'clear-data': await session.defaultSession.clearStorageData(); await session.defaultSession.clearCache(); break;
@@ -109,6 +125,10 @@ app.whenReady().then(async () => {
   wc.on('will-redirect', (event, url) => { if (!isWeb(url)) event.preventDefault(); });
   wc.on('will-attach-webview', event => event.preventDefault());
   for (const name of ['did-start-loading','did-stop-loading','did-navigate','did-navigate-in-page','page-title-updated','audio-state-changed']) wc.on(name, publish);
+  wc.on('did-start-loading', () => { pluginLoading = false; });
+  wc.on('did-finish-load', applySettings);
+  const settingsTimer = setInterval(applySettings, 350);
+  window.on('closed', () => clearInterval(settingsTimer));
   wc.on('did-fail-load', (_event, code, message, _url, main) => { if (main && code !== -3) send({ type: 'error', message: 'Native Flash page could not load (' + message + ').' }); });
   wc.on('found-in-page', (_event, result) => send({ type: 'find', result }));
   wc.on('enter-html-full-screen', () => send({ type: 'fullscreen', value: true }));

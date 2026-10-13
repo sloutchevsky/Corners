@@ -12,7 +12,8 @@ async function load() {
   movie.id = 'flash-movie'; movie.type = 'application/x-shockwave-flash';
   movie.src = source.path ? '/movie.swf' : source.url; movie.setAttribute('allowScriptAccess', 'always'); movie.setAttribute('allowFullScreen', 'true');
   movie.setAttribute('base', source.path ? 'flashnative://player/assets/' : new URL('.', source.url).href);
-  movie.setAttribute('wmode', 'direct'); movie.setAttribute('quality', 'high'); movie.setAttribute('bgcolor', '#141414');
+  document.documentElement.dataset.theme = source.theme === 'light' ? 'light' : 'current';
+  movie.setAttribute('wmode', 'direct'); movie.setAttribute('quality', source.quality || 'high'); movie.setAttribute('bgcolor', '#141414');
   while (stage.firstChild) stage.removeChild(stage.firstChild);
   stage.appendChild(movie);
   const deadline = Date.now() + 60000;

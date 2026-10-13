@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, net, dialog, shell, Menu, nativeTheme, clipboard } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, net, dialog, shell, Menu, nativeTheme, clipboard, screen } = require('electron');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -9,6 +9,7 @@ const { resolveInput, isWebURL, containedPath, isSWF } = require('./core');
 const { Store } = require('./store');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
 const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
+const { nextZoom } = require('./legacy/zoom');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashborn', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const testMode = process.env.FLASHBORN_TEST === '1';
@@ -20,6 +21,7 @@ app.setAppUserModelId('com.flashborn.browser');
 nativeTheme.themeSource = 'dark';
 
 const UI_URL = 'flashborn://ui/index.html';
+const MENU_URL = 'flashborn://ui/menu.html';
 const MAX_SWF_SIZE = 256 * 1024 * 1024;
 const mimeTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.swf': 'application/x-shockwave-flash', '.json': 'application/json', '.mp3': 'audio/mpeg', '.xml': 'text/xml', '.txt': 'text/plain' };
 let win, store, browsingSession, activeId, panel = null, collapsed = false, closing = false;
@@ -27,7 +29,7 @@ const tabs = [];
 const downloadItems = new Map();
 const permissions = new Map();
 const closedTabs = [];
-let stateTimer, lastMenu, menuOpen = false;
+let stateTimer, menuWindow, menuOpen = false;
 
 const activeTab = () => tabs.find(t => t.id === activeId);
 const live = t => !!t?.view?.webContents && !t.view.webContents.isDestroyed();
@@ -49,7 +51,9 @@ function sendState(immediate = false) {
   if (immediate) {
     clearTimeout(stateTimer);
     stateTimer = null;
-    if (win && !win.isDestroyed()) win.webContents.send('browser:state', getState());
+    const state = getState();
+    if (win && !win.isDestroyed()) win.webContents.send('browser:state', state);
+    if (menuWindow && !menuWindow.isDestroyed()) menuWindow.webContents.send('browser:state', state);
   } else if (!stateTimer) {
     stateTimer = setTimeout(() => { stateTimer = null; sendState(true); }, 40);
   }
@@ -126,7 +130,7 @@ function wireContents(t) {
     if (!isWebURL(destination)) event.preventDefault();
     else if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); loadFlash(t, { url: destination }).catch(e => showError(t, e.message)); }
   });
-  wc.on('did-start-loading', () => { t.loading = true; sendState(); });
+  wc.on('did-start-loading', () => { t.loading = true; sendState(true); });
   wc.on('did-stop-loading', () => { t.loading = false; sendState(); });
   wc.on('page-title-updated', (_event, title) => { if (t.kind === 'web') t.title = title.slice(0, 200); sendState(); });
   const navigated = () => {
@@ -232,12 +236,13 @@ async function openLocal(filename, existing) {
   await loadFlash(t, { path: absolute, title: entry.title });
 }
 async function loadFlash(t, source) {
-  t.flashSource = source; t.kind = 'flash'; t.error = null;
+  t.flashSource = source; t.kind = 'flash'; t.error = null; t.loading = true;
   t.title = source.title || decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'Flash player');
   t.url = source.url || pathToFileURL(source.path).href;
+  sendState(true);
   await ensureNative(t);
   layout(); sendState(true);
-  await t.native.call('movie', { ...source, title: t.title });
+  await t.native.call('movie', { ...source, title: t.title, quality: store.data.settings.flashQuality, theme: store.data.settings.theme });
 }
 async function ensureNative(t) {
   if (t.native?.child && t.native.child.exitCode !== null) { t.native.dispose(); t.native = null; }
@@ -246,13 +251,15 @@ async function ensureNative(t) {
   t.native = new NativeFlash(win, t.id, message => {
     if (message.type === 'ready') layout();
     else if (message.type === 'state') {
+      if (!isWebURL(message.state.url) && !message.state.url?.startsWith('flashnative:')) return;
+      const started = !!message.state.loading && !t.loading;
       t.loading = !!message.state.loading;
       if (t.kind === 'web' && isWebURL(message.state.url)) { t.url = message.state.url; t.title = message.state.title || new URL(t.url).hostname; }
       if (!t.loading && t.kind === 'web' && isWebURL(t.url)) {
         store.data.history = [{ id: crypto.randomUUID(), url: t.url, title: t.title, visitedAt: new Date().toISOString() }, ...store.data.history.filter(h => h.url !== t.url)].slice(0, 500);
         persistTabs();
       }
-      sendState();
+      sendState(started);
     } else if (message.type === 'new-tab') { const created = createTab(); activateNative(created, message.url).catch(e => showError(created, e.message)); }
     else if (message.type === 'download' && isWebURL(message.url)) { ensureView(t); t.view.webContents.downloadURL(message.url); }
     else if (message.type === 'key') handleKeys({ preventDefault() {} }, message.input);
@@ -262,6 +269,8 @@ async function ensureNative(t) {
   });
   layout();
   await t.native.ready;
+  await t.native.call('quality', { quality: store.data.settings.flashQuality });
+  await t.native.call('theme', { theme: store.data.settings.theme });
   layout();
 }
 async function activateNative(t, url) {
@@ -366,43 +375,66 @@ function handleKeys(event, input) {
   else handled = false;
   if (handled) event.preventDefault();
 }
-function zoom(direction) {
-  if (activeTab()?.native) { activeTab().native.call('zoom', { direction }).catch(console.error); return; }
+async function zoom(direction) {
+  if (activeTab()?.native) { await activeTab().native.call('zoom', { direction }); sendState(true); return; }
   const t = activeTab(); if (!live(t)) return;
   const wc = t.view.webContents;
-  wc.setZoomFactor(direction === 0 ? 1 : Math.max(0.25, Math.min(3, wc.getZoomFactor() + direction * .1)));
+  wc.setZoomFactor(nextZoom(wc.getZoomFactor() * 100, direction) / 100);
   sendState(true);
 }
 
-function showBrowserMenu() {
-  const t = activeTab();
-  const run = (action, args) => () => command(action, args).catch(error => dialog.showErrorBox('Flashborn', error.message));
-  lastMenu = Menu.buildFromTemplate([
-    { label: 'New tab', accelerator: 'Ctrl+T', click: run('new-tab') },
-    { label: 'Open Flash file…', accelerator: 'Ctrl+O', click: run('open-file') },
-    { label: 'Native Adobe Flash mode', type: 'checkbox', checked: !!t?.native, enabled: isWebURL(t?.url), click: run('native-mode') },
-    { type: 'separator' },
-    { label: 'Downloads', accelerator: 'Ctrl+J', click: run('panel', { name: 'downloads' }) },
-    { label: 'Bookmarks', click: run('panel', { name: 'bookmarks' }) },
-    { label: 'Find in page', accelerator: 'Ctrl+F', click: () => { win.webContents.focus(); win.webContents.send('browser:find', { open: true }); } },
-    { label: 'Print…', accelerator: 'Ctrl+P', click: run('print') },
-    { type: 'separator' },
-    { label: `Zoom (${publicTab(t).zoom}%)`, submenu: [ { label: 'Zoom in', click: run('zoom', { direction: 1 }) }, { label: 'Zoom out', click: run('zoom', { direction: -1 }) }, { label: 'Reset zoom', click: run('zoom', { direction: 0 }) } ] },
-    { label: t?.native?.state.muted || live(t) && t.view.webContents.isAudioMuted() ? 'Unmute tab' : 'Mute tab', click: run('mute') },
-    { type: 'separator' },
-    { label: 'Settings', click: run('panel', { name: 'settings' }) },
-    { label: 'About Flashborn', click: run('panel', { name: 'about' }) }
-  ]);
+function closeBrowserMenu(restoreFocus = false) {
+  const popup = menuWindow;
+  menuWindow = null; menuOpen = false;
+  if (popup && !popup.isDestroyed()) popup.close();
+  if (restoreFocus && win && !win.isDestroyed()) win.focus();
+  sendState(true);
+}
+async function showBrowserMenu() {
+  if (menuWindow && !menuWindow.isDestroyed()) { closeBrowserMenu(true); return; }
+  const bounds = win.getContentBounds();
+  const work = screen.getDisplayMatching(bounds).workArea;
+  const width = 320, height = Math.min(467, work.height - 20);
+  const x = Math.max(work.x, Math.min(work.x + work.width - width, bounds.x + bounds.width - width - 12));
+  const y = Math.max(work.y, Math.min(work.y + work.height - height, bounds.y + 92));
+  const popup = menuWindow = new BrowserWindow({ x, y, width, height, parent: win, frame: false, show: false,
+    skipTaskbar: true, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true,
+    backgroundColor: store.data.settings.theme === 'light' ? '#f0f0f0' : '#282828',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, spellcheck: false, backgroundThrottling: false } });
+  // A separate owned window stays above the native Adobe Flash child HWND.
+  popup.setAlwaysOnTop(true, 'pop-up-menu');
+  popup.setMenu(null);
+  popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  popup.webContents.on('will-navigate', event => event.preventDefault());
+  popup.on('blur', () => { if (menuWindow === popup) closeBrowserMenu(); });
+  popup.on('closed', () => { if (menuWindow === popup) { menuWindow = null; menuOpen = false; sendState(true); } });
   menuOpen = true; sendState(true);
-  // A Windows popup menu is above native plugin HWNDs as well as Chromium views.
-  lastMenu.popup({ window: win, x: Math.max(0, win.getContentSize()[0] - 320), y: 92, callback: () => { menuOpen = false; sendState(true); } });
+  await popup.loadURL(MENU_URL);
+  if (menuWindow === popup && !popup.isDestroyed()) { popup.show(); popup.focus(); sendState(true); }
 }
 
 async function command(action, args = {}) {
   const t = activeTab(); const wc = live(t) ? t.view.webContents : null;
   switch (action) {
     case 'state': return getState();
-    case 'menu': showBrowserMenu(); break;
+    case 'menu': await showBrowserMenu(); break;
+    case 'menu-close': closeBrowserMenu(true); break;
+    case 'menu-find': panel = null; layout(); win.webContents.focus(); win.webContents.send('browser:find', { open: true }); break;
+    case 'fullscreen': win.setFullScreen(!win.isFullScreen()); break;
+    case 'theme': {
+      store.data.settings.theme = store.data.settings.theme === 'light' ? 'current' : 'light';
+      nativeTheme.themeSource = store.data.settings.theme === 'light' ? 'light' : 'dark';
+      win.setBackgroundColor(store.data.settings.theme === 'light' ? '#e9e9e9' : '#212121');
+      store.save();
+      await Promise.all(tabs.filter(tab => tab.native).map(tab => tab.native.call('theme', { theme: store.data.settings.theme }).catch(() => {})));
+      break;
+    }
+    case 'flash-quality': {
+      if (!['high', 'low'].includes(args.quality)) throw new Error('Choose high or low Flash quality.');
+      store.data.settings.flashQuality = args.quality; store.save();
+      await Promise.all(tabs.filter(tab => tab.native).map(tab => tab.native.call('quality', { quality: args.quality })));
+      break;
+    }
     case 'native-mode': if (t && isWebURL(t.url)) { if (t.native) { t.native.dispose(); t.native = null; t.forceModern = true; await navigate(t, t.url); } else { t.forceModern = false; await activateNative(t, t.url); } } break;
     case 'navigate': panel = null; await navigate(t, args.value); break;
     case 'new-tab': createTab(typeof args.url === 'string' ? args.url : ''); break;
@@ -449,7 +481,7 @@ async function command(action, args = {}) {
     case 'download-clear': store.data.downloads = store.data.downloads.filter(d => downloadItems.has(d.id)); store.save(); break;
     case 'find': if (t?.native) await t.native.call('find', args); else if (wc && typeof args.text === 'string') { if (args.text) wc.findInPage(args.text.slice(0, 2000), { forward: args.forward !== false, findNext: args.next !== true }); else wc.stopFindInPage('clearSelection'); } break;
     case 'mute': if (t?.native) await t.native.call('mute'); else if (wc) wc.setAudioMuted(!wc.isAudioMuted()); break;
-    case 'zoom': zoom([-1, 0, 1].includes(args.direction) ? args.direction : 0); break;
+    case 'zoom': await zoom([-1, 0, 1].includes(args.direction) ? args.direction : 0); break;
     case 'print': if (t?.native) await t.native.call('print'); else wc?.print(); break;
     case 'minimize': win.minimize(); break;
     case 'maximize': win.isMaximized() ? win.unmaximize() : win.maximize(); break;
@@ -462,6 +494,7 @@ async function command(action, args = {}) {
 
 async function boot() {
   store = new Store(app.getPath('userData'));
+  nativeTheme.themeSource = store.data.settings.theme === 'light' ? 'light' : 'dark';
   browsingSession = session.fromPartition('persist:flashborn');
   await session.defaultSession.protocol.handle('flashborn', handleProtocol);
   await browsingSession.protocol.handle('flashborn', handleProtocol);
@@ -473,19 +506,23 @@ async function boot() {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
   win.webContents.on('before-input-event', handleKeys);
-  for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { layout(); sendState(true); });
+  for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeBrowserMenu(); layout(); sendState(true); });
+  win.on('move', () => closeBrowserMenu());
   win.on('close', event => {
     if (!closing && downloadItems.size) {
       const response = dialog.showMessageBoxSync(win, { type: 'question', message: 'Downloads are still running.', detail: 'Closing Flashborn will cancel them.', buttons: ['Keep browsing', 'Close browser'], defaultId: 0, cancelId: 0 });
       if (response === 0) { event.preventDefault(); return; }
     }
-    persistTabs(); closing = true;
+    closeBrowserMenu(); persistTabs(); closing = true;
     for (const t of tabs) { if (t.native) t.native.dispose(); if (live(t)) t.view.webContents.close(); }
   });
   win.on('closed', () => { win = null; });
   ipcMain.handle('browser:command', async (event, action, args) => {
-    if (event.sender !== win?.webContents || event.senderFrame?.url !== UI_URL) throw new Error('Untrusted command source.');
+    const fromMenu = event.sender === menuWindow?.webContents && event.senderFrame?.url === MENU_URL;
+    if (!fromMenu && (event.sender !== win?.webContents || event.senderFrame?.url !== UI_URL)) throw new Error('Untrusted command source.');
     if (typeof action !== 'string' || !args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid browser command.');
+    if (fromMenu && !['state', 'menu-close', 'new-tab', 'open-file', 'native-mode', 'panel', 'menu-find', 'print', 'zoom', 'mute', 'flash-quality', 'fullscreen'].includes(action)) throw new Error('Unsupported menu command.');
+    if (fromMenu && !['state', 'zoom', 'flash-quality', 'mute', 'menu-close'].includes(action)) closeBrowserMenu(true);
     try { return { ok: true, state: await command(action, args) }; }
     catch (e) { return { ok: false, error: e.message }; }
   });
@@ -497,7 +534,7 @@ async function boot() {
   if (file) await openLocal(file);
   if (testMode) {
     // Accessible only from main-process Playwright evaluation in a test launch.
-    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get menu() { return lastMenu; } };
+    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get menuWindow() { return menuWindow; } };
   }
 }
 if (gotLock) app.whenReady().then(boot).catch(error => { console.error(error); dialog.showErrorBox('Flashborn could not start', error.stack || error.message); app.quit(); });

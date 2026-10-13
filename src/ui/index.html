@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Flashborn</title><link rel="stylesheet" href="styles.css">
+  <title>Flashborn</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="themes.css">
 </head>
 <body>
   <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -31,9 +31,10 @@
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8z"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" stroke="none"/></symbol>
   </defs></svg>
   <header class="titlebar">
-    <span class="title-brand"><svg class="icon"><use href="#i-flash"/></svg> Flashborn</span>
+    <span class="title-brand"><svg class="icon"><use href="#i-flash"/></svg>flashborn</span>
     <span class="title-note">A quieter kind of browsing</span>
     <div class="window-controls">
       <button data-action="minimize" title="Minimize" aria-label="Minimize"><svg class="icon"><use href="#i-minimize"/></svg></button>
@@ -42,7 +43,7 @@
     </div>
   </header>
   <aside class="sidebar">
-    <div class="sidebar-top"><button class="icon-button" data-action="collapse" title="Toggle sidebar" aria-label="Toggle sidebar"><svg class="icon"><use href="#i-sidebar"/></svg></button><span class="sidebar-wordmark">flashborn<span class="brand-dot">.</span></span></div>
+    <div class="sidebar-top"><button class="icon-button" data-action="collapse" title="Toggle sidebar" aria-label="Toggle sidebar"><svg class="icon"><use href="#i-sidebar"/></svg></button><span class="sidebar-wordmark brand-wordmark" role="img" aria-label="flashborn"></span></div>
     <button class="new-tab nav-button" data-action="new-tab" title="New tab (Ctrl+T)"><svg class="icon"><use href="#i-plus"/></svg><span>New tab</span><kbd>Ctrl T</kbd></button>
     <div class="tabs-label"><span>Your tabs</span><span id="tab-count"></span></div>
     <div id="tabs" class="tabs" aria-label="Open tabs"></div>
@@ -53,7 +54,7 @@
       <button class="nav-button" data-panel="downloads" title="Downloads (Ctrl+J)"><svg class="icon"><use href="#i-download"/></svg><span>Downloads</span><span id="download-count" class="count"></span></button>
       <div class="sidebar-rule"></div>
       <button class="nav-button" data-panel="settings" title="Settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></button>
-      <button class="profile" data-panel="about" title="About Flashborn"><span class="profile-icon">f<span>•</span></span><span class="profile-text"><strong>Flashborn</strong><small><i id="flash-dot"></i><span id="flash-status">Flash ready</span></small></span><svg class="icon profile-more"><use href="#i-more"/></svg></button>
+      <button class="profile" data-panel="about" title="About Flashborn"><span class="profile-icon" aria-hidden="true"><span class="brand-f"></span></span><span class="profile-text"><strong class="brand-wordmark profile-wordmark" role="img" aria-label="flashborn"></strong><small><i id="flash-dot"></i><span id="flash-status">Flash ready</span></small></span><svg class="icon profile-more"><use href="#i-more"/></svg></button>
     </div>
   </aside>
   <nav class="toolbar" aria-label="Navigation">
@@ -63,14 +64,14 @@
       <button id="reload" class="icon-button" data-action="reload" title="Reload (Ctrl+R)" aria-label="Reload"><svg class="icon"><use href="#i-reload"/></svg></button>
     </div>
     <form id="address-form" class="address"><svg id="address-icon" class="icon"><use href="#i-search"/></svg><input id="address" spellcheck="false" autocomplete="off" aria-label="Search or enter address" placeholder="Search or enter an address"><button id="address-go" type="submit" class="icon-button" title="Go to address" aria-label="Go to address"><svg class="icon"><use href="#i-forward"/></svg></button><button id="bookmark" type="button" class="icon-button" data-action="bookmark" title="Bookmark this page (Ctrl+D)" aria-label="Bookmark this page"><svg class="icon"><use href="#i-star"/></svg></button></form>
-    <button id="native-mode" type="button" class="icon-button" data-action="native-mode" title="Switch this page to native Adobe Flash" aria-label="Toggle native Adobe Flash mode"><svg class="icon"><use href="#i-flash"/></svg></button>
-    <button class="icon-button" data-action="open-file" title="Open Flash file (Ctrl+O)" aria-label="Open Flash file"><svg class="icon"><use href="#i-folder"/></svg></button>
+    <button id="native-mode" type="button" class="icon-button native-bolt-button" data-action="native-mode" title="Switch this page to native Adobe Flash" aria-label="Toggle native Adobe Flash mode"><canvas id="loading-bolt" class="loading-bolt" width="96" height="96" aria-hidden="true"></canvas></button>
+    <button id="theme-button" class="icon-button" data-action="theme" title="Change theme" aria-label="Change theme"><svg id="theme-icon" class="icon"><use href="#i-theme"/></svg></button>
     <button id="menu-button" class="icon-button" title="Browser menu" aria-label="Browser menu"><svg class="icon"><use href="#i-more"/></svg></button>
     <form id="find-form" class="find hidden"><input id="find-input" placeholder="Find in page" aria-label="Find in page"><small id="find-count"></small><button type="button" id="find-prev" aria-label="Previous match">↑</button><button type="submit" aria-label="Next match">↓</button><button type="button" id="find-close" aria-label="Close find">×</button></form>
   </nav>
   <main id="content" class="content"></main>
   <footer class="statusbar"><span id="page-status">Make yourself at home.</span><span id="status-right">Chromium · Adobe Flash</span></footer>
   <div id="toast" role="status" class="toast hidden"></div>
-  <script src="app.js"></script>
+  <script src="lightning.js"></script><script src="app.js"></script>
 </body>
 </html>

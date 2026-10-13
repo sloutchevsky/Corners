@@ -19,6 +19,7 @@ async function poll(fn, predicate, timeout = 30000) {
 
 async function run() {
   const server = http.createServer((req, res) => {
+    if (req.url === '/slow') { res.writeHead(200, { 'Content-Type': 'text/html' }); res.write('<!doctype html><title>Loading test</title>'); setTimeout(() => res.end('<p>Complete</p>'), 900); return; }
     if (req.url === '/movie.swf' || req.url === '/mime-flash') { res.writeHead(200, { 'Content-Type': 'application/x-shockwave-flash' }); res.end(demo); return; }
     if (req.url === '/download') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="browser-test.txt"' }); res.end('Flashborn download verified.'); return; }
     if (req.url === '/broken') { res.writeHead(404); res.end('Missing'); return; }
@@ -53,6 +54,48 @@ async function run() {
     assert.equal((await state()).tabs.length, 1);
     assert.equal((await state()).flashReady, true);
     results.push('Desktop shell and bundled native Adobe Flash load');
+    const sidebarPositions = () => ui.evaluate(() => ({ profile:document.querySelector('.profile-icon').getBoundingClientRect().x, selection:document.querySelector('.tab.active').getBoundingClientRect().x, newTab:document.querySelector('.new-tab').getBoundingClientRect().x }));
+    const expanded = await sidebarPositions();
+    await command('collapse');
+    assert.deepEqual(await sidebarPositions(), expanded);
+    await command('collapse');
+    assert.equal(await ui.locator('.brand-dot').count(), 0);
+    assert.ok(await ui.locator('.sidebar-wordmark').evaluate(el => getComputedStyle(el).maskImage.includes('wordmark.svg')));
+    assert.equal(await ui.locator('.sidebar-wordmark').evaluate(el=>el.getBoundingClientRect().height),11);
+    assert.ok(await ui.locator('.title-brand').evaluate(el=>getComputedStyle(el).fontFamily.includes('Segoe UI')));
+    results.push('Helvetica logo outlines render without periods; sidebar icon and selection left edges stay fixed');
+    await ui.locator('#theme-button').click();
+    await poll(state,s=>s.settings.theme==='light');
+    assert.equal(await ui.locator('body').getAttribute('data-theme'),'light');
+    assert.equal(await ui.locator('#theme-icon').evaluate(el=>el.style.transform),'rotate(180deg)');
+    await saveUI('home-light.png');
+    await ui.locator('#theme-button').click();
+    await poll(state,s=>s.settings.theme==='current');
+    assert.equal(await ui.locator('#theme-icon').evaluate(el=>el.style.transform),'rotate(360deg)');
+    results.push('Theme button switches dark grey/light grey and turns 180 degrees on each toggle');
+    await command('panel',{name:'about'});
+    const aboutAngle = await ui.locator('#about-bolt').getAttribute('data-angle');
+    await new Promise(resolve=>setTimeout(resolve,300));
+    assert.notEqual(await ui.locator('#about-bolt').getAttribute('data-angle'),aboutAngle);
+    assert.ok(await ui.locator('.about-copyright').innerText().then(text=>text.includes('2026 Vas Sloutchevsky')));
+    await ui.locator('.about-license summary').click();
+    await saveUI('about.png');
+    await command('panel',{name:null});
+    results.push('About has a larger continuously spinning bolt, copyright and complete MIT license');
+    await command('navigate',{value:base+'/slow'});
+    await poll(state,s=>!s.tabs.find(t=>t.id===s.activeId)?.loading);
+    await poll(()=>ui.locator('#loading-bolt').getAttribute('data-motion'),motion=>motion==='finishing',1500);
+    const boltOffset = await ui.locator('#loading-bolt').evaluate(canvas => {
+      const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+      let left=canvas.width,right=0;
+      for(let y=0;y<canvas.height;y++) for(let x=0;x<canvas.width;x++) if(pixels[(y*canvas.width+x)*4+3]>32){left=Math.min(left,x);right=Math.max(right,x);}
+      const rect=canvas.getBoundingClientRect(),button=canvas.parentElement.getBoundingClientRect();
+      return rect.x+(left+right+1)/2/canvas.width*rect.width-(button.x+button.width/2);
+    });
+    assert.ok(Math.abs(boltOffset)<0.6,'Animated bolt must stay horizontally centered in its button');
+    await poll(()=>ui.locator('#loading-bolt').getAttribute('data-motion'),motion=>motion==='idle',4000);
+    assert.equal(await ui.locator('#loading-bolt').getAttribute('data-angle'),'0.0000');
+    results.push('Loading bolt continues through the current complete turn and stops facing forward');
 
     await ui.locator('#address').fill(base + '/one');
     await ui.locator('#address').press('Enter');
@@ -146,13 +189,30 @@ async function run() {
 
     await ui.locator('#menu-button').click();
     await poll(state,s=>s.menuOpen);
-    const nativeMenu=await app.evaluate(()=>({items:global.__flashborn.menu.items.map(i=>i.label),flashWindow:global.__flashborn.activeTab().native.hwnd}));
+    const nativeMenu=await app.evaluate(()=>({popup:global.__flashborn.menuWindow.isAlwaysOnTop(),flashWindow:global.__flashborn.activeTab().native.hwnd}));
     assert.ok(nativeMenu.flashWindow);
-    assert.ok(nativeMenu.items.includes('Native Adobe Flash mode'));
+    assert.ok(nativeMenu.popup);
+    const menu = await poll(()=>app.windows().find(page=>page.url()==='flashborn://ui/menu.html'),Boolean);
+    await menu.locator('#zoom-in').waitFor();
+    await menu.locator('#zoom-in').click();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===110);
+    await menu.locator('#zoom-in').click();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===125);
+    assert.equal(await menu.locator('#zoom-reset').innerText(),'125%');
+    await menu.locator('#zoom-reset').click();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===100);
+    await menu.locator('[data-quality="low"]').click();
+    await poll(()=>pageScript('document.getElementById("flash-movie").TGetProperty("/",19)'),q=>q==='LOW');
+    assert.equal((await state()).settings.flashQuality,'low');
+    await menu.locator('[data-quality="high"]').click();
+    await poll(()=>pageScript('document.getElementById("flash-movie").TGetProperty("/",19)'),q=>q==='HIGH');
     await new Promise(r=>setTimeout(r,250));const menuCapture=await captureVisible(app);fs.writeFileSync(path.join(output,'visible-flash-menu.png'),Buffer.from(menuCapture.png,'base64'));
-    await app.evaluate(()=>global.__flashborn.menu.closePopup(global.__flashborn.win));
+    if (!menu.isClosed()) {
+      try { await menu.keyboard.press('Escape'); }
+      catch(error) { if((await state()).menuOpen) throw error; }
+    }
     await poll(state,s=>!s.menuOpen);
-    results.push('Three-dot button opens a native popup above the Flash child window');
+    results.push('Menu stays above Flash; inline Chrome zoom steps and genuine Adobe High/Low quality controls work');
 
     await ui.locator('#address').fill(base+'/one');
     await ui.locator('#address').press('Enter');
