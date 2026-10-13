@@ -11,7 +11,7 @@ class Store {
       for (const key of ['bookmarks', 'history', 'library', 'downloads', 'tabs']) if (Array.isArray(saved[key])) this.data[key] = saved[key];
       this.data.settings = { ...this.data.settings, ...saved.settings };
       if (!['current', 'light'].includes(this.data.settings.theme)) this.data.settings.theme = 'current';
-      if (!['high', 'low'].includes(this.data.settings.flashQuality)) this.data.settings.flashQuality = 'high';
+      if (!['high', 'medium', 'low'].includes(this.data.settings.flashQuality)) this.data.settings.flashQuality = 'high';
       this.data.downloads = this.data.downloads.map(d => ({ ...d, state: d.state === 'progressing' ? 'interrupted' : d.state }));
     } catch { /* A missing or damaged profile starts with defaults. */ }
   }

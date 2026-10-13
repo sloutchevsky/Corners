@@ -1,11 +1,11 @@
-# Flashborn 1.4.0
+# Flashborn 1.5.0
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.4.0-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.5.0-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -33,16 +33,17 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 - Pages with embedded Flash, including framesets, are detected and opened in native mode.
 - Click the **lightning button** for pages that hide Flash behind detection scripts,
   or to switch a website between modern and native mode.
+- The title bar uses a static first frame of the same gold bolt, without the application name.
 - The gold lightning button spins once every two seconds while loading, then
   finishes its current turn. The About screen uses a larger continuous animation.
 - The half-filled circle switches between dark grey and light grey, rotating
   180 degrees each time. Theme choice is saved.
 - The three-dot menu uses a separate popup window above Flash content, with
-  inline Chrome-style zoom controls, fullscreen, and Adobe High/Low Flash quality.
-- High/Low quality is saved and applies to open native movies and future loads.
+  inline Chrome-style zoom controls, fullscreen, and Adobe High/Medium/Low Flash quality.
+- High/Medium/Low quality is saved and applies to open native movies and future loads.
 - The sidebar provides tabs, bookmarks, history, downloads, settings and a SWF library.
 - The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
-  Its controls stay visible in fullscreen. Background opens a color wheel, defaulting to white.
+  Its controls stay visible in fullscreen. Background opens a color wheel with a screen eyedropper, defaulting to white.
   Each library movie saves its background. Color changes recreate the Flash instance and
   restore its timeline position; interactive game/script state is restarted.
 - Flash library offers **Open HTML with SWF** and **Open a SWF**. Both reveal an
@@ -131,10 +132,11 @@ npm test
 npm run test:smoke
 npm run test:files
 npm run test:refinements
+npm run test:polish
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.4.0-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.5.0-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -148,6 +150,10 @@ visibility after tab switching, framesets, and classic plugin detection scripts.
 The file/UI checks cover real HTML, image, video, PDF and SWF drops, relative assets,
 URL suggestions, keyboard selection and the copyright link. Results and screenshots
 are in `test-output`.
+
+The polish checks verify the exact first-frame title bolt, the 70px About offset,
+real Adobe Low/Medium/High quality, native eyedropper opening and cancellation,
+selected-color application, and quality/background persistence after restart.
 
 Version 1.1.1 fixes native windows that were rendering while Electron considered
 them hidden. Visibility is now synchronized with the legacy BrowserWindow itself.

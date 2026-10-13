@@ -88,7 +88,7 @@ async function command(action, args) {
   const wc = window.webContents;
   switch (action) {
     case 'navigate': if (!isWeb(args.url)) throw new Error('Only HTTP and HTTPS pages can use native Flash mode.'); source = null; await wc.loadURL(args.url).catch(e => { if (e.code !== 'ERR_ABORTED') throw e; }); break;
-    case 'movie': source = args; quality = args.quality === 'low' ? 'low' : 'high'; await wc.loadURL('flashnative://player/index.html'); await applySettings(); break;
+    case 'movie': source = args; quality = ['low', 'medium', 'high'].includes(args.quality) ? args.quality : 'high'; await wc.loadURL('flashnative://player/index.html'); await applySettings(); break;
     case 'local-html': source = { ...args, kind: 'html', path: fs.realpathSync(args.path) }; await wc.loadURL('flashnative://document/' + source.token + '/' + encodeURIComponent(path.basename(source.path))); await applySettings(); break;
     case 'back': if (wc.canGoBack()) wc.goBack(); break;
     case 'forward': if (wc.canGoForward()) wc.goForward(); break;
@@ -109,7 +109,7 @@ async function command(action, args) {
       source.background = args.color.toLowerCase();
       wc.send('player:state', { background: source.background });
       break;
-    case 'quality': quality = args.quality === 'low' ? 'low' : 'high'; await applySettings(); break;
+    case 'quality': quality = ['low', 'medium', 'high'].includes(args.quality) ? args.quality : 'high'; await applySettings(); break;
     case 'theme': theme = args.theme === 'light' ? 'light' : 'current'; nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark'; await applySettings(); break;
     case 'print': wc.print(); break;
     case 'find': if (args.text) wc.findInPage(args.text, { forward: args.forward !== false, findNext: !args.next }); else wc.stopFindInPage('clearSelection'); break;

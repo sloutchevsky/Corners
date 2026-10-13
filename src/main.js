@@ -37,7 +37,7 @@ const documents = new Map();
 let stateTimer, menuWindow, menuOpen = false, zoomWindow, zoomTimer, editMenu;
 let zoomQueue = Promise.resolve();
 let suggestionWindow, suggestionData = null;
-let colorWindow, colorTabId;
+let colorWindow, colorTabId, colorPicking = false;
 
 const activeTab = () => tabs.find(t => t.id === activeId);
 const live = t => !!t?.view?.webContents && !t.view.webContents.isDestroyed();
@@ -50,7 +50,7 @@ function publicTab(t) {
     canBack: wc?.navigationHistory.canGoBack() || false, canForward: wc?.navigationHistory.canGoForward() || false, zoom: Math.round((wc?.getZoomFactor() || 1) * 100) };
 }
 function getState() {
-  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, suggestions: suggestionData, flashBackground: activeTab()?.flashSource?.background || '#ffffff', maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
+  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, suggestions: suggestionData, flashBackground: activeTab()?.flashSource?.background || '#ffffff', colorPicking, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
     history: store.data.history, library: store.data.library, downloads: store.data.downloads, settings: store.data.settings,
     flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: '32.0.0.363', flashRuntime: '9.4.4' };
 }
@@ -455,7 +455,7 @@ function setFullscreen(value) {
   layout(); sendState(true);
 }
 function closeColorPicker() {
-  const popup = colorWindow; colorWindow = null; colorTabId = null;
+  const popup = colorWindow; colorWindow = null; colorTabId = null; colorPicking = false;
   if (popup && !popup.isDestroyed()) popup.close();
 }
 async function showColorPicker(t) {
@@ -471,8 +471,8 @@ async function showColorPicker(t) {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
   popup.setAlwaysOnTop(true, 'pop-up-menu'); popup.setMenu(null);
   popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); popup.webContents.on('will-navigate', event => event.preventDefault());
-  popup.on('blur', () => { if (colorWindow === popup) closeColorPicker(); });
-  popup.on('closed', () => { if (colorWindow === popup) { colorWindow = null; colorTabId = null; } });
+  popup.on('blur', () => { if (colorWindow === popup && !colorPicking) closeColorPicker(); });
+  popup.on('closed', () => { if (colorWindow === popup) { colorWindow = null; colorTabId = null; colorPicking = false; } });
   await popup.loadURL(COLOR_URL);
   if (colorWindow === popup && !popup.isDestroyed()) { popup.show(); popup.focus(); sendState(true); }
 }
@@ -667,6 +667,11 @@ async function command(action, args = {}) {
     case 'menu-find': panel = null; layout(); win.webContents.focus(); win.webContents.send('browser:find', { open: true }); break;
     case 'fullscreen': setFullscreen(typeof args.value === 'boolean' ? args.value : !win.isFullScreen()); break;
     case 'color-close': closeColorPicker(); break;
+    case 'color-picking':
+      if (!colorWindow || colorTabId !== t?.id || typeof args.value !== 'boolean') throw new Error('Open the background color dialog first.');
+      colorPicking = args.value;
+      if (!colorPicking) colorWindow.focus();
+      break;
     case 'flash-background': {
       if (!t?.native || t.kind !== 'flash' || (colorTabId && colorTabId !== t.id)) throw new Error('Open a SWF to set its background.');
       if (!/^#[0-9a-f]{6}$/i.test(args.color || '')) throw new Error('Enter a six-digit hex color.');
@@ -686,7 +691,7 @@ async function command(action, args = {}) {
       break;
     }
     case 'flash-quality': {
-      if (!['high', 'low'].includes(args.quality)) throw new Error('Choose high or low Flash quality.');
+      if (!['high', 'medium', 'low'].includes(args.quality)) throw new Error('Choose high, medium or low Flash quality.');
       store.data.settings.flashQuality = args.quality; store.save();
       await Promise.all(tabs.filter(tab => tab.native).map(tab => tab.native.call('quality', { quality: args.quality })));
       break;
@@ -814,7 +819,7 @@ async function boot() {
     if (typeof action !== 'string' || !args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid browser command.');
     if (fromZoom && !['state', 'zoom', 'zoom-hold', 'zoom-release'].includes(action)) throw new Error('Unsupported zoom command.');
     if (fromSuggestions && !['state', 'suggest-open'].includes(action)) throw new Error('Unsupported address suggestion command.');
-    if (fromColor && !['state', 'flash-background', 'color-close'].includes(action)) throw new Error('Unsupported color picker command.');
+    if (fromColor && !['state', 'flash-background', 'color-close', 'color-picking'].includes(action)) throw new Error('Unsupported color picker command.');
     if (fromMenu && !['state', 'menu-close', 'new-tab', 'open-file', 'native-mode', 'panel', 'menu-find', 'print', 'zoom', 'mute', 'flash-quality', 'fullscreen'].includes(action)) throw new Error('Unsupported menu command.');
     if (fromMenu && !['state', 'zoom', 'flash-quality', 'mute', 'menu-close'].includes(action)) closeBrowserMenu(true);
     try { return { ok: true, state: await command(action, args) }; }

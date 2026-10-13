@@ -1,7 +1,7 @@
 'use strict';
 function settingsScript(quality, theme) {
   return `(() => {
-    const quality = ${JSON.stringify(quality === 'low' ? 'LOW' : 'HIGH')};
+    const quality = ${JSON.stringify(['low', 'medium', 'high'].includes(quality) ? quality.toUpperCase() : 'HIGH')};
     const theme = ${JSON.stringify(theme === 'light' ? 'light' : 'current')};
     let loading = false, applied = 0;
     function visit(frame) {

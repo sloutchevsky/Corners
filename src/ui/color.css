@@ -8,3 +8,4 @@ canvas{display:block;margin:auto;width:240px;height:240px;cursor:crosshair;touch
 .color-value{display:flex;align-items:center;gap:7px}#color-preview{width:22px;height:22px;border-radius:4px;border:1px solid #aaa;flex:none;background:#fff}
 #color-hex{width:76px;background:transparent;color:var(--menu-text);border:1px solid var(--menu-border);border-radius:5px;padding:5px;font:11px Consolas,monospace}
 .color-value button{font-size:11px;padding:5px 7px}p{margin:10px 0 0;font-size:10px;color:var(--menu-muted)}
+#color-pick{display:grid;place-items:center;width:28px;height:28px;padding:5px;flex:none}#color-pick svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}#color-pick:disabled{opacity:.45;cursor:default}

@@ -2,6 +2,7 @@
 const wheel = document.getElementById('color-wheel'), ctx = wheel.getContext('2d');
 const brightness = document.getElementById('brightness'), hex = document.getElementById('color-hex');
 let hue = 0, saturation = 0, value = 1, applied, painting = false;
+let picking = false, pickAbort;
 function rgb(h, s, v) {
   const channel = n => { const k = (n + h / 60) % 6; return Math.round(255 * v * (1 - s * Math.max(0, Math.min(k, 4 - k, 1)))); };
   return [channel(5), channel(3), channel(1)];
@@ -52,8 +53,27 @@ brightness.addEventListener('input', () => { value = Number(brightness.value) / 
 brightness.addEventListener('change', apply);
 hex.addEventListener('change', () => { if (/^#[0-9a-f]{6}$/i.test(hex.value)) { setColor(hex.value); apply(); } else { document.getElementById('color-status').textContent = 'Use a six-digit hex color, such as #ffffff.'; } });
 document.querySelectorAll('[data-color]').forEach(button => button.addEventListener('click', () => { setColor(button.dataset.color); apply(); }));
+document.getElementById('color-pick').addEventListener('click', async () => {
+  if (picking) return;
+  const button = document.getElementById('color-pick'), status = document.getElementById('color-status');
+  if (typeof EyeDropper !== 'function') { status.textContent = 'Screen color picking is unavailable on this system.'; return; }
+  picking = true; button.disabled = true;
+  try {
+    const result = await window.browser.call('color-picking', { value: true });
+    if (!result.ok) throw new Error(result.error);
+    status.textContent = 'Click a color on your screen. Esc cancels.';
+    pickAbort = new AbortController();
+    const selected = await new EyeDropper().open({ signal: pickAbort.signal });
+    setColor(selected.sRGBHex); await apply();
+  } catch (error) {
+    status.textContent = error.name === 'AbortError' ? 'Color picking canceled.' : error.message;
+  } finally {
+    pickAbort = null; picking = false; button.disabled = false;
+    await window.browser.call('color-picking', { value: false });
+  }
+});
 document.getElementById('close').addEventListener('click', () => window.browser.call('color-close'));
-document.addEventListener('keydown', event => { if (event.key === 'Escape') window.browser.call('color-close'); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !picking) window.browser.call('color-close'); });
 function render(state) {
   document.body.dataset.theme = state.settings.theme || 'current';
   if (!painting && state.flashBackground !== applied) { applied = state.flashBackground; setColor(applied); }
