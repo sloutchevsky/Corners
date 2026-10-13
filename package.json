@@ -1,20 +1,24 @@
 {
   "name": "flashborn-browser",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "A minimal dark Windows browser with native Adobe Flash playback",
   "main": "src/main.js",
-  "author": "Vas Sloutchevsky",
+  "author": {
+    "name": "Vas Sloutchevsky",
+    "email": "sloutchevsky@gmail.com"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
     "prepare:assets": "node scripts/prepare-native.js",
     "test": "node --test tests/*.test.js",
     "test:smoke": "node scripts/smoke.js",
-    "dist": "npm run prepare:assets && electron-builder --win nsis --x64",
-    "dist:portable": "npm run prepare:assets && electron-builder --win portable --x64",
+    "dist": "npm run prepare:icon && npm run prepare:assets && electron-builder --win nsis --x64",
+    "dist:portable": "npm run prepare:icon && npm run prepare:assets && electron-builder --win portable --x64",
     "test:files": "node scripts/file-ui-check.js",
     "test:refinements": "node scripts/refinements-check.js",
-    "test:polish": "node scripts/polish-check.js"
+    "test:polish": "node scripts/polish-check.js",
+    "prepare:icon": "node scripts/create-icon.js"
   },
   "dependencies": {
     "koffi": "3.3.2"
@@ -71,7 +75,8 @@
       "shortcutName": "Flashborn",
       "deleteAppDataOnUninstall": false,
       "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico"
+      "uninstallerIcon": "assets/icon.ico",
+      "include": "assets/installer.nsh"
     },
     "fileAssociations": [
       {
@@ -81,6 +86,7 @@
         "role": "Viewer",
         "icon": "assets/icon.ico"
       }
-    ]
+    ],
+    "copyright": "© 2026 Vas Sloutchevsky"
   }
 }

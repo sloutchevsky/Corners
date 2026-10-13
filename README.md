@@ -1,11 +1,11 @@
-# Flashborn 1.5.0
+# Flashborn 1.5.1
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.5.0-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.5.1-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -29,6 +29,10 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 - Ctrl+mouse wheel and Ctrl+/− visibly zoom pages, with a Chrome-style percentage popup and Reset button.
 - Right-click the address, home search or find field for Select all, Cut, Copy and Paste.
 - Click the upper-left logo to open About. The copyright line opens sloutchevsky.com.
+  The About email link opens the default mail app.
+- On New Tab, click the gold bolt tile or its caption to open the Flash library.
+- App and installer icons use the first frame of the same darker gold animation.
+  The Windows publisher/company metadata and installer welcome screen name Vas Sloutchevsky.
 - Direct SWF URLs and Flash MIME responses open in the native player.
 - Pages with embedded Flash, including framesets, are detected and opened in native mode.
 - Click the **lightning button** for pages that hide Flash behind detection scripts,
@@ -127,6 +131,7 @@ untouched. Native binaries are excluded from the source archive.
 
 ```powershell
 npm ci
+npm run prepare:icon
 npm run prepare:assets
 npm test
 npm run test:smoke
@@ -136,7 +141,7 @@ npm run test:polish
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.5.0-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.5.1-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -151,7 +156,7 @@ The file/UI checks cover real HTML, image, video, PDF and SWF drops, relative as
 URL suggestions, keyboard selection and the copyright link. Results and screenshots
 are in `test-output`.
 
-The polish checks verify the exact first-frame title bolt, the 70px About offset,
+The polish checks verify the exact first-frame title bolt, the smaller About branding, 40px text offset, theme-independent grey metadata,
 real Adobe Low/Medium/High quality, native eyedropper opening and cancellation,
 selected-color application, and quality/background persistence after restart.
 

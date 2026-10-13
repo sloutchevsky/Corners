@@ -698,6 +698,7 @@ async function command(action, args = {}) {
     }
     case 'native-mode': if (t && isWebURL(t.url)) { if (t.native) { t.native.dispose(); t.native = null; t.forceModern = true; await navigate(t, t.url); } else { t.forceModern = false; await activateNative(t, t.url); } } break;
     case 'navigate': closeSuggestions(); closeZoomPopup(); panel = null; await navigate(t, args.value); break;
+    case 'contact-email': await shell.openExternal('mailto:sloutchevsky@gmail.com'); break;
     case 'suggest': await showSuggestions(args); break;
     case 'suggest-close': closeSuggestions(); break;
     case 'suggest-select': if (suggestionData) { const index = suggestionData.selected + (args.direction === -1 ? -1 : 1); suggestionData.selected = index < -1 ? suggestionData.items.length - 1 : index >= suggestionData.items.length ? -1 : index; } break;

@@ -10,7 +10,8 @@
   const rotate = (point, angle) => [point[0]*Math.cos(angle)+point[2]*Math.sin(angle), point[1], -point[0]*Math.sin(angle)+point[2]*Math.cos(angle)];
   const light = normalize([-0.45, 0.65, 1]);
   const halfVector = normalize([light[0], light[1], light[2] + 1]);
-  const metalColor = (rgb, brightness) => `rgb(${rgb.map(c => Math.round(Math.min(255, c * brightness))).join(',')})`;
+  // Keep the same darker gold on light and dark backgrounds, including exported app icons.
+  const metalColor = (rgb, brightness) => `rgb(${rgb.map(c => Math.round(Math.min(255, c * brightness) * 0.84)).join(',')})`;
   function insetPolygon(points, distance) {
     return points.map((point, i) => {
       const previous = points[(i + points.length - 1) % points.length];

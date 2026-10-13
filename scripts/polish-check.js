@@ -19,10 +19,29 @@ async function run() {
   const quality = () => script('document.getElementById("flash-movie").TGetProperty("/",19)');
   try {
     let ui = await launch();
+    assert.equal(await ui.locator('.home-mark').count(), 0);
+    assert.ok(!(await ui.locator('.home').innerText()).includes('Your corner of the web'));
+    await ui.locator('#home-bolt').click(); await poll(state, s => s.panel === 'library');
+    await command('panel', { name: null });
+    await ui.locator('.flash-card-description').click(); await poll(state, s => s.panel === 'library');
+    await command('panel', { name: null });
+    assert.equal(await ui.locator('#home-bolt').getAttribute('data-angle'), '0.0000');
+    const homeIcon = await ui.locator('#home-bolt').evaluate(el => el.toDataURL().split(',')[1]);
+    const appIcon = await app.evaluate(({ app }) => process.getBuiltinModule('fs').readFileSync(process.getBuiltinModule('path').join(app.getAppPath(), 'assets', 'icon.png')).toString('base64'));
+    assert.deepEqual(Buffer.from(appIcon, 'base64'), fs.readFileSync(path.join(root, 'assets', 'icon.png')));
+    const ico = fs.readFileSync(path.join(root, 'assets', 'icon.ico'));
+    assert.deepEqual(fs.readFileSync(path.join(root, 'src', 'ui', 'brand', 'bolt.png')), fs.readFileSync(path.join(root, 'assets', 'icon.png')));
+    assert.deepEqual(fs.readFileSync(path.join(root, 'src', 'legacy', 'bolt.png')), fs.readFileSync(path.join(root, 'assets', 'icon.png')));
+    assert.equal(ico.readUInt16LE(4), 7);
+    const sizes = [];
+    for (let n = 0; n < ico.readUInt16LE(4); n++) { const entry = 6 + n * 16, size = ico[entry] || 256; sizes.push(size); if (size === 128) assert.deepEqual(ico.subarray(ico.readUInt32LE(entry + 12), ico.readUInt32LE(entry + 12) + ico.readUInt32LE(entry + 8)), Buffer.from(homeIcon, 'base64')); }
+    assert.deepEqual(sizes, [16, 24, 32, 48, 64, 128, 256]);
+    fs.writeFileSync(path.join(output, 'new-tab-1.5.1.png'), await ui.screenshot());
+    pass('New Tab bolt tile and caption both open the library; the obsolete top label is removed and the tile matches the Windows icon frame');
     await command('panel', { name: 'about' });
     // Layout measured before these changes, with the same 1280×820 window bounds.
     const baseline = {
-      logo: { x: 356.8000183105469, y: 277, width: 258, height: 34 },
+      logo: { x: 356.8000183105469, y: 347, width: 258, height: 34 },
       bolt: { x: 335.8000183105469, y: 145, width: 112, height: 112 },
       motto: { x: 575.4874877929688, y: 10.800000190734863, width: 129.02500915527344, height: 14.40000057220459 },
       controls: { x: 1142, y: 0, width: 138, height: 36 }
@@ -35,12 +54,30 @@ async function run() {
     assert.ok(await ui.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 96; const bolt = new GoldLightning(canvas); const same = canvas.toDataURL() === document.getElementById('title-bolt').toDataURL(); bolt.dispose(); return same; }));
     const titlePixels = await ui.locator('#title-bolt').evaluate(el => el.toDataURL());
     pass('Title bar has only the exact first-frame gold bolt; motto and window controls retain their positions');
-    sameRect(await rect('.about-bolt'), baseline.bolt); sameRect(await rect('.about-wordmark'), { ...baseline.logo, y: baseline.logo.y + 70 });
-    assert.equal(await ui.locator('.about-copy p').first().getAttribute('class'), 'about-dedication');
+    sameRect(await rect('.about-bolt'), { ...baseline.bolt, width: baseline.bolt.width * .7, height: baseline.bolt.height * .7 });
+    sameRect(await rect('.about-wordmark'), { ...baseline.logo, width: baseline.logo.width * .7, height: baseline.logo.height * .7 });
+    assert.ok(Math.abs((await rect('.about-motto')).y - 444.20001220703125) < .1);
+    assert.equal(await ui.locator('.about-text p').first().getAttribute('class'), 'about-motto');
+    assert.equal(await ui.locator('.about-text > p').nth(1).getAttribute('class'), 'about-dedication');
+    assert.equal(await ui.locator('.about-email').getAttribute('href'), 'mailto:sloutchevsky@gmail.com');
     const dedication = await ui.locator('.about-dedication').innerText(); assert.ok(dedication.startsWith('This browser is dedicated to the team at Firstborn')); assert.ok(dedication.includes('sloutchevsky@gmail.com'));
     const angle = await ui.locator('#about-bolt').getAttribute('data-angle'); await poll(() => ui.locator('#about-bolt').getAttribute('data-angle'), value => value !== angle);
-    fs.writeFileSync(path.join(output, 'about-1.5.0.png'), await ui.screenshot());
-    pass('About wordmark moves down exactly 70px, its bolt keeps spinning in place, and the dedication is the first paragraph');
+    const expectedOrder = ['about-motto', 'about-dedication', 'about-detail', 'about-note', 'about-copyright', 'about-license'];
+    assert.deepEqual(await ui.locator('.about-text').evaluate(el => Array.from(el.children).map(child => child.className)), expectedOrder);
+    for (const theme of ['current', 'light']) {
+      if ((await state()).settings.theme !== theme) await command('theme');
+      await poll(() => ui.locator('body').getAttribute('data-theme'), value => value === theme);
+      const colors = await ui.evaluate(() => ({ primary: [...document.querySelectorAll('.about-motto,.about-dedication,.about-email')].map(el => getComputedStyle(el).color), secondary: [...document.querySelectorAll('.about-detail dt,.about-detail dd,.about-note,.about-copyright,.about-license,.about-license summary')].map(el => getComputedStyle(el).color) }));
+      assert.ok(colors.primary.every(color => color === (theme === 'current' ? 'rgb(255, 255, 255)' : 'rgb(51, 51, 51)')), JSON.stringify(colors));
+      assert.ok(colors.secondary.every(color => color === 'rgb(128, 128, 128)'), JSON.stringify(colors));
+      fs.writeFileSync(path.join(output, `about-${theme}-1.5.1.png`), await ui.screenshot());
+    }
+    await command('theme');
+    await app.evaluate(({ shell }) => { global.__originalOpenExternal = shell.openExternal; shell.openExternal = async url => { global.__mailLinkOpened = url; }; });
+    try { await ui.locator('.about-email').click(); await poll(() => app.evaluate(() => global.__mailLinkOpened), value => value === 'mailto:sloutchevsky@gmail.com'); assert.equal((await state()).panel, 'about'); }
+    finally { await app.evaluate(({ shell }) => { shell.openExternal = global.__originalOpenExternal; }); }
+    pass('About branding is 30% smaller, body starts 40px lower, paragraphs follow the requested order and both themes use 50% grey metadata');
+    pass('About email invokes the default mail app with the exact mailto URL and keeps the About panel open');
     await command('navigate', { value: `http://127.0.0.1:${server.address().port}/slow` });
     await poll(() => ui.locator('#loading-bolt').getAttribute('data-angle'), value => Number(value) > .2);
     assert.equal(await ui.locator('#title-bolt').evaluate(el => el.toDataURL()), titlePixels); assert.equal(await ui.locator('#title-bolt').getAttribute('data-motion'), 'idle');
@@ -48,6 +85,7 @@ async function run() {
     pass('Title bolt stays on frame one while the toolbar bolt spins during actual page loading');
 
     await app.evaluate(({}, file) => global.__flashborn.openLocal(file), path.join(root, 'assets', 'Flashborn-Demo.swf')); await ready();
+    assert.equal(await script('document.querySelector("img.bolt").complete && document.querySelector("img.bolt").naturalWidth'), 256);
     await ui.locator('#menu-button').click();
     const menu = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/menu.html'), Boolean);
     assert.deepEqual(await menu.locator('[data-quality]').evaluateAll(buttons => buttons.map(b => b.textContent)), ['Low', 'Medium', 'High']);
@@ -56,7 +94,7 @@ async function run() {
       await poll(state, s => s.settings.flashQuality === value); assert.equal(await menu.locator(`[data-quality="${value}"]`).getAttribute('aria-pressed'), 'true');
     }
     assert.ok(await menu.locator('[data-quality="medium"]').evaluate(el => { const r = el.getBoundingClientRect(); return r.right <= innerWidth && r.bottom <= innerHeight; }));
-    fs.writeFileSync(path.join(output, 'medium-quality-1.5.0.png'), await menu.screenshot()); await command('menu-close');
+    fs.writeFileSync(path.join(output, 'medium-quality-1.5.1.png'), await menu.screenshot()); await command('menu-close');
     pass('Low, Medium and High buttons change genuine Adobe rendering quality, with the selected state shown in the menu');
 
     await script('document.getElementById("background").click()');
@@ -83,7 +121,7 @@ async function run() {
     assert.equal(await script('document.getElementById("flash-movie").getAttribute("bgcolor")'), '#336699');
     assert.equal(await color.locator('#color-hex').inputValue(), '#336699'); assert.ok(await color.locator('#color-pick').isEnabled());
     assert.ok(await color.locator('.color-value').evaluate(el => Array.from(el.children).every(child => { const r = child.getBoundingClientRect(); return r.right <= innerWidth - 10 && r.bottom <= innerHeight; })));
-    fs.writeFileSync(path.join(output, 'eyedropper-1.5.0.png'), await color.screenshot()); await command('color-close');
+    fs.writeFileSync(path.join(output, 'eyedropper-1.5.1.png'), await color.screenshot()); await command('color-close');
     pass('Eyedropper selection reaches the real Flash background and hex field; focus changes during picking keep the dialog open');
 
     await app.close(); app = null; ui = await launch(); assert.equal((await state()).settings.flashQuality, 'medium');

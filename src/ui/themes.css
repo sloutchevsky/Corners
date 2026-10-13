@@ -28,10 +28,10 @@ body[data-theme="light"] {
 .native-bolt-button { padding:0; }
 .native-bolt-button:disabled { opacity:1; }
 #theme-icon { transition:transform .45s cubic-bezier(.25,.75,.25,1); }
-.about-bolt { display:block; width:112px; height:112px; margin:0 0 20px -21px; }
+.about-bolt { display:block; width:78.4px; height:78.4px; margin:0 0 53.6px -21px; }
 .about-copy { padding-top:70px; }
 .about-dedication { max-width:650px; color:var(--text); font-size:13px; line-height:1.8; margin:0 0 20px; }
-.panel .about-wordmark { width:258px; height:34px; margin-bottom:20px; }
+.panel .about-wordmark { width:180.6px; height:23.8px; margin-bottom:30.2px; }
 .about-copyright { display:block; margin-top:28px; font-size:12px; color:var(--text); text-decoration:none; width:max-content; }
 .about-copyright:hover { color:var(--text); text-decoration:none; }
 .reorder-handle { padding:0; width:18px; flex:none; color:var(--muted); cursor:grab; }
@@ -112,3 +112,22 @@ body[data-theme="light"] .find small { color:#666; }
 body[data-theme="light"] .find button:hover { background:#ccc; }
 body[data-theme="light"] .toast { background:#f3f3f3; border-color:#aaa; }
 @media(prefers-reduced-motion:reduce) { #theme-icon { transition:none; } }
+
+.flash-library-link { display:flex; align-items:center; gap:15px; flex:1; min-width:0; padding:0; text-align:left; background:none; }
+.flash-library-link .flash-card-icon { flex:none; }
+#home-bolt { display:block; width:40px; height:40px; }
+.flash-card-title { display:block; font-size:13px; font-weight:500; margin:0 0 6px; color:var(--text); }
+.flash-card-description { display:block; font-size:11px; color:var(--muted); }
+.flash-library-link:hover .flash-card-title { text-decoration:underline; text-underline-offset:3px; }
+.about-panel { --about-ink:#fff; }
+body[data-theme="light"] .about-panel { --about-ink:#333; }
+.about-text { padding-top:40px; color:#808080; }
+.about-panel .about-motto, .about-panel .about-dedication { max-width:650px; margin:0 0 20px; font-size:13px; line-height:1.8; color:var(--about-ink); }
+.about-email { color:inherit; text-underline-offset:3px; }
+.about-panel .about-text .about-detail,
+.about-panel .about-text .about-detail dt,
+.about-panel .about-text .about-detail dd,
+.about-panel .about-text .about-note,
+.about-panel .about-text .about-copyright,
+.about-panel .about-text .about-license,
+.about-panel .about-text .about-license summary { color:#808080; }

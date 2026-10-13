@@ -76,9 +76,9 @@ function registerProtocol() {
         const relative = path.relative(root, file);
         if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error('Asset outside selected movie folder');
         data = fs.readFileSync(file); mimeType = 'application/octet-stream';
-      } else if (url.hostname === 'player' && ['/', '/index.html', '/player.js', '/player.css'].includes(url.pathname)) {
+      } else if (url.hostname === 'player' && ['/', '/index.html', '/player.js', '/player.css', '/bolt.png'].includes(url.pathname)) {
         const name = url.pathname === '/' || url.pathname === '/index.html' ? 'player.html' : url.pathname.slice(1);
-        data = fs.readFileSync(path.join(__dirname, name)); mimeType = name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html';
+        data = fs.readFileSync(path.join(__dirname, name)); mimeType = name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : name.endsWith('.png') ? 'image/png' : 'text/html';
       } else return callback({ statusCode: 404, data: Buffer.from('Not found') });
       callback({ data, mimeType, headers: { 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'self' https: http:; connect-src 'self'; img-src 'self' data:", 'Access-Control-Allow-Origin': 'flashnative://player' } });
     } catch (e) { callback({ statusCode: 400, data: Buffer.from(e.message), mimeType: 'text/plain' }); }
