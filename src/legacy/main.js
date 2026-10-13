@@ -115,6 +115,24 @@ async function command(action, args) {
     case 'find': if (args.text) wc.findInPage(args.text, { forward: args.forward !== false, findNext: !args.next }); else wc.stopFindInPage('clearSelection'); break;
     case 'clear-data': await runtimeSession.clearStorageData(); await runtimeSession.clearCache(); break;
     case 'capture': return (await wc.capturePage()).toPNG().toString('base64');
+    case 'memory': {
+      // Each Flash tab has its own complete runtime, including the PPAPI player.
+      const metrics = app.getAppMetrics();
+      const kb = metrics.reduce((total, metric) => total + (metric.memory && Number.isFinite(metric.memory.privateBytes) ? metric.memory.privateBytes : metric.memory && metric.memory.workingSetSize || 0), 0);
+      return { megabytes: kb > 0 ? Math.max(1, Math.round(kb / 1024)) : null };
+    }
+    case 'test-paints': {
+      if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
+      if (!window.paintStats) {
+        window.paintStats = {};
+        for (const [name, message] of Object.entries({ frame: 0x83, erase: 0x14, paint: 0xf, size: 5 })) {
+          window.paintStats[name] = 0;
+          window.hookWindowMessage(message, () => { window.paintStats[name]++; });
+        }
+      }
+      if (args.reset) for (const name of Object.keys(window.paintStats)) window.paintStats[name] = 0;
+      return { ...window.paintStats };
+    }
     case 'evaluate': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); return wc.executeJavaScript(args.code, true);
     case 'test-wheel': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseWheel', x: args.x || 100, y: args.y || 150, deltaX: 0, deltaY: -args.deltaY, modifiers: 2 }); break;
     case 'close': shuttingDown = true; window.close(); app.quit(); return;

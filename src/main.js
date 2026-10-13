@@ -44,6 +44,7 @@ let predictionAbort;
 const searchPredictions = new SearchPredictions((url, options) => net.fetch(url, options));
 let colorWindow, colorTabId, colorPicking = false, colorPreview = null, screenColorPicker, tabMenu;
 let privateSession;
+let layoutScale;
 const privateDownloads = [];
 
 const activeTab = () => tabs.find(t => t.id === activeId);
@@ -100,6 +101,7 @@ function persistTabs() {
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [width, height] = win.getContentSize();
+  layoutScale = screen.getDisplayMatching(win.getBounds()).scaleFactor;
   for (const t of tabs) {
     const full = win.isFullScreen();
     const left = full ? 0 : collapsed ? 68 : 248;
@@ -513,6 +515,7 @@ function setFullscreen(value) {
   layout(); sendState(true);
 }
 function closeColorPicker() {
+  if (!colorWindow && !colorPicking && !colorPreview && !screenColorPicker) return;
   const popup = colorWindow; colorWindow = null; colorTabId = null; colorPicking = false; colorPreview = null;
   screenColorPicker?.cancel(); screenColorPicker = null;
   if (popup && !popup.isDestroyed()) popup.close();
@@ -753,6 +756,17 @@ async function command(action, args = {}) {
   const t = activeTab(); const wc = live(t) ? t.view.webContents : null;
   switch (action) {
     case 'state': return getState();
+    case 'tab-memory': {
+      const tab = tabs.find(item => item.id === args.id);
+      if (!tab) throw new Error('This tab is closed.');
+      if (tab.native) return { tabMemory: { id: tab.id, ...(await tab.native.call('memory')), shared: false } };
+      const contents = tab.kind === 'home' ? win.webContents : live(tab) ? tab.view.webContents : null;
+      const pid = contents?.getOSProcessId();
+      const metric = pid && app.getAppMetrics().find(item => item.pid === pid);
+      const kb = metric?.memory?.privateBytes ?? metric?.memory?.workingSetSize;
+      const shared = tab.kind === 'home' || tabs.some(other => other.id !== tab.id && !other.native && live(other) && other.view.webContents.getOSProcessId() === pid);
+      return { tabMemory: { id: tab.id, megabytes: Number.isFinite(kb) && kb > 0 ? Math.max(1, Math.round(kb / 1024)) : null, shared } };
+    }
     case 'menu': await showBrowserMenu(); break;
     case 'menu-close': closeBrowserMenu(true); break;
     case 'menu-find': panel = null; layout(); win.webContents.focus(); win.webContents.send('browser:find', { open: true }); break;
@@ -932,7 +946,12 @@ async function boot() {
   win.webContents.on('context-menu', (_event, params) => showEditMenu(win.webContents, params));
   for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeColorPicker(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); layout(); sendState(true); });
   for (const event of ['enter-full-screen', 'leave-full-screen']) win.on(event, () => { for (const t of tabs) if (t.native) t.native.call('host-fullscreen', { value: win.isFullScreen() && t.id === activeId }).then(layout).catch(() => {}); });
-  win.on('move', () => { closeColorPicker(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); });
+  win.on('move', () => {
+    closeColorPicker(); if (menuWindow) closeBrowserMenu(); closeZoomPopup(); closeSuggestions();
+    // Windows moves child HWNDs with their parent. Only a monitor DPI change
+    // requires recalculating the Flash viewport's physical pixel bounds.
+    if (screen.getDisplayMatching(win.getBounds()).scaleFactor !== layoutScale) layout();
+  });
   win.on('minimize', () => { closeZoomPopup(); closeSuggestions(); });
   win.on('close', event => {
     if (!closing && downloadItems.size) {

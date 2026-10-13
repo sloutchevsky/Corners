@@ -1,6 +1,6 @@
 {
   "name": "flashborn-browser",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "A minimal dark Windows browser with native Adobe Flash playback",
   "main": "src/main.js",
   "author": {
@@ -24,6 +24,7 @@
     "test:predictions": "node scripts/predictions-check.js",
     "test:eyedropper": "node scripts/eyedropper-check.js",
     "test:sidebar": "node scripts/sidebar-check.js",
+    "test:window": "node scripts/window-check.js",
     "prepare:icon": "node scripts/create-icon.js"
   },
   "dependencies": {

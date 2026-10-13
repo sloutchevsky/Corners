@@ -1,11 +1,11 @@
-# Flashborn 1.7.1
+# Flashborn 1.7.2
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.7.1-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.7.2-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -53,6 +53,10 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
 - Drag tabs, bookmarks, downloads and Flash library entries to reorder them. With an item
   focused, Alt+Up/Down also moves it. Bookmark, download and library order is saved.
 - When the sidebar collapses, its tabs heading shows only the number of open tabs.
+- Hover a tab for **Memory: XX MB**. Normal pages report their renderer's private
+  memory; Flash tabs include their dedicated runtime and player processes. Shared
+  renderers are identified in the tooltip. Estimates refresh on hover and stay
+  local; measuring an inactive tab does not select it.
 - A completed download shows **NEW** beside Downloads until that panel is opened.
   It remains visible when collapsed and across restart; private badges stay in
   their temporary session. Canceled downloads do not trigger it.
@@ -87,6 +91,9 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   Flashcognito uses the normal new-tab layout and fonts, cooler greys, a silver
   bolt, and 50% page opacity. The top-left wordmark and browser menu open About.
 - The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
+- Moving the window preserves the native Flash child surface. Frame styles are
+  applied once, and geometry/visibility change only when needed; crossing to a
+  monitor with a different display scale recalculates the viewport.
   Its controls stay visible in fullscreen. Background opens a color wheel with a screen eyedropper, defaulting to white.
   Screen picking uses independent topmost windows with a magnifier over a captured
   screen image, so native Flash cannot cover the eyedropper. Click to select a pixel;
@@ -188,10 +195,11 @@ npm run test:ui-update
 npm run test:predictions
 npm run test:eyedropper
 npm run test:sidebar
+npm run test:window
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.7.1-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.7.2-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -218,6 +226,11 @@ About email's copy bubble.
 The sidebar checks measure gear centering across rotation angles, completion
 after hover-out, collapsed counts, both themes, menu grouping, and real download
 completion badges, including restart, acknowledgment, cancellation and privacy.
+
+The window checks count native frame/resize messages during physical moves,
+verify real viewport resizing, and exercise hover memory for normal, inactive,
+shared and Flash tabs. A touched 64 MB renderer allocation verifies the estimate
+responds to actual usage. Set `FLASHBORN_KPF=1` to include the live KPF website.
 
 The polish checks verify the exact first-frame title bolt, the smaller About branding, 40px text offset, theme-independent grey metadata,
 real Adobe Low/Medium/High quality, topmost eyedropper opening and cancellation,

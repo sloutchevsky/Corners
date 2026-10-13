@@ -5,6 +5,8 @@ let dragging = null;
 const predictiveFields = new Map();
 let activePrediction = null;
 let tabRenderKey = '', listRenderKey = '';
+const tabMemory = new Map();
+const memoryRequests = new Map();
 let libraryOpenKind = 'swf';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -19,11 +21,38 @@ async function call(action, args = {}) {
   return result.state;
 }
 function current() { return state?.tabs.find(t => t.id === state.activeId); }
+const memoryKey = tab => tab && JSON.stringify([tab.url, tab.kind, !!tab.native]);
+function tabTooltip(tab) {
+  const measured = tabMemory.get(tab.id);
+  return (tab.private ? 'Flashcognito · ' : '') + (tab.url || 'New tab') + (measured ? '\nMemory: ' + (measured.megabytes === null ? 'unavailable' : measured.megabytes + ' MB') + (measured.shared ? '\nShared renderer' : '') : '');
+}
+async function measureTab(event) {
+  const row = event.target.closest('.tab');
+  if (!row || row.contains(event.relatedTarget)) return;
+  const id = row.dataset.reorderId, tab = state?.tabs.find(t => t.id === id);
+  if (!tab) return;
+  const cached = tabMemory.get(id);
+  if (!cached || cached.page !== memoryKey(tab) || Date.now() - cached.measuredAt > 2000) {
+    if (!memoryRequests.has(id)) {
+      const page = memoryKey(tab);
+      const request = window.browser.call('tab-memory', { id }).then(result => {
+        if (result.ok && result.state.tabMemory.id === id && memoryKey(state?.tabs.find(t => t.id === id)) === page) tabMemory.set(id, { ...result.state.tabMemory, page, measuredAt: Date.now() });
+      }).catch(() => {}).finally(() => memoryRequests.delete(id));
+      memoryRequests.set(id, request);
+    }
+    await memoryRequests.get(id);
+  }
+  if (row.isConnected) row.title = tabTooltip(tab);
+}
+document.getElementById('tabs').addEventListener('pointerover', measureTab);
+document.getElementById('tabs').addEventListener('pointermove', measureTab);
+document.getElementById('tabs').addEventListener('focusin', measureTab);
 const loadingBolt = new GoldLightning(document.getElementById('loading-bolt'));
 const titleBolt = new GoldLightning(document.getElementById('title-bolt'));
 const navigationIcons = [...document.querySelectorAll('[data-nav-icon]')].map(canvas => new GoldNavigation(canvas));
 function render(next) {
   state = next;
+  for (const [id, measured] of tabMemory) if (measured.page !== memoryKey(state.tabs.find(t => t.id === id))) tabMemory.delete(id);
   document.body.classList.toggle('collapsed', state.collapsed);
   document.body.classList.toggle('fullscreen', state.fullscreen);
   const theme = state.settings.theme || 'current';
@@ -47,7 +76,7 @@ function render(next) {
   const nextTabKey = JSON.stringify([state.tabs, state.activeId, state.panel]);
   if (!dragging && nextTabKey !== tabRenderKey) {
     tabRenderKey = nextTabKey;
-    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.private ? 'private-tab' : ''} ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}" title="${escape((tab.private ? 'Flashcognito · ' : '') + (tab.url || 'New tab'))}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}${tab.private ? ' (Flashcognito)' : ''}" aria-description="Drag to reorder, or press Alt and Up or Down. Right-click to duplicate or close."><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.private ? icon('lock') : tab.kind === 'flash' ? icon('flash') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" title="Close tab" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
+    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.private ? 'private-tab' : ''} ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}" title="${escape(tabTooltip(tab))}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}${tab.private ? ' (Flashcognito)' : ''}" aria-description="Drag to reorder, or press Alt and Up or Down. Right-click to duplicate or close."><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.private ? icon('lock') : tab.kind === 'flash' ? icon('flash') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" title="Close tab" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
   }
   document.querySelectorAll('[data-panel]').forEach(el => el.classList.toggle('active', el.dataset.panel === state.panel));
   $('#back').disabled = !t?.canBack;

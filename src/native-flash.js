@@ -92,6 +92,7 @@ class NativeFlash {
       style = ((style & ~0x80000000 & ~0x00c00000 & ~0x00040000) | 0x40000000 | 0x04000000 | 0x02000000) >>> 0;
       api.setStyle(hwnd, -16, style);
       api.parent(hwnd, parent);
+      this.frameStylePending = true;
       clearTimeout(this.readyTimer);
       this.resolveReady(this);
       this.onEvent({ type: 'ready', electron: message.electron, chromium: message.chromium, flash: message.flash });
@@ -116,10 +117,20 @@ class NativeFlash {
   bounds(rect, visible) {
     if (!this.hwnd || !winAPI().valid(this.hwnd)) return;
     const factor = screen.getDisplayMatching(this.host.getBounds()).scaleFactor;
-    winAPI().position(this.hwnd, 0, Math.round(rect.x * factor), Math.round(rect.y * factor), Math.round(rect.width * factor), Math.round(rect.height * factor), 0x0010 | 0x0020 | 0x4000);
-    winAPI().show(this.hwnd, visible ? 4 : 0);
+    const pixels = [rect.x, rect.y, rect.width, rect.height].map(n => Math.round(n * factor));
+    if (this.frameStylePending || !this.lastBounds || pixels.some((n, i) => n !== this.lastBounds[i])) {
+      // Apply the changed WS_CHILD frame once. Repeating FRAMECHANGED or SHOW
+      // during a parent move invalidates/restores the legacy Chromium surface.
+      const flags = 0x0010 | 0x4000 | (this.frameStylePending ? 0x0020 : 0x0004);
+      winAPI().position(this.hwnd, 0, ...pixels, flags);
+      this.lastBounds = pixels; this.frameStylePending = false;
+    }
     // Win32 visibility alone leaves Electron's compositor in its hidden state.
-    if (this.lastVisible !== visible) { this.lastVisible = visible; this.call('visibility', { value: visible }).catch(() => {}); }
+    if (this.lastVisible !== visible) {
+      this.lastVisible = visible;
+      winAPI().show(this.hwnd, visible ? 8 : 0); // SW_SHOWNA preserves current bounds.
+      this.call('visibility', { value: visible }).catch(() => {});
+    }
   }
   focus() { if (this.hwnd) this.call('focus').catch(() => {}); }
   async screenshot() { return this.call('capture'); }
