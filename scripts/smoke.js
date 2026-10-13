@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const demo = require('./create-demo');
+const captureVisible = require('./capture-visible');
 const root = path.join(__dirname, '..');
 const output = path.join(root, 'test-output');
 fs.mkdirSync(output, { recursive: true });
@@ -21,8 +22,11 @@ async function run() {
     if (req.url === '/movie.swf' || req.url === '/mime-flash') { res.writeHead(200, { 'Content-Type': 'application/x-shockwave-flash' }); res.end(demo); return; }
     if (req.url === '/download') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="browser-test.txt"' }); res.end('Flashborn download verified.'); return; }
     if (req.url === '/broken') { res.writeHead(404); res.end('Missing'); return; }
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; object-src 'self'" });
-    if (req.url === '/embed') res.end('<!doctype html><html><head><title>Embedded Flash test</title></head><body style="background:#eee"><h1>Embedded Flash</h1><object type="application/x-shockwave-flash" data="/movie.swf" width="640" height="400"><param name="movie" value="/movie.swf"></object></body></html>');
+    if(req.url==='/detector'){res.writeHead(200,{'Content-Type':'text/html'});res.end(`<html><head><title>Legacy detector</title><script src="/detect.js"></script></head><body></body></html>`);return;}
+    if(req.url==='/detect.js'){res.writeHead(200,{'Content-Type':'text/javascript'});res.end(`var flashPage='/embed',maxVersion=9,requiredVersion=7;var p=navigator.plugins['Shockwave Flash'];var v=p?parseInt(p.description.charAt(p.description.indexOf('.')-1)):0;location.replace(v>=requiredVersion?flashPage:'/noflash.htm');`);return;}
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; object-src 'self'; frame-src 'self'" });
+    if(req.url==='/frameset')res.end('<html><head><title>Flash frameset</title></head><frameset rows="*,0"><frame src="/embed"><frame src="/one"></frameset></html>');
+    else if (req.url === '/embed') res.end('<!doctype html><html><head><title>Embedded Flash test</title></head><body style="background:#eee"><h1>Embedded Flash</h1><object type="application/x-shockwave-flash" data="/movie.swf" width="640" height="400"><param name="movie" value="/movie.swf"></object></body></html>');
     else res.end(`<!doctype html><html><head><title>${req.url === '/two' ? 'Second page' : 'First page'}</title></head><body><h1>${req.url === '/two' ? 'Second page' : 'First page'}</h1><p>Needle find test. Needle.</p><a href="/two" id="next">Next page</a><a href="/one" target="_blank" id="popup">New tab</a><a href="/download" id="download">Download file</a></body></html>`);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -42,7 +46,7 @@ async function run() {
     const state = () => app.evaluate(() => global.__flashborn.getState());
     const pageScript = code => app.evaluate(({ }, code) => {const t=global.__flashborn.activeTab(); return t.native ? t.native.evaluate(code) : t.view.webContents.executeJavaScript(code,true);}, code);
     const saveView = async filename => { await new Promise(resolve => setTimeout(resolve, 700)); const bytes = await app.evaluate(async () => {const t=global.__flashborn.activeTab();return t.native ? t.native.screenshot() : (await t.view.webContents.capturePage()).toPNG().toString('base64');}); fs.writeFileSync(path.join(output, filename), Buffer.from(bytes, 'base64')); };
-    await app.evaluate(() => global.__flashborn.win.showInactive());
+    await app.evaluate(() => {const w=global.__flashborn.win;w.setBounds({x:80,y:80,width:1280,height:820});w.show();w.focus();});
 
     await ui.locator('.home h1').waitFor();
     await saveUI('home.png');
@@ -129,11 +133,23 @@ async function run() {
     assert.equal((await state()).library.length, 1);
     results.push('Genuine Adobe WIN 32,0,0,363 executes SWF frames; pause, mute, restart and library work');
 
+    const flashId=(await state()).activeId;
+    await new Promise(r=>setTimeout(r,400));
+    let visible=await captureVisible(app);
+    assert.ok(visible.creamPixels>1000,'Flash square must be visible on the physical display, not just an offscreen render');
+    fs.writeFileSync(path.join(output,'visible-flash.png'),Buffer.from(visible.png,'base64'));
+    await command('new-tab');await new Promise(r=>setTimeout(r,400));
+    visible=await captureVisible(app);assert.ok(visible.creamPixels<500,'Inactive native tab must be hidden');
+    await command('select-tab',{id:flashId});await new Promise(r=>setTimeout(r,400));
+    visible=await captureVisible(app);assert.ok(visible.creamPixels>1000,'Flash must become visible when its tab is selected again');
+    results.push('Flash pixels are visible on screen and remain correct when switching tabs');
+
     await ui.locator('#menu-button').click();
     await poll(state,s=>s.menuOpen);
     const nativeMenu=await app.evaluate(()=>({items:global.__flashborn.menu.items.map(i=>i.label),flashWindow:global.__flashborn.activeTab().native.hwnd}));
     assert.ok(nativeMenu.flashWindow);
     assert.ok(nativeMenu.items.includes('Native Adobe Flash mode'));
+    await new Promise(r=>setTimeout(r,250));const menuCapture=await captureVisible(app);fs.writeFileSync(path.join(output,'visible-flash-menu.png'),Buffer.from(menuCapture.png,'base64'));
     await app.evaluate(()=>global.__flashborn.menu.closePopup(global.__flashborn.win));
     await poll(state,s=>!s.menuOpen);
     results.push('Three-dot button opens a native popup above the Flash child window');
@@ -165,6 +181,15 @@ async function run() {
     await command('native-mode');
     await poll(()=>pageScript('document.querySelector("object")?.PercentLoaded?.()'),s=>s===100);
     results.push('Native Flash mode can be switched off and back on');
+
+    await command('navigate',{value:base+'/frameset'});
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.native);
+    await poll(()=>pageScript('frames[0].document.querySelector("object")?.PercentLoaded?.()'),s=>s===100);
+    results.push('Flash in a frameset is detected automatically');
+    await command('navigate',{value:base+'/detector'});
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.native&&s.tabs.find(t=>t.id===s.activeId)?.url.endsWith('/embed'));
+    await poll(()=>pageScript('document.querySelector("object")?.PercentLoaded?.()'),s=>s===100);
+    results.push('Classic single-digit Flash detectors recover their real Flash page');
 
     await command('panel', { name: 'library' });
     await saveUI('library.png');

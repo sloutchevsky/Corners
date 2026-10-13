@@ -16,6 +16,10 @@ function winAPI() {
     position: user32.func('int __stdcall SetWindowPos(intptr_t hwnd, intptr_t after, int x, int y, int width, int height, uint32_t flags)'),
     show: user32.func('int __stdcall ShowWindowAsync(intptr_t hwnd, int command)'),
     valid: user32.func('int __stdcall IsWindow(intptr_t hwnd)'),
+    visible: user32.func('int __stdcall IsWindowVisible(intptr_t hwnd)'),
+    getParent: user32.func('intptr_t __stdcall GetParent(intptr_t hwnd)'),
+    rect: user32.func('int __stdcall GetWindowRect(intptr_t hwnd, _Out_ int32_t *rect)'),
+    sibling: user32.func('intptr_t __stdcall GetWindow(intptr_t hwnd, uint32_t direction)'),
     owner: user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hwnd, _Out_ uint32_t *pid)')
   };
   return windows;
@@ -113,9 +117,12 @@ class NativeFlash {
     const factor = screen.getDisplayMatching(this.host.getBounds()).scaleFactor;
     winAPI().position(this.hwnd, 0, Math.round(rect.x * factor), Math.round(rect.y * factor), Math.round(rect.width * factor), Math.round(rect.height * factor), 0x0010 | 0x0020 | 0x4000);
     winAPI().show(this.hwnd, visible ? 4 : 0);
+    // Win32 visibility alone leaves Electron's compositor in its hidden state.
+    if (this.lastVisible !== visible) { this.lastVisible = visible; this.call('visibility', { value: visible }).catch(() => {}); }
   }
   focus() { if (this.hwnd) this.call('focus').catch(() => {}); }
   async screenshot() { return this.call('capture'); }
+  inspect() {const api=winAPI();const rect=[0,0,0,0];api.rect(this.hwnd,rect);return {hwnd:this.hwnd,parent:api.getParent(this.hwnd),visible:api.visible(this.hwnd),rect,style:api.getStyle(this.hwnd,-16),previous:api.sibling(this.hwnd,3),next:api.sibling(this.hwnd,2),host:this.host.getNativeWindowHandle().readBigUInt64LE().toString()};}
   evaluate(code) { if (process.env.FLASHBORN_TEST !== '1') throw new Error('Evaluation is only available in test launches.'); return this.call('evaluate', { code }); }
   dispose() {
     if (this.disposed) return;

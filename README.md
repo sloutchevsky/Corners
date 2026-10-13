@@ -1,11 +1,11 @@
-# Flashborn 1.1
+# Flashborn 1.1.1
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.1.0-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.1.1-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -18,7 +18,7 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 - Enter an address or search in the top bar. Press **Enter** or click **Go**.
 - Open local SWFs with **Ctrl+O**, the folder button, or **Open a SWF**.
 - Direct SWF URLs and Flash MIME responses open in the native player.
-- Pages with embedded Flash are detected and opened in native mode.
+- Pages with embedded Flash, including framesets, are detected and opened in native mode.
 - Click the **lightning button** for pages that hide Flash behind detection scripts,
   or to switch a website between modern and native mode.
 - The three-dot menu uses a separate native popup above Flash content.
@@ -56,8 +56,8 @@ shared with modern pages or other native tabs, and are discarded when that nativ
 tab closes. The modern engine prompts for
 site permissions; native pages are allowed fullscreen only.
 
-History, bookmarks, settings and library entries stay under `%APPDATA%/Flashborn`
-(development uses `%APPDATA%/flashborn-browser`). Uninstall keeps user data.
+History, bookmarks, settings and library entries stay under
+`%APPDATA%/flashborn-browser`. Uninstall keeps user data.
 There is no analytics service or automatic updater. This custom browser does
 not provide Chrome account sync, general extension installation or DRM video.
 
@@ -98,7 +98,7 @@ npm run test:smoke
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.1.0-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.1.1-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -107,7 +107,14 @@ and profile persistence. Runtime tests launch the actual application with a
 disposable profile and fixture server. They cover Enter/Go, navigation, tabs,
 bookmarks, history, find, downloads, genuine Adobe version detection and frame
 execution, player controls, remote and MIME SWFs, embedded objects, native mode,
-menus and renderer isolation. Results and screenshots are in `test-output`.
+menus and renderer isolation. It also verifies actual on-screen Flash pixels,
+visibility after tab switching, framesets, and classic plugin detection scripts.
+Results and screenshots are in `test-output`.
+
+Version 1.1.1 fixes native windows that were rendering while Electron considered
+them hidden. Visibility is now synchronized with the legacy BrowserWindow itself.
+Old Flash 2–9 detectors can misread version 32 as version 2; their declared Flash
+page is recovered only for the recognized detector shape and the same website.
 
 To test an unpacked or extracted installer payload:
 

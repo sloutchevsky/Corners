@@ -8,6 +8,7 @@ const { fileURLToPath, pathToFileURL } = require('node:url');
 const { resolveInput, isWebURL, containedPath, isSWF } = require('./core');
 const { Store } = require('./store');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
+const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashborn', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const testMode = process.env.FLASHBORN_TEST === '1';
@@ -83,6 +84,7 @@ function closeTab(id) {
   const index = tabs.findIndex(t => t.id === id);
   if (index < 0) return;
   const t = tabs[index];
+  clearTimeout(t.flashDetectionTimer);
   if (t.native) t.native.dispose();
   if (t.kind === 'web') closedTabs.push(t.url);
   if (closedTabs.length > 20) closedTabs.shift();
@@ -112,6 +114,10 @@ function wireContents(t) {
   wc.on('will-navigate', (event, url) => {
     const destination = event.url || url;
     if (!isWebURL(destination)) { event.preventDefault(); return; }
+    if (store.data.settings.flashEnabled && !t.native && !t.forceModern && isFlashFallbackURL(destination)) {
+      const original = isWebURL(wc.getURL()) ? wc.getURL() : t.url;
+      if (isWebURL(original) && new URL(original).origin === new URL(destination).origin && !isFlashFallbackURL(original)) { event.preventDefault(); activateNative(t, original).catch(e => showError(t, e.message)); return; }
+    }
     if (t.kind === 'flash') { event.preventDefault(); createTab(destination); return; }
     if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); loadFlash(t, { url: destination }).catch(e => showError(t, e.message)); }
   });
@@ -138,15 +144,13 @@ function wireContents(t) {
       const item = { id: crypto.randomUUID(), url: t.url, title: wc.getTitle() || t.title, visitedAt: new Date().toISOString() };
       store.data.history = [item, ...store.data.history.filter(h => h.url !== t.url)].slice(0, 500);
       store.save(); sendState();
-      if (store.data.settings.flashEnabled && !t.native && !t.forceModern) {
-        const detect = `(()=>{const items=[...document.querySelectorAll('object,embed,iframe')];return items.some(e=>/shockwave-flash|adobe.flash.movie/i.test(e.type||'')||/\\.swf(?:[?#]|$)/i.test(e.getAttribute('data')||e.getAttribute('src')||'')||[...e.querySelectorAll('param')].some(p=>p.name==='movie'&&/\\.swf/i.test(p.value)));})()`;
-        setTimeout(() => { if (live(t) && !t.native && t.kind === 'web') wc.executeJavaScript(detect).then(found => { if (found && !t.native) activateNative(t, t.url).catch(e => showError(t, e.message)); }).catch(() => {}); }, 200);
-      }
+      detectFlashFrames(t);
     }
   });
   wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
     if (isMainFrame && code !== -3) showError(t, description === 'ERR_INTERNET_DISCONNECTED' ? 'You appear to be offline. Check your connection and try again.' : `Could not load this page (${description}).`);
   });
+  wc.on('did-frame-finish-load', () => detectFlashFrames(t));
   wc.on('render-process-gone', (_event, details) => showError(t, `This tab stopped responding (${details.reason}). Reload to continue.`));
   wc.on('found-in-page', (_event, result) => { if (t.id === activeId) win.webContents.send('browser:find', result); });
   wc.on('audio-state-changed', () => sendState());
@@ -163,6 +167,15 @@ function wireContents(t) {
     items.push({ label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() }, { label: 'Reload', click: () => reload(t) }, { label: 'Print…', click: () => wc.print() });
     Menu.buildFromTemplate(items).popup({ window: win });
   });
+}
+function detectFlashFrames(t) {
+  clearTimeout(t.flashDetectionTimer);
+  if (!store.data.settings.flashEnabled || t.native || t.forceModern || t.kind !== 'web') return;
+  t.flashDetectionTimer = setTimeout(async () => {
+    if (!live(t) || t.native || t.kind !== 'web') return;
+    const found = await Promise.all(t.view.webContents.mainFrame.framesInSubtree.map(frame => frame.executeJavaScript(detectionScript).catch(() => false)));
+    if (found.some(Boolean) && live(t) && !t.native) activateNative(t, t.url).catch(e => showError(t, e.message));
+  }, 120);
 }
 function ensureView(t) {
   if (live(t)) return;
@@ -382,7 +395,7 @@ function showBrowserMenu() {
   ]);
   menuOpen = true; sendState(true);
   // A Windows popup menu is above native plugin HWNDs as well as Chromium views.
-  lastMenu.popup({ window: win, x: win.getContentSize()[0] - 22, y: 92, callback: () => { menuOpen = false; sendState(true); } });
+  lastMenu.popup({ window: win, x: Math.max(0, win.getContentSize()[0] - 320), y: 92, callback: () => { menuOpen = false; sendState(true); } });
 }
 
 async function command(action, args = {}) {

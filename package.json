@@ -1,6 +1,6 @@
 {
   "name": "flashborn-browser",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A minimal dark Windows browser with native Adobe Flash playback",
   "main": "src/main.js",
   "author": "Flashborn",
@@ -13,7 +13,9 @@
     "dist": "npm run prepare:assets && electron-builder --win nsis --x64",
     "dist:portable": "npm run prepare:assets && electron-builder --win portable --x64"
   },
-  "dependencies": { "koffi": "3.3.2" },
+  "dependencies": {
+    "koffi": "3.3.2"
+  },
   "devDependencies": {
     "electron": "44.7.0",
     "electron-builder": "26.15.3",
@@ -22,12 +24,37 @@
   "build": {
     "appId": "com.flashborn.browser",
     "productName": "Flashborn",
-    "directories": { "output": "release", "buildResources": "assets" },
-    "files": ["src/**/*", "assets/icon.png", "LICENSE", "THIRD-PARTY-NOTICES.md", "package.json"],
-    "extraResources": [{ "from": "vendor/native-runtime", "to": "native-runtime" }, { "from": "vendor/native-flash", "to": "native-flash" }],
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/icon.png",
+      "LICENSE",
+      "THIRD-PARTY-NOTICES.md",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/native-runtime",
+        "to": "native-runtime"
+      },
+      {
+        "from": "vendor/native-flash",
+        "to": "native-flash"
+      }
+    ],
     "asar": true,
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "assets/icon.ico",
       "artifactName": "Flashborn-Setup-${version}-${arch}.${ext}",
       "signAndEditExecutable": true
@@ -43,6 +70,14 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico"
     },
-    "fileAssociations": [{ "ext": "swf", "name": "Flash movie", "description": "Flash movie or game", "role": "Viewer", "icon": "assets/icon.ico" }]
+    "fileAssociations": [
+      {
+        "ext": "swf",
+        "name": "Flash movie",
+        "description": "Flash movie or game",
+        "role": "Viewer",
+        "icon": "assets/icon.ico"
+      }
+    ]
   }
 }

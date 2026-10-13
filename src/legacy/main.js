@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const nodeNet = require('net');
+const { isFlashFallbackURL, legacyFlashTarget } = require('./compat');
 const { pathToFileURL, fileURLToPath } = require('url');
 app.setPath('userData', process.env.FLASHBORN_NATIVE_PROFILE);
 app.commandLine.appendSwitch('ppapi-flash-path', process.env.FLASHBORN_NATIVE_PLUGIN);
@@ -65,13 +66,14 @@ function registerProtocol() {
 async function command(action, args) {
   const wc = window.webContents;
   switch (action) {
-    case 'navigate': if (!isWeb(args.url)) throw new Error('Only HTTP and HTTPS pages can use native Flash mode.'); source = null; await wc.loadURL(args.url); break;
+    case 'navigate': if (!isWeb(args.url)) throw new Error('Only HTTP and HTTPS pages can use native Flash mode.'); source = null; await wc.loadURL(args.url).catch(e => { if (e.code !== 'ERR_ABORTED') throw e; }); break;
     case 'movie': source = args; await wc.loadURL('flashnative://player/index.html'); break;
     case 'back': if (wc.canGoBack()) wc.goBack(); break;
     case 'forward': if (wc.canGoForward()) wc.goForward(); break;
     case 'reload': wc.reload(); break;
     case 'stop': wc.stop(); break;
     case 'focus': wc.focus(); break;
+    case 'visibility': args.value ? window.showInactive() : window.hide(); break;
     case 'mute': wc.setAudioMuted(args.value === undefined ? !wc.isAudioMuted() : !!args.value); break;
     case 'zoom': wc.setZoomFactor(args.direction === 0 ? 1 : Math.max(.25, Math.min(3, wc.getZoomFactor() + args.direction * .1))); break;
     case 'print': wc.print(); break;
@@ -93,7 +95,17 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   const wc = window.webContents;
   wc.on('new-window', (event, url) => { event.preventDefault(); if (isWeb(url)) send({ type: 'new-tab', url }); });
-  wc.on('will-navigate', (event, url) => { if (!isWeb(url)) event.preventDefault(); });
+  wc.on('will-navigate', (event, url) => {
+    if (!isWeb(url)) { event.preventDefault(); return; }
+    if (!isFlashFallbackURL(url)) return;
+    event.preventDefault();
+    // Old Macromedia detectors recognize versions 2–9 and misread 32 as 2.
+    const current = wc.getURL();
+    wc.executeJavaScript(`({flashPage:window.flashPage,maxVersion:window.maxVersion,requiredVersion:window.requiredVersion,plugin:!!navigator.plugins['Shockwave Flash']})`).then(values => {
+      const target = values.plugin && legacyFlashTarget(current, values);
+      return wc.loadURL(target || url);
+    }).catch(e => { if (e.code !== 'ERR_ABORTED') send({type:'error',message:e.message}); });
+  });
   wc.on('will-redirect', (event, url) => { if (!isWeb(url)) event.preventDefault(); });
   wc.on('will-attach-webview', event => event.preventDefault());
   for (const name of ['did-start-loading','did-stop-loading','did-navigate','did-navigate-in-page','page-title-updated','audio-state-changed']) wc.on(name, publish);
