@@ -5,6 +5,7 @@ let dragging = null;
 let suggestionTimer, typedAddress = '';
 let inlineAddress = null;
 let tabRenderKey = '', listRenderKey = '';
+let libraryOpenKind = 'swf';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -79,7 +80,7 @@ function renderContent() {
   if (aboutBolt) { aboutBolt.dispose(); aboutBolt = null; }
   const t = current();
   let html = '';
-  if (state.panel === 'library') html = panelHeader('Flash library', 'Keep the games and movies you love close. Open any SWF file to add it to your collection.', `<input class="filter-input" id="filter" placeholder="Find in your collection" aria-label="Filter Flash library"><button class="primary-button" data-action="open-file">${icon('plus')}Open a SWF</button>`);
+  if (state.panel === 'library') html = panelHeader('Flash library', 'Your Flash movies and pages, from local files or the web.', `<input class="filter-input" id="filter" placeholder="Find in your collection" aria-label="Filter Flash library"><div class="library-open-buttons"><button class="secondary-button" data-open-library="html">${icon('plus')}Open HTML with SWF</button><button class="primary-button" data-open-library="swf">${icon('plus')}Open a SWF</button></div><form id="library-open-form" class="library-open-form hidden"><label id="library-open-label" for="library-open-address">Open a SWF</label><div><input id="library-open-address" placeholder="Web URL or local file path" aria-label="Flash URL or local file path" spellcheck="false" autocomplete="off"><button type="button" class="secondary-button" id="library-browse">Browse…</button><button class="primary-button" type="submit">Open</button></div></form>`);
   else if (state.panel === 'bookmarks') html = panelHeader('Bookmarks', 'Good places, saved for later. Press Ctrl+D on any page to bookmark it.', '<input class="filter-input" id="filter" placeholder="Find a bookmark" aria-label="Filter bookmarks">');
   else if (state.panel === 'history') html = panelHeader('History', 'Pick up where you left off.', '<input class="filter-input" id="filter" placeholder="Search history" aria-label="Filter history"><button class="secondary-button danger-button" id="clear-history">Clear history</button>');
   else if (state.panel === 'downloads') html = panelHeader('Downloads', 'Everything you have saved from the web.', '<span></span><button class="secondary-button" data-action="download-clear">Clear finished</button>');
@@ -91,6 +92,10 @@ function renderContent() {
   if ($('#about-bolt')) aboutBolt = new GoldLightning($('#about-bolt'), { continuous: true });
   renderQuickLinks(); renderList();
   if ($('#home-search')) $('#home-search').addEventListener('submit', e => { e.preventDefault(); call('navigate', { value: $('#home-input').value }); });
+  if ($('#library-open-form')) {
+    $('#library-open-form').addEventListener('submit', e => { e.preventDefault(); call('add-library-source', { kind: libraryOpenKind, value: $('#library-open-address').value }); });
+    $('#library-browse').addEventListener('click', () => call('browse-library-source', { kind: libraryOpenKind }));
+  }
   if ($('#filter')) $('#filter').addEventListener('input', e => { filter = e.target.value.toLowerCase(); renderList(); });
   if ($('#search-engine')) $('#search-engine').addEventListener('change', e => call('settings', { searchEngine: e.target.value }));
   for (const setting of ['restoreTabs', 'flashEnabled']) if ($(`#${setting}`)) $(`#${setting}`).addEventListener('change', e => { call('settings', { [setting]: e.target.checked }); if (setting === 'flashEnabled') toast('Reload open websites to apply the Flash setting.'); });
@@ -107,7 +112,7 @@ function renderList() {
   if (dragging) return;
   const container = $('#item-list'); if (!container) return;
   const p = state.panel; const collection = p === 'library' ? state.library : state[p] || [];
-  const items = collection.filter(e => !filter || `${e.title || e.filename || ''} ${e.url || e.path || ''}`.toLowerCase().includes(filter));
+    const items = collection.filter(e => !filter || `${e.title || e.filename || ''} ${e.url || e.path || ''}`.toLowerCase().includes(filter));
   const nextListKey = JSON.stringify([p, filter, items]);
   if (nextListKey === listRenderKey) return;
   listRenderKey = nextListKey;
@@ -117,15 +122,16 @@ function renderList() {
   }
   container.innerHTML = items.map(item => {
     let title = item.title || item.filename, detail = item.url || item.path || '', actions = '', name = p === 'library' ? 'flash' : p === 'bookmarks' ? 'star' : p === 'history' ? 'history' : 'download', open;
-    if (p === 'library') { open = `data-library="${item.id}"`; detail = item.path; actions = `<button class="icon-button" data-library="${item.id}" title="Play" aria-label="Play ${escape(title)}">${icon('play')}</button><button class="icon-button" data-remove-library="${item.id}" title="Remove from library" aria-label="Remove from library">${icon('close')}</button>`; }
+    if (p === 'library') { open = `data-library="${item.id}"`; detail = (item.kind === 'html' ? 'HTML with SWF · ' : '') + (item.path || item.url); actions = `<button class="icon-button" data-library="${item.id}" title="Play" aria-label="Play ${escape(title)}">${icon('play')}</button><button class="icon-button" data-remove-library="${item.id}" title="Remove from library" aria-label="Remove from library">${icon('close')}</button>`; }
     else if (p === 'bookmarks') { open = `data-url="${escape(item.url)}"`; actions = `<button class="icon-button" data-remove-bookmark="${item.id}" title="Remove bookmark" aria-label="Remove bookmark">${icon('close')}</button>`; }
     else if (p === 'history') { open = `data-url="${escape(item.url)}"`; detail = date(item.visitedAt) + ' · ' + item.url; }
     else {
       open = `data-download-open="${item.id}"`; detail = `${size(item.received)}${item.total ? ' / ' + size(item.total) : ''} · ${item.state === 'completed' ? 'Saved' : item.state === 'progressing' ? 'Downloading' : item.state === 'cancelled' ? 'Cancelled' : 'Interrupted'}`;
       actions = item.state === 'progressing' ? `<button class="icon-button" data-download-cancel="${item.id}" title="Cancel download" aria-label="Cancel download">${icon('close')}</button>` : item.state === 'completed' ? `<button class="icon-button" data-download-reveal="${item.id}" title="Show in folder" aria-label="Show in folder">${icon('folder')}</button>` : '';
     }
-    const reorder = ['library', 'downloads'].includes(p);
-    return `<article class="list-item" ${reorder ? `draggable="true" data-collection="${p}" data-reorder-id="${item.id}"` : ''}>${reorder ? `<button class="reorder-handle" title="Drag to reorder (Alt+↑ / Alt+↓)" aria-label="Reorder ${escape(title)}">${icon('grip')}</button>` : ''}<span class="item-icon">${icon(name)}</span><div class="item-copy"><button class="item-title" ${open}>${escape(title)}</button><p class="item-detail" title="${escape(item.path || item.url || '')}">${escape(detail)}</p>${p === 'downloads' && item.state === 'progressing' ? `<div class="progress"><span style="--progress:${item.total ? Math.min(100, Math.round(item.received / item.total * 100)) : 15}%"></span></div>` : ''}</div><div class="item-actions">${actions}</div></article>`;
+    const reorder = ['library', 'downloads', 'bookmarks'].includes(p);
+    const thumbnail = p === 'library' ? `<div class="library-art"><button class="library-thumbnail ${item.image ? 'has-image' : ''}" data-library-image="${item.id}" title="${item.image ? 'Change image' : 'Add a 2:1 image or drop one here'}" aria-label="${item.image ? 'Change' : 'Add'} image for ${escape(title)}">${item.image ? `<img src="/library-image/${item.id}?v=${escape(item.image)}" alt="" draggable="false">` : icon('plus') + '<span>Add image</span>'}</button>${item.image ? `<button class="thumbnail-remove" data-remove-library-image="${item.id}" title="Remove image" aria-label="Remove image for ${escape(title)}">${icon('close')}</button>` : ''}</div>` : `<span class="item-icon">${icon(name)}</span>`;
+    return `<article class="list-item" ${reorder ? `draggable="true" data-collection="${p}" data-reorder-id="${item.id}"` : ''}>${reorder ? `<button class="reorder-handle" title="Drag to reorder (Alt+↑ / Alt+↓)" aria-label="Reorder ${escape(title)}">${icon('grip')}</button>` : ''}${thumbnail}<div class="item-copy"><button class="item-title" ${open}>${escape(title)}</button><p class="item-detail" title="${escape(item.path || item.url || '')}">${escape(detail)}</p>${p === 'downloads' && item.state === 'progressing' ? `<div class="progress"><span style="--progress:${item.total ? Math.min(100, Math.round(item.received / item.total * 100)) : 15}%"></span></div>` : ''}</div><div class="item-actions">${actions}</div></article>`;
   }).join('');
 }
 function settings() {
@@ -141,12 +147,15 @@ document.addEventListener('click', async e => {
   const button = e.target.closest('button'); if (!button || button.disabled) return;
   const d = button.dataset;
   if (d.action) await call(d.action);
+  else if (d.openLibrary) { libraryOpenKind = d.openLibrary; $('#library-open-form').classList.remove('hidden'); $('#library-open-label').textContent = libraryOpenKind === 'html' ? 'Open HTML with SWF' : 'Open a SWF'; $('#library-open-address').placeholder = libraryOpenKind === 'html' ? 'https://example.com/page.html or C:\\Sites\\page.html' : 'https://example.com/movie.swf or C:\\Movies\\movie.swf'; $('#library-open-address').focus(); }
   else if (d.panel) await call('panel', { name: d.panel });
   else if (d.tab) await call('select-tab', { id: d.tab });
   else if (d.closeTab) await call('close-tab', { id: d.closeTab });
   else if (d.url) await call('navigate', { value: d.url });
   else if (d.library) await call('play-library', { id: d.library });
   else if (d.removeLibrary) await call('remove-library', { id: d.removeLibrary });
+  else if (d.libraryImage) await call('library-image', { id: d.libraryImage });
+  else if (d.removeLibraryImage) await call('library-image-remove', { id: d.removeLibraryImage });
   else if (d.removeBookmark) await call('remove-bookmark', { id: d.removeBookmark });
   else if (d.downloadOpen) await call('download-open', { id: d.downloadOpen });
   else if (d.downloadReveal) await call('download-reveal', { id: d.downloadReveal });

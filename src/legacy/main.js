@@ -14,7 +14,7 @@ app.commandLine.appendSwitch('ppapi-flash-version', '32.0.0.363');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashnative', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
-let window, source = null, shuttingDown = false, quality = 'high', theme = 'current', pluginLoading = false, sampling = false;
+let window, source = null, shuttingDown = false, quality = 'high', theme = 'current', pluginLoading = false, sampling = false, hostFullscreen = false;
 const channel = nodeNet.connect(process.env.FLASHBORN_NATIVE_CHANNEL);
 const connected = new Promise(resolve => channel.once('connect', () => { channel.write(JSON.stringify({token:process.env.FLASHBORN_NATIVE_TOKEN})+'\n'); resolve(); }));
 channel.on('error', () => app.quit());
@@ -58,7 +58,14 @@ function registerProtocol() {
   session.defaultSession.protocol.registerBufferProtocol('flashnative', async (request, callback) => {
     try {
       const url = new URL(request.url); let data, mimeType;
-      if (url.hostname === 'player' && url.pathname === '/movie.swf' && source) {
+      if (url.hostname === 'document' && source && source.kind === 'html' && url.pathname.split('/')[1] === source.token) {
+        const root = fs.realpathSync(path.dirname(source.path)), file = fs.realpathSync(path.resolve(root, decodeURIComponent(url.pathname.split('/').slice(2).join('/'))));
+        const relative = path.relative(root, file);
+        if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error('Asset outside selected HTML folder');
+        data = fs.readFileSync(file);
+        const types = { '.html': 'text/html', '.htm': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.swf': 'application/x-shockwave-flash', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.xml': 'application/xml', '.json': 'application/json', '.mp3': 'audio/mpeg' };
+        return callback({ data, mimeType: types[path.extname(file).toLowerCase()] || 'application/octet-stream', headers: { 'X-Content-Type-Options': 'nosniff' } });
+      } else if (url.hostname === 'player' && url.pathname === '/movie.swf' && source) {
         data = source.path ? fs.readFileSync(source.path) : await remoteBytes(source.url);
         if (!['FWS','CWS','ZWS'].includes(data.slice(0, 3).toString())) throw new Error('Not a SWF file');
         mimeType = 'application/x-shockwave-flash';
@@ -82,6 +89,7 @@ async function command(action, args) {
   switch (action) {
     case 'navigate': if (!isWeb(args.url)) throw new Error('Only HTTP and HTTPS pages can use native Flash mode.'); source = null; await wc.loadURL(args.url).catch(e => { if (e.code !== 'ERR_ABORTED') throw e; }); break;
     case 'movie': source = args; quality = args.quality === 'low' ? 'low' : 'high'; await wc.loadURL('flashnative://player/index.html'); await applySettings(); break;
+    case 'local-html': source = { ...args, kind: 'html', path: fs.realpathSync(args.path) }; await wc.loadURL('flashnative://document/' + source.token + '/' + encodeURIComponent(path.basename(source.path))); await applySettings(); break;
     case 'back': if (wc.canGoBack()) wc.goBack(); break;
     case 'forward': if (wc.canGoForward()) wc.goForward(); break;
     case 'reload': wc.reload(); break;
@@ -90,6 +98,17 @@ async function command(action, args) {
     case 'visibility': args.value ? window.showInactive() : window.hide(); break;
     case 'mute': wc.setAudioMuted(args.value === undefined ? !wc.isAudioMuted() : !!args.value); break;
     case 'zoom': wc.setZoomFactor(nextZoom(wc.getZoomFactor() * 100, args.direction) / 100); break;
+    case 'host-fullscreen':
+      hostFullscreen = !!args.value;
+      if (!hostFullscreen) await wc.executeJavaScript('if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});').catch(() => {});
+      if (!hostFullscreen && window.isFullScreen()) window.setFullScreen(false);
+      wc.send('player:state', { fullscreen: hostFullscreen });
+      break;
+    case 'background':
+      if (!source || !/^#[0-9a-f]{6}$/i.test(args.color || '')) throw new Error('Invalid movie background.');
+      source.background = args.color.toLowerCase();
+      wc.send('player:state', { background: source.background });
+      break;
     case 'quality': quality = args.quality === 'low' ? 'low' : 'high'; await applySettings(); break;
     case 'theme': theme = args.theme === 'light' ? 'light' : 'current'; nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark'; await applySettings(); break;
     case 'print': wc.print(); break;
@@ -113,7 +132,8 @@ app.whenReady().then(async () => {
   const wc = window.webContents;
   wc.on('new-window', (event, url) => { event.preventDefault(); if (isWeb(url)) send({ type: 'new-tab', url }); });
   wc.on('will-navigate', (event, url) => {
-    if (!isWeb(url)) { event.preventDefault(); return; }
+    const scopedLocal = source && source.kind === 'html' && url.startsWith('flashnative://document/' + source.token + '/');
+    if (!isWeb(url) && !scopedLocal) { event.preventDefault(); return; }
     if (/\.pdf$/i.test(new URL(url).pathname)) { event.preventDefault(); send({ type: 'open-pdf', url }); return; }
     if (!isFlashFallbackURL(url)) return;
     event.preventDefault();
@@ -124,11 +144,12 @@ app.whenReady().then(async () => {
       return wc.loadURL(target || url);
     }).catch(e => { if (e.code !== 'ERR_ABORTED') send({type:'error',message:e.message}); });
   });
-  wc.on('will-redirect', (event, url) => { if (!isWeb(url)) event.preventDefault(); });
+  wc.on('will-redirect', (event, url) => { if (!isWeb(url) && !(source && source.kind === 'html' && url.startsWith('flashnative://document/' + source.token + '/'))) event.preventDefault(); });
   wc.on('will-attach-webview', event => event.preventDefault());
   for (const name of ['did-start-loading','did-stop-loading','did-navigate','did-navigate-in-page','page-title-updated','audio-state-changed']) wc.on(name, publish);
   wc.on('did-start-loading', () => { pluginLoading = false; });
   wc.on('did-finish-load', applySettings);
+  wc.on('did-finish-load', () => wc.send('player:state', { fullscreen: hostFullscreen }));
   const settingsTimer = setInterval(applySettings, 350);
   window.on('closed', () => clearInterval(settingsTimer));
   wc.on('did-fail-load', (_event, code, message, _url, main) => { if (main && code !== -3) send({ type: 'error', message: 'Native Flash page could not load (' + message + ').' }); });
@@ -145,6 +166,8 @@ app.whenReady().then(async () => {
   ipcMain.on('browser:drop-files', (event, paths) => { if (event.sender === wc && Array.isArray(paths)) send({ type: 'drop-files', paths }); });
   session.defaultSession.on('will-download', (event, item) => { event.preventDefault(); send({ type: item.getMimeType() === 'application/pdf' ? 'open-pdf' : 'download', url: item.getURL() }); });
   ipcMain.handle('player:mute', event => { if (event.sender !== wc || wc.getURL() !== 'flashnative://player/index.html') throw new Error('Untrusted player'); wc.setAudioMuted(!wc.isAudioMuted()); publish(); return wc.isAudioMuted(); });
+  ipcMain.on('player:fullscreen', event => { if (event.sender === wc && wc.getURL() === 'flashnative://player/index.html') send({ type: 'player-fullscreen' }); });
+  ipcMain.on('player:color', event => { if (event.sender === wc && wc.getURL() === 'flashnative://player/index.html') send({ type: 'player-color' }); });
   const reader = readline.createInterface({ input: channel });
   reader.on('line', async line => { let message; try { message = JSON.parse(line); const value = await command(message.action, message.args || {}); if (message.id) send({ reply: message.id, value }); } catch (e) { if (message && message.id) send({ reply: message.id, error: e.message }); else send({ type: 'error', message: e.message }); } });
   reader.on('close', () => { shuttingDown = true; app.quit(); });

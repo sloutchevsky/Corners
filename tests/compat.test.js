@@ -13,3 +13,8 @@ test('legacy Flash fallback recovery stays within the original site',()=>{
  assert.equal(isFlashFallbackURL('https://example.com/no-flash.html'),true);
  assert.equal(isFlashFallbackURL('https://example.com/noflash-game.swf'),false);
 });
+test('local HTML Flash detector recovery is limited to the selected document folder',()=>{
+ const base='flashnative://document/test-token/index.html',values={flashPage:'main.html',maxVersion:9,requiredVersion:7};
+ assert.equal(legacyFlashTarget(base,values),'flashnative://document/test-token/main.html');
+ for(const flashPage of ['../outside.html','flashnative://player/index.html','flashnative://document/other-token/main.html','javascript:alert(1)'])assert.equal(legacyFlashTarget(base,{...values,flashPage}),null);
+});

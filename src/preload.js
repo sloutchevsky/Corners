@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld('browser', {
 window.addEventListener('wheel', event => {
   if (event.isTrusted && event.ctrlKey && event.deltaY) { event.preventDefault(); ipcRenderer.send('browser:wheel', event.deltaY < 0 ? 1 : -1); }
 }, { capture: true, passive: false });
+window.addEventListener('keydown', event => {
+  if (!event.isTrusted || !(event.ctrlKey || event.metaKey) || !['+', '=', '-', '0'].includes(event.key)) return;
+  event.preventDefault();
+  ipcRenderer.send('browser:zoom-key', event.key === '0' ? 0 : event.key === '-' ? -1 : 1);
+}, true);
 window.addEventListener('dragover', event => {
   if (event.dataTransfer?.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }
 }, true);
@@ -18,5 +23,7 @@ window.addEventListener('drop', event => {
   const paths = Array.from(event.dataTransfer.files, file => webUtils.getPathForFile(file)).filter(Boolean);
   if (!paths.length) return;
   event.preventDefault(); event.stopImmediatePropagation();
+  const thumbnail = event.target.closest?.('[data-library-image]');
+  if (thumbnail) { ipcRenderer.invoke('browser:library-image-drop', thumbnail.dataset.libraryImage, paths).catch(() => {}); return; }
   ipcRenderer.invoke('browser:drop-files', paths).catch(() => {});
 }, true);

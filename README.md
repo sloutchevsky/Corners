@@ -1,11 +1,11 @@
-# Flashborn 1.3.0
+# Flashborn 1.4.0
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.3.0-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.4.0-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -24,9 +24,9 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
   include MP4/M4V, WebM, OGV and MOV; playback depends on Chromium codec support.
 - The address bar completes known URLs from bookmarks, history and open tabs.
   Use Up/Down and Enter, click a suggestion, or press Escape to dismiss.
-- Drag tabs, downloads and Flash library entries to reorder them. With an item
-  focused, Alt+Up/Down also moves it. Download and library order is saved.
-- Ctrl+mouse wheel zooms with a Chrome-style percentage popup and Reset button.
+- Drag tabs, bookmarks, downloads and Flash library entries to reorder them. With an item
+  focused, Alt+Up/Down also moves it. Bookmark, download and library order is saved.
+- Ctrl+mouse wheel and Ctrl+/− visibly zoom pages, with a Chrome-style percentage popup and Reset button.
 - Right-click the address, home search or find field for Select all, Cut, Copy and Paste.
 - Click the upper-left logo to open About. The copyright line opens sloutchevsky.com.
 - Direct SWF URLs and Flash MIME responses open in the native player.
@@ -42,6 +42,16 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 - High/Low quality is saved and applies to open native movies and future loads.
 - The sidebar provides tabs, bookmarks, history, downloads, settings and a SWF library.
 - The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
+  Its controls stay visible in fullscreen. Background opens a color wheel, defaulting to white.
+  Each library movie saves its background. Color changes recreate the Flash instance and
+  restore its timeline position; interactive game/script state is restarted.
+- Flash library offers **Open HTML with SWF** and **Open a SWF**. Both reveal an
+  address line for a web URL or an absolute local file path, plus **Browse**.
+  HTML entries run in native Flash mode with companion assets scoped to their folder.
+  Local HTML opened through the main address bar also detects embedded Flash.
+- Click **Add image** on a library entry, or drop an image onto its thumbnail,
+  to add a landscape **2:1** image. Click it to replace it; use its × to remove it.
+  The original image stays untouched; the browser keeps a resized PNG copy in its profile.
 
 The original demo `assets/Flashborn-Demo.swf` displays a moving cream square.
 The library references your files; keep their companion assets in the same folder.
@@ -69,7 +79,7 @@ in native mode.
 Both engines use isolated renderers without Node.js access. Certificate checks,
 same-origin protections and website CSP stay enabled. The local player can serve
 companion assets only inside its selected folder. Its JavaScript bridge exposes
-only audio muting. Each native tab has separate cookies/storage; these are not
+only audio muting, fullscreen, and the background color control. Each native tab has separate cookies/storage; these are not
 shared with modern pages or other native tabs, and are discarded when that native
 tab closes. The modern engine prompts for
 site permissions; native pages are allowed fullscreen only.
@@ -120,10 +130,11 @@ npm run prepare:assets
 npm test
 npm run test:smoke
 npm run test:files
+npm run test:refinements
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.3.0-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.4.0-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 

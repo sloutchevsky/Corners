@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Flash background</title><link rel="stylesheet" href="themes.css"><link rel="stylesheet" href="color.css"></head><body>
+<header><span>Background color</span><button id="close" aria-label="Close color picker">×</button></header>
+<canvas id="color-wheel" width="240" height="240" tabindex="0" role="img" aria-label="Color wheel. Arrow keys change hue and saturation."></canvas>
+<div class="brightness"><label for="brightness">Brightness</label><input id="brightness" type="range" min="0" max="100" value="100"></div>
+<div class="color-value"><span id="color-preview"></span><input id="color-hex" aria-label="Hex background color" maxlength="7" spellcheck="false" value="#ffffff"><button data-color="#ffffff" aria-label="White background">White</button><button data-color="#000000" aria-label="Black background">Black</button></div>
+<p id="color-status" aria-live="polite">Changing color reloads Flash.</p>
+<script src="color.js"></script></body></html>

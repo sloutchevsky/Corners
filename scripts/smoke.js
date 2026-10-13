@@ -198,6 +198,7 @@ async function run() {
       const labels=await app.evaluate(()=>global.__flashborn.editMenu.items.filter(item=>item.type!=='separator').map(item=>item.label));
       assert.deepEqual(labels,['Select all','Cut','Copy','Paste']);
       await app.evaluate(()=>{const b=global.__flashborn;b.win.webContents.focus();b.editMenu.items.find(item=>item.label==='Select all').click();b.editMenu.closePopup(b.win);});
+      await poll(()=>app.evaluate(()=>!!global.__flashborn.editMenu),open=>!open);
       await poll(()=>ui.locator(selector).evaluate(el=>el.selectionEnd-el.selectionStart),n=>n==='Field editing test'.length);
     }
     await ui.locator('#find-close').click();
