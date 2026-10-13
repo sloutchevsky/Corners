@@ -20,7 +20,7 @@ async function run() {
     await poll(()=>app.evaluate(()=>!!global.__flashborn),Boolean);
     const ui=await app.firstWindow(),state=()=>app.evaluate(()=>global.__flashborn.getState());
     const command=(action,args={})=>app.evaluate(({},data)=>global.__flashborn.command(data.action,data.args),{action,args});
-    const script=code=>app.evaluate(({},code)=>{const t=global.__flashborn.activeTab();return t.native?t.native.evaluate(code):t.view.webContents.executeJavaScript(code,true);},code);
+    const script=code=>app.evaluate(({},code)=>{const t=global.__flashborn.activeTab();return t.native?t.native.evaluate(code):t.view?.webContents.executeJavaScript(code,true);},code);
     await app.evaluate(()=>{const w=global.__flashborn.win;w.setBounds({x:80,y:80,width:1280,height:820});w.show();w.focus();});
     const png=await app.evaluate(({nativeImage})=>{const pixels=Buffer.alloc(320*180*4);for(let i=0;i<pixels.length;i+=4){pixels[i]=210;pixels[i+1]=110;pixels[i+2]=30;pixels[i+3]=255;}return nativeImage.createFromBitmap(pixels,{width:320,height:180}).toPNG().toString('base64');});
     fs.writeFileSync(path.join(fixture,'Dropped.png'),Buffer.from(png,'base64'));
@@ -50,7 +50,13 @@ async function run() {
     const drop=async(file,content=false)=>{
       const count=(await state()).tabs.length;
       await app.evaluate(async({},args)=>{const b=global.__flashborn,wc=args.content?b.activeTab().view.webContents:b.win.webContents;if(!wc.debugger.isAttached())wc.debugger.attach('1.3');for(const type of ['dragEnter','dragOver','drop'])await wc.debugger.sendCommand('Input.dispatchDragEvent',{type,x:args.content?100:180,y:180,data:{items:[],files:[args.file],dragOperationsMask:1}});},{file,content});
-      return poll(state,s=>{const t=s.tabs.find(t=>t.id===s.activeId);return s.tabs.length===count+1&&t?.kind!=='home'&&!t?.loading;},60000);
+      await poll(state,s=>{const t=s.tabs.find(t=>t.id===s.activeId);return s.tabs.length===count+1&&t&&t.kind!=='home'&&!t.loading;},60000);
+      await poll(()=>app.evaluate(()=>{
+        const t=global.__flashborn.activeTab(),wc=t?.view?.webContents;
+        if(t?.native)return !t.loading;
+        return !!wc&&!wc.isDestroyed()&&wc.getURL().startsWith('flashborn://document/')&&!wc.isLoading()&&!t.loading;
+      }),Boolean);
+      return state();
     };
     await drop(path.join(fixture,'Dropped.html'));
     await poll(()=>script('({title:document.title,bg:getComputedStyle(document.body).backgroundColor,image:document.querySelector("img")?.naturalWidth,node:typeof require,api:typeof window.browser})'),s=>s.title==='Dropped HTML'&&s.bg==='rgb(10, 30, 50)'&&s.image===320&&s.node==='undefined'&&s.api==='undefined');
@@ -65,11 +71,28 @@ async function run() {
     await poll(()=>script('document.querySelector("video").currentTime'),time=>time>0);
     pass('Dropping video opens native browser video controls and plays decoded frames');
     await drop(path.join(fixture,'Dropped.pdf'));
-    await poll(()=>app.evaluate(async()=>{const wc=global.__flashborn.activeTab().view.webContents,bitmap=(await wc.capturePage()).toBitmap();let blue=0;for(let i=0;i<bitmap.length;i+=4)if(bitmap[i]>150&&bitmap[i+1]>70&&bitmap[i+1]<150&&bitmap[i+2]<60)blue++;return blue;}),n=>n>2000);
+    await poll(()=>app.evaluate(async()=>{
+      const wc=global.__flashborn.activeTab().view?.webContents;
+      if(!wc||wc.isDestroyed()||wc.isLoading())return 0;
+      let bitmap;
+      try {bitmap=(await wc.capturePage()).toBitmap();}
+      catch(error) {if(error.message.includes('UnknownVizError'))return 0;throw error;}
+      let blue=0;for(let i=0;i<bitmap.length;i+=4)if(bitmap[i]>150&&bitmap[i+1]>70&&bitmap[i+1]<150&&bitmap[i+2]<60)blue++;return blue;
+    }),n=>n>2000);
     pass('Dropping a PDF displays the rendered document');
     await drop(path.join(fixture,'Dropped.swf'));
     await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 32,0,0,363');
     pass('Dropping a Flash file uses the real Adobe player and adds it to the library');
+    await command('panel',{name:'library'});
+    await ui.locator('[data-open-library="swf"]').click();
+    await ui.locator('#library-open-address').fill('Dropped');
+    await poll(state,s=>s.suggestions?.field==='library-open-address'&&s.suggestions.items[0]?.type==='file');
+    await poll(()=>ui.locator('#library-open-address').getAttribute('aria-expanded'),value=>value==='true');
+    await ui.locator('#library-open-address').press('ArrowDown');
+    await poll(()=>ui.locator('#library-open-address').inputValue(),value=>value===path.join(fixture,'Dropped.swf'));
+    await ui.locator('#library-open-address').press('Enter');
+    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 32,0,0,363');
+    pass('Flash library address predictions complete saved local sources and open them with the Adobe player');
     await ui.locator('.sidebar-wordmark').click();
     await ui.locator('.about-copyright').click();
     await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.url==='https://www.sloutchevsky.com/');

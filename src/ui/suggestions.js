@@ -3,7 +3,7 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '
 function render(state) {
   document.body.dataset.theme = state.settings.theme || 'current';
   const data = state.suggestions;
-  document.getElementById('suggestions').innerHTML = (data?.items || []).map((item, index) => `<button role="option" aria-selected="${index === data.selected}" data-index="${index}"><span>${escape(item.title)}</span><small>${escape(item.url)}</small></button>`).join('');
+  document.getElementById('suggestions').innerHTML = (data?.items || []).map((item, index) => `<button role="option" class="suggestion-${item.type || 'url'}" aria-selected="${index === data.selected}" data-index="${index}"><span>${escape(item.title)}</span>${item.type === 'search' ? '' : `<small>${escape(item.url)}</small>`}</button>`).join('');
 }
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-index]');

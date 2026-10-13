@@ -50,13 +50,12 @@
     <div class="tabs-label"><span>Your tabs</span><span id="tab-count"></span></div>
     <div id="tabs" class="tabs" aria-label="Open tabs"></div>
     <div class="sidebar-bottom">
-      <button class="nav-button" data-panel="library" title="Flash library"><svg class="icon"><use href="#i-flash"/></svg><span>Flash library</span><span class="pill">SWF</span></button>
-      <button class="nav-button" data-panel="bookmarks" title="Bookmarks"><svg class="icon nav-gold nav-gold-bookmarks"><use href="#i-star"/></svg><span>Bookmarks</span></button>
-      <button class="nav-button" data-panel="history" title="History (Ctrl+H)"><svg class="icon nav-gold nav-gold-history"><use href="#i-history"/></svg><span>History</span></button>
-      <button class="nav-button" data-panel="downloads" title="Downloads (Ctrl+J)"><svg class="icon nav-gold nav-gold-downloads"><use href="#i-download"/></svg><span>Downloads</span><span id="download-count" class="count"></span></button>
+      <button class="nav-button" data-panel="library" title="Flash library"><canvas class="nav-gold nav-gold-library" data-nav-icon="library" width="128" height="128" aria-hidden="true"></canvas><span>Flash library</span><span class="pill">SWF</span></button>
+      <button class="nav-button" data-panel="bookmarks" title="Bookmarks"><canvas class="nav-gold nav-gold-bookmarks" data-nav-icon="bookmarks" width="128" height="128" aria-hidden="true"></canvas><span>Bookmarks</span></button>
+      <button class="nav-button" data-panel="history" title="History (Ctrl+H)"><canvas class="nav-gold nav-gold-history" data-nav-icon="history" width="128" height="128" aria-hidden="true"></canvas><span>History</span></button>
+      <button class="nav-button" data-panel="downloads" title="Downloads (Ctrl+J)"><canvas class="nav-gold nav-gold-downloads" data-nav-icon="downloads" width="128" height="128" aria-hidden="true"></canvas><span>Downloads</span><span id="download-count" class="count"></span></button>
       <div class="sidebar-rule"></div>
-      <button class="nav-button" data-panel="settings" title="Settings"><svg class="icon nav-gold nav-gold-settings"><use href="#i-settings"/></svg><span>Settings</span></button>
-      <button class="nav-button" data-panel="about" title="About"><svg class="icon"><use href="#i-info"/></svg><span>About</span></button>
+      <button class="nav-button" data-panel="settings" title="Settings"><canvas class="nav-gold nav-gold-settings" data-nav-icon="settings" width="128" height="128" aria-hidden="true"></canvas><span>Settings</span></button>
     </div>
   </aside>
   <nav class="toolbar" aria-label="Navigation">
@@ -76,6 +75,6 @@
   <img id="color-pick-preview" class="color-pick-preview hidden" alt="" aria-hidden="true">
   <footer class="statusbar"><span id="page-status">Make yourself at home.</span><span id="status-right">Chromium · Adobe Flash</span></footer>
   <div id="toast" role="status" class="toast hidden"></div>
-  <script src="lightning.js"></script><script src="app.js"></script>
+  <script src="lightning.js"></script><script src="navigation-icons.js"></script><script src="app.js"></script>
 </body>
 </html>

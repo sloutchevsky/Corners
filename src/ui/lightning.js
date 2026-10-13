@@ -110,7 +110,9 @@
         const illumination = Math.max(0, dot(face.normal, light));
         const specular = Math.pow(Math.max(0, dot(face.normal, halfVector)), 22);
         const brightness = 0.63 + 0.36 * illumination + 0.22 * specular;
-        const reflection = 0.48 + 0.25 * Math.sin(angle * 2 + face.normal[0] * 1.5);
+        // The light and reflected studio band stay fixed; only surface normals rotate.
+        const reflectedView = [2 * face.normal[0] * face.normal[2], 2 * face.normal[1] * face.normal[2], 2 * face.normal[2] ** 2 - 1];
+        const reflection = 0.48 + 0.2 * dot(reflectedView, light);
         const gradient = ctx.createLinearGradient(-53, 60, 53, -60);
         const palette = this.metal === 'silver' ? [[85,91,104], [173,182,194], [248,250,255], [191,201,214], [105,112,126]] : [[171,94,9], [241,175,37], [255,237,168], [241,185,49], [174,102,12]];
         gradient.addColorStop(0, metalColor(palette[0], brightness));

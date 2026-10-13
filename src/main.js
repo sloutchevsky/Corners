@@ -6,7 +6,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { fileURLToPath, pathToFileURL } = require('node:url');
 const { resolveInput, isWebURL, containedPath, isSWF, isPDFURL, reorderItems } = require('./core');
-const { contentType, supportedLocalFile, urlSuggestions } = require('./files');
+const { contentType, supportedLocalFile } = require('./files');
+const { canPredict, suggestions, SearchPredictions } = require('./search-suggestions');
 const { Store } = require('./store');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
 const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
@@ -37,6 +38,9 @@ const documents = new Map();
 let stateTimer, menuWindow, menuOpen = false, zoomWindow, zoomTimer, editMenu;
 let zoomQueue = Promise.resolve();
 let suggestionWindow, suggestionData = null;
+let suggestionSerial = 0;
+let predictionAbort;
+const searchPredictions = new SearchPredictions((url, options) => net.fetch(url, options));
 let colorWindow, colorTabId, colorPicking = false, colorPreview = null, tabMenu;
 let privateSession;
 const privateDownloads = [];
@@ -254,7 +258,7 @@ async function navigate(t, value) {
   if (target.type === 'home') {
     if (t.native) { t.native.dispose(); t.native = null; }
     if (live(t)) { win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; }
-      t.kind = 'home'; t.url = ''; t.title = t.private ? 'Flashcognito' : 'New tab'; t.loading = false;
+      t.kind = 'home'; t.url = ''; t.title = t.private ? 'Flashcognito tab' : 'New tab'; t.loading = false;
     layout(); persistTabs(); sendState(true); return;
   }
   if (target.type === 'file') { await openLocal(target.path, t); return; }
@@ -266,7 +270,7 @@ async function navigate(t, value) {
 }
 function createTab(value = '', background = false, privateMode = !!activeTab()?.private) {
   if (tabs.length >= 50) { dialog.showMessageBox(win, { type: 'info', message: 'Close a tab before opening another.', detail: 'Flashborn supports up to 50 open tabs.' }); return; }
-  const t = { id: crypto.randomUUID(), private: !!privateMode, kind: 'home', url: '', title: privateMode ? 'Flashcognito' : 'New tab', loading: false, error: null, view: null };
+  const t = { id: crypto.randomUUID(), private: !!privateMode, kind: 'home', url: '', title: privateMode ? 'Flashcognito tab' : 'New tab', loading: false, error: null, view: null };
   tabs.push(t);
   if (!background) selectTab(t.id);
   if (value) navigate(t, value).catch(e => showError(t, e.message));
@@ -531,18 +535,41 @@ async function showColorPicker(t) {
   if (colorWindow === popup && !popup.isDestroyed()) { popup.show(); popup.focus(); sendState(true); }
 }
 function closeSuggestions() {
+  suggestionSerial++;
+  predictionAbort?.abort(); predictionAbort = null;
   const popup = suggestionWindow; suggestionWindow = null; suggestionData = null;
   if (popup && !popup.isDestroyed()) popup.close();
 }
 async function showSuggestions(args) {
+  predictionAbort?.abort(); predictionAbort = null;
+  const serial = ++suggestionSerial;
   const privateMode = !!activeTab()?.private;
-  const items = urlSuggestions(args.query, [...store.data.bookmarks, ...(privateMode ? [] : store.data.history), ...tabs.filter(tab => !!tab.private === privateMode)]);
+  const field = ['address', 'home-input', 'library-open-address'].includes(args.field) ? args.field : 'address';
+  const entries = [...store.data.bookmarks, ...(privateMode ? [] : store.data.history), ...tabs.filter(tab => !!tab.private === privateMode), ...(field === 'library-open-address' ? store.data.library : [])];
+  const items = suggestions(args.query, entries, store.data.settings.searchEngine, [], { allowSearch: field !== 'library-open-address', library: store.data.library });
   if (!items.length || typeof args.query !== 'string' || !args.bounds) { closeSuggestions(); return; }
-  suggestionData = { query: args.query, items, selected: -1 };
-  const bounds = win.getContentBounds(), rect = args.bounds, work = screen.getDisplayMatching(bounds).workArea;
+  suggestionData = { query: args.query, items, selected: -1, field, serial, tabId: activeId, bounds: args.bounds, libraryKind: args.libraryKind === 'html' ? 'html' : 'swf' };
+  const engine = store.data.settings.searchEngine;
+  if (field !== 'library-open-address' && canPredict(args.query)) {
+    const controller = predictionAbort = new AbortController();
+    // Keep known pages responsive while conventional provider predictions arrive.
+    searchPredictions.get(args.query, engine, { signal: controller.signal, privateMode }).then(async terms => {
+      if (controller.signal.aborted || serial !== suggestionSerial || suggestionData?.serial !== serial || suggestionData.tabId !== activeId || store.data.settings.searchEngine !== engine) return;
+      const selected = suggestionData.items[suggestionData.selected];
+      suggestionData.items = suggestions(args.query, entries, engine, terms);
+      suggestionData.selected = selected ? suggestionData.items.findIndex(item => item.type === selected.type && item.url === selected.url) : -1;
+      await positionSuggestions(); sendState(true);
+    }).catch(() => { /* Offline or unavailable providers leave local results usable. */ });
+  }
+  await positionSuggestions();
+}
+async function positionSuggestions() {
+  if (!suggestionData || !win || win.isDestroyed()) return;
+  const { items, bounds: rect } = suggestionData;
+  const bounds = win.getContentBounds(), work = screen.getDisplayMatching(bounds).workArea;
   if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) throw new Error('Invalid address field bounds.');
   const width = Math.min(work.width, Math.max(250, Math.min(bounds.width, Math.round(rect.width))));
-  const height = items.length * 48 + 12;
+  const height = items.reduce((sum, item) => sum + (item.type === 'search' ? 38 : 48), 0) + 12;
   const x = Math.max(work.x, Math.min(work.x + work.width - width, bounds.x + Math.round(rect.x)));
   const y = Math.max(work.y, Math.min(work.y + work.height - height, bounds.y + Math.round(rect.y + rect.height) + 5));
   if (!suggestionWindow || suggestionWindow.isDestroyed()) {
@@ -553,7 +580,7 @@ async function showSuggestions(args) {
     popup.setAlwaysOnTop(true, 'pop-up-menu'); popup.setMenu(null);
     popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' })); popup.webContents.on('will-navigate', event => event.preventDefault());
     popup.on('closed', () => { if (suggestionWindow === popup) { suggestionWindow = null; suggestionData = null; } });
-    await popup.loadURL(SUGGEST_URL);
+    try { await popup.loadURL(SUGGEST_URL); } catch (error) { if (popup.isDestroyed() || suggestionWindow !== popup) return; throw error; }
     if (suggestionWindow === popup && !popup.isDestroyed()) popup.showInactive();
   } else suggestionWindow.setBounds({ x, y, width, height });
 }
@@ -766,7 +793,15 @@ async function command(action, args = {}) {
     case 'suggest': await showSuggestions(args); break;
     case 'suggest-close': closeSuggestions(); break;
     case 'suggest-select': if (suggestionData) { const index = suggestionData.selected + (args.direction === -1 ? -1 : 1); suggestionData.selected = index < -1 ? suggestionData.items.length - 1 : index >= suggestionData.items.length ? -1 : index; } break;
-    case 'suggest-open': { const item = suggestionData?.items[args.index]; if (item) { closeSuggestions(); panel = null; await navigate(t, item.url); } break; }
+    case 'suggest-open': {
+      const data = suggestionData, item = data?.items[args.index];
+      if (item && data.tabId === activeId) {
+        closeSuggestions();
+        if (data.field === 'library-open-address') await command('add-library-source', { kind: data.libraryKind, value: item.url });
+        else { panel = null; await navigate(t, item.url); }
+      }
+      break;
+    }
     case 'new-tab': createTab(typeof args.url === 'string' ? args.url : ''); break;
     case 'new-flashcognito': createTab('', false, true); break;
     case 'duplicate-tab': await duplicateTab(args.id); break;

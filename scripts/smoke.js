@@ -74,7 +74,7 @@ async function run() {
     assert.equal((await state()).tabs.length, 1);
     assert.equal((await state()).flashReady, true);
     results.push('Desktop shell and bundled native Adobe Flash load');
-    const sidebarPositions = () => ui.evaluate(() => ({ about:document.querySelector('.nav-button[data-panel="about"] .icon').getBoundingClientRect().x, selection:document.querySelector('.tab.active').getBoundingClientRect().x, newTab:document.querySelector('.new-tab').getBoundingClientRect().x }));
+    const sidebarPositions = () => ui.evaluate(() => ({ settings:document.querySelector('.nav-button[data-panel="settings"] .nav-gold').getBoundingClientRect().x, selection:document.querySelector('.tab.active').getBoundingClientRect().x, newTab:document.querySelector('.new-tab').getBoundingClientRect().x }));
     const expanded = await sidebarPositions();
     await command('collapse');
     assert.deepEqual(await sidebarPositions(), expanded);
@@ -93,7 +93,7 @@ async function run() {
     await poll(state,s=>s.settings.theme==='current');
     assert.equal(await ui.locator('#theme-icon').evaluate(el=>el.style.transform),'rotate(360deg)');
     results.push('Theme button switches dark grey/light grey and turns 180 degrees on each toggle');
-    assert.equal(await ui.locator('.nav-button[data-panel="about"]').innerText(), 'About');
+    assert.equal(await ui.locator('.nav-button[data-panel="about"]').count(), 0);
     assert.equal(await ui.locator('.profile').count(), 0);
     await ui.locator('.sidebar-wordmark').click();
     await poll(state,s=>s.panel==='about');
@@ -109,7 +109,7 @@ async function run() {
     await saveUI('about.png');
     await command('panel',{name:null});
     results.push('About has a larger continuously spinning bolt, copyright and complete MIT license');
-    results.push('About button has only the info icon and label; logo opens About and copyright link has no hover change');
+    results.push('Bottom About button is removed; logo opens About and copyright link has no hover change');
     await command('navigate',{value:base+'/slow'});
     await poll(state,s=>!s.tabs.find(t=>t.id===s.activeId)?.loading);
     await poll(()=>ui.locator('#loading-bolt').getAttribute('data-motion'),motion=>motion==='finishing',1500);

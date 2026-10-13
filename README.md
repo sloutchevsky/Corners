@@ -1,11 +1,11 @@
-# Flashborn 1.6.0
+# Flashborn 1.7.0
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.6.0-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.7.0-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -13,12 +13,22 @@ bookmarks, history and the Flash library are retained.
 This personal local build is unsigned; Windows can show an unknown publisher
 or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 
+The Windows install/uninstall consent prompt takes its verified publisher from
+an Authenticode signature, not the installer’s publisher text or EXE company
+metadata. A trusted code-signing certificate issued for the publisher is required.
+This build does not have one. When a certificate or signing service is available,
+configure electron-builder signing and use `npm run dist:signed`; that target
+fails if signing is unavailable instead of silently producing an unsigned build.
+For a PFX certificate, provide its path with `WIN_CSC_LINK` and its password via
+`WIN_CSC_KEY_PASSWORD` in the build environment, outside source control.
+See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options).
+
 ## Use
 
 - Enter an address or search in the top bar. Press **Enter** or click **Go**.
 - Right-click any tab for **Duplicate Tab** and **Close Tab**. Duplicates open
   immediately beside the original and keep its modern/native and private mode.
-- Choose **New Flashcognito tab** from the three-dot menu, or press **Ctrl+Shift+N**.
+- Choose **Flashcognito tab** from the three-dot menu, or press **Ctrl+Shift+N**.
   Silver bolts and a quiet new-tab page identify private tabs. Browsing history,
   restored tabs, automatic library additions and download records are not saved.
   Modern sites use a separate in-memory session; the native Flash engine also
@@ -32,8 +42,14 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 - PDF links, PDF MIME responses and local PDF files display in Chromium’s PDF viewer.
 - Image formats include PNG, JPEG, GIF, WebP, SVG, AVIF, BMP and ICO. Video formats
   include MP4/M4V, WebM, OGV and MOV; playback depends on Chromium codec support.
-- The address bar completes known URLs from bookmarks, history and open tabs.
-  Use Up/Down and Enter, click a suggestion, or press Escape to dismiss.
+- The address bar and new-tab search complete known URLs from bookmarks, history
+  and open tabs, and suggest previous search phrases. The Flash library address
+  field also suggests saved local sources. Use Up/Down and Enter, click a
+  suggestion, or press Escape to dismiss. URL completions retain the site's
+  original HTTP/HTTPS scheme. Live text predictions come from your selected
+  DuckDuckGo, Google or Bing search engine, with no AI mode. Only search phrases
+  are sent; full URLs and local paths are excluded. Private predictions use no
+  cookies or persistent prediction cache. Local results remain usable offline.
 - Drag tabs, bookmarks, downloads and Flash library entries to reorder them. With an item
   focused, Alt+Up/Down also moves it. Bookmark, download and library order is saved.
 - Ctrl+mouse wheel and Ctrl+/− visibly zoom pages, with a Chrome-style percentage popup and Reset button.
@@ -56,8 +72,12 @@ or SmartScreen prompt. Uninstall through Windows Settings → Apps.
   inline Chrome-style zoom controls, fullscreen, and Adobe High/Medium/Low Flash quality.
 - High/Medium/Low quality is saved and applies to open native movies and future loads.
 - The sidebar provides tabs, bookmarks, history, downloads, settings and a SWF library.
-  Bookmarks, History, Downloads and Settings use small gold icons that animate
-  on hover; the system's reduced-motion preference disables their animations.
+  The simple gold bolt is retained. The Flash library bolt and smaller bookmark
+  star spin once on hover; the History arrow and hands complete a counterclockwise
+  12-hour cycle; the Downloads arrow hits its tray and bounces back. The gear
+  spins while hovered. The lights stay fixed, and reduced motion disables spins.
+  Flashcognito uses the normal new-tab layout and fonts, cooler greys, a silver
+  bolt, and 50% page opacity. The top-left wordmark and browser menu open About.
 - The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
   Its controls stay visible in fullscreen. Background opens a color wheel with a screen eyedropper, defaulting to white.
   Screen picking temporarily holds the visible Flash image as a snapshot so
@@ -154,10 +174,13 @@ npm run test:files
 npm run test:refinements
 npm run test:polish
 npm run test:privacy
+npm run test:ui-update
+npm run test:predictions
+npm run test:eyedropper
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.6.0-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.7.0-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -171,6 +194,14 @@ visibility after tab switching, framesets, and classic plugin detection scripts.
 The file/UI checks cover real HTML, image, video, PDF and SWF drops, relative assets,
 URL suggestions, keyboard selection and the copyright link. Results and screenshots
 are in `test-output`.
+
+The prediction checks verify real DuckDuckGo, Google and Bing responses in both
+search fields, selected-result navigation, offline fallback, cancellation of
+outdated responses, exclusion of URLs and file paths, and private cache isolation.
+
+The eyedropper check opens the actual Chromium screen picker over Adobe Flash,
+checks that Flash's native child is hidden while its image remains visible, and
+verifies that canceling restores live playback without changing the background.
 
 The polish checks verify the exact first-frame title bolt, the smaller About branding, 40px text offset, theme-independent grey metadata,
 real Adobe Low/Medium/High quality, native eyedropper opening and cancellation,

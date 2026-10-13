@@ -20,7 +20,8 @@ async function run() {
     if (req.url === '/movie.swf') { res.writeHead(200, { 'Content-Type': 'application/x-shockwave-flash' }); return res.end(demo); }
     if (req.url === '/download') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="private-download.txt"' }); return res.end('Private file kept explicitly.'); }
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end('<!doctype html><title>' + (req.url.includes('flash') ? 'Private Flash page' : 'Session fixture') + '</title><h1>Session fixture</h1>' + (req.url.includes('flash') ? '<embed id="embedded" type="application/x-shockwave-flash" src="/movie.swf" width="640" height="400">' : ''));
+    const flashPage = req.url.startsWith('/flash-');
+    res.end('<!doctype html><title>' + (flashPage ? 'Private Flash page' : 'Session fixture') + '</title><h1>Session fixture</h1>' + (flashPage ? '<embed id="embedded" type="application/x-shockwave-flash" src="/movie.swf" width="640" height="400">' : ''));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -35,21 +36,34 @@ async function run() {
   };
   const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
   const state = () => app.evaluate(() => global.__flashborn.getState());
-  const script = code => app.evaluate(({}, code) => { const t = global.__flashborn.activeTab(); return t.native ? t.native.evaluate(code) : t.view.webContents.executeJavaScript(code, true); }, code);
+    const script = code => app.evaluate(({}, code) => { const t = global.__flashborn.activeTab(); return t.native ? t.native.evaluate(code) : t.view.webContents.executeJavaScript(code, true); }, code);
   const ready = () => poll(state, s => { const t = s.tabs.find(t => t.id === s.activeId); return !t.loading && !t.error; });
   const swfReady = () => poll(() => script('document.body.dataset.ready'), value => value === 'true', 60000);
   const persisted = () => JSON.parse(fs.readFileSync(path.join(profile, 'browser.json'), 'utf8'));
+  const saveUI = async filename => {
+    const bytes = await app.evaluate(async () => (await global.__flashborn.win.webContents.capturePage()).toPNG().toString('base64'));
+    fs.writeFileSync(path.join(output, filename), Buffer.from(bytes, 'base64'));
+  };
   try {
     let ui = await launch();
-    for (const name of ['bookmarks', 'history', 'downloads', 'settings']) {
+    await ui.emulateMedia({ reducedMotion: 'no-preference' });
+    for (const name of ['library', 'bookmarks', 'history', 'downloads', 'settings']) {
       const button = ui.locator(`.sidebar [data-panel="${name}"]`), glyph = button.locator('.nav-gold');
-      assert.equal(await glyph.evaluate(el => getComputedStyle(el).animationName), 'none');
+      assert.equal(await glyph.getAttribute('data-motion'), 'idle');
       await button.hover();
-      assert.match(await glyph.evaluate(el => getComputedStyle(el).stroke), /nav-gold/);
-      assert.notEqual(await glyph.evaluate(el => getComputedStyle(el).animationName), 'none');
+      await poll(() => glyph.getAttribute('data-motion'), value => value === 'spinning');
+      const first = await glyph.evaluate(el => el.toDataURL()); await wait(250);
+      assert.notEqual(await glyph.evaluate(el => el.toDataURL()), first);
+      if (name !== 'settings') {
+        await poll(() => glyph.getAttribute('data-motion'), value => value === 'idle', 4000);
+        const done = await glyph.evaluate(el => el.toDataURL()); await wait(180);
+        assert.equal(await glyph.evaluate(el => el.toDataURL()), done);
+      }
+      await ui.locator('.title-note').hover();
     }
+    await ui.locator('.sidebar [data-panel="settings"]').hover();
     await ui.emulateMedia({ reducedMotion: 'reduce' });
-    assert.equal(await ui.locator('.nav-gold-settings').evaluate(el => getComputedStyle(el).animationName), 'none');
+    await poll(() => ui.locator('.nav-gold-settings').getAttribute('data-motion'), value => value === 'reduced');
     await ui.emulateMedia({ reducedMotion: 'no-preference' });
     await command('navigate', { value: base + '/ordinary' }); await ready();
     const originalId = (await state()).activeId;
@@ -67,7 +81,7 @@ async function run() {
     await app.evaluate(() => { const menu = global.__flashborn.tabMenu; menu.closePopup(); menu.items[1].click(); });
     assert.equal((await state()).tabs.length, 1);
     pass('Native right-click menu duplicates beside the source, keeps its page/session/zoom, and closes the clicked tab');
-    pass('Four small gold sidebar icons animate only on hover/focus and honor reduced motion');
+    pass('Five gold sidebar icons use stationary lighting; four finish one hover animation, the gear loops, and all honor reduced motion');
 
     await ui.locator('#menu-button').click();
     const menu = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/menu.html'), Boolean);
@@ -77,8 +91,8 @@ async function run() {
     assert.equal(await ui.locator('#home-bolt').getAttribute('data-metal'), 'silver');
     assert.equal(await ui.locator('#loading-bolt').getAttribute('data-metal'), 'silver');
     assert.ok(await ui.locator('#private-badge').isVisible());
-    fs.writeFileSync(path.join(output, 'flashcognito-dark.png'), await ui.screenshot());
-    await command('theme'); fs.writeFileSync(path.join(output, 'flashcognito-light.png'), await ui.screenshot()); await command('theme');
+    await saveUI('flashcognito-dark.png');
+    await command('theme'); await saveUI('flashcognito-light.png'); await command('theme');
     await command('navigate', { value: base + '/' + secret }); await ready();
     const privateId = (await state()).activeId;
     assert.ok(!(await script('document.cookie')).includes('ordinary'));
@@ -94,7 +108,7 @@ async function run() {
     assert.equal(await script('localStorage.getItem("mode")'), 'ordinary');
     assert.ok(!(await script('document.cookie')).includes(secret));
     await command('suggest', { query: secret, bounds: { x: 400, y: 62, width: 400, height: 34 } });
-    assert.equal((await state()).suggestions, null);
+    assert.ok(!(await state()).suggestions?.items.some(item => item.type === 'url' || item.source === 'history'));
     pass('Flashcognito uses isolated in-memory cookies/storage, shares them between private duplicates, and never leaks into history/restoration/autocomplete');
 
     await command('select-tab', { id: privateId });
@@ -139,7 +153,7 @@ async function run() {
     await poll(state, s => s.colorPicking && !!s.colorPreview);
     await poll(() => app.evaluate(() => global.__flashborn.activeTab().native.inspect().visible), value => value === 0);
     await ui.locator('#color-pick-preview').evaluate(el => el.decode());
-    fs.writeFileSync(path.join(output, 'eyedropper-flash-snapshot.png'), await ui.screenshot());
+    await saveUI('eyedropper-flash-snapshot.png');
     const preview = await app.evaluate(async ({ nativeImage }) => { const image = nativeImage.createFromBuffer(Buffer.from(global.__flashborn.getState().colorPreview.split(',')[1], 'base64')), pixels = image.toBitmap(); let cream = 0; for (let i=0;i<pixels.length;i+=4) if (pixels[i+2]>200 && pixels[i+1]>160 && pixels[i+1]<235 && pixels[i]>100 && pixels[i]<220) cream++; return { cream, width:image.getSize().width }; });
     assert.ok(preview.cream > 500, JSON.stringify(preview));
     await color.evaluate(() => window.__pickResolve({ sRGBHex: '#11aa88' }));

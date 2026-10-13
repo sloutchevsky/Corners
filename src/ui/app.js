@@ -2,8 +2,8 @@
 let state, viewKey = '', filter = '', toastTimer;
 let aboutBolt, homeBolt, lastTheme, themeTurns = 0;
 let dragging = null;
-let suggestionTimer, typedAddress = '';
-let inlineAddress = null;
+const predictiveFields = new Map();
+let activePrediction = null;
 let tabRenderKey = '', listRenderKey = '';
 let libraryOpenKind = 'swf';
 const $ = selector => document.querySelector(selector);
@@ -21,6 +21,7 @@ async function call(action, args = {}) {
 function current() { return state?.tabs.find(t => t.id === state.activeId); }
 const loadingBolt = new GoldLightning(document.getElementById('loading-bolt'));
 const titleBolt = new GoldLightning(document.getElementById('title-bolt'));
+const navigationIcons = [...document.querySelectorAll('[data-nav-icon]')].map(canvas => new GoldNavigation(canvas));
 function render(next) {
   state = next;
   document.body.classList.toggle('collapsed', state.collapsed);
@@ -62,19 +63,19 @@ function render(next) {
   $('#native-mode').classList.toggle('native-active', !!t?.native);
   $('#native-mode').setAttribute('aria-pressed', String(!!t?.native));
   $('#menu-button').setAttribute('aria-expanded', String(state.menuOpen));
-  $('#address').setAttribute('aria-expanded', String(!!state.suggestions));
+  for (const [id, controller] of predictiveFields) controller.input.setAttribute('aria-expanded', String(state.suggestions?.field === id));
   const downloads = state.downloads.filter(d => d.state === 'progressing').length;
   $('#download-count').textContent = downloads || '';
-  $('#page-status').textContent = state.panel ? ({ library: 'Your Flash collection', bookmarks: 'Saved for later', history: 'Recently visited', downloads: 'Your downloads', settings: 'Make it yours', about: 'Flashborn ' + state.version }[state.panel]) : t?.loading ? 'Loading…' : t?.kind === 'home' ? 'Make yourself at home.' : t?.kind === 'flash' ? 'Adobe Flash Player ' + state.flashVersion : t?.url || '';
+  $('#page-status').textContent = state.panel ? ({ library: 'Your Flash collection', bookmarks: 'Saved for later', history: 'Recently visited', downloads: 'Your downloads', settings: 'Settings', about: 'Flashborn ' + state.version }[state.panel]) : t?.loading ? 'Loading…' : t?.kind === 'home' ? 'Make yourself at home.' : t?.kind === 'flash' ? 'Adobe Flash Player ' + state.flashVersion : t?.url || '';
   $('#status-right').textContent = t?.private ? 'Flashcognito · temporary session' : t?.audible ? (t.muted ? 'Audio muted' : 'Audio playing') : t?.native ? 'Native Adobe Flash' : 'Chromium · Adobe Flash';
   const key = state.panel ? state.panel + (t?.private ? ':private' : '') : (t?.error ? 'error:' + t.id + t.error : t?.kind === 'home' ? t.private ? 'private-home' : 'home' : 'web');
   if (key !== viewKey) { filter = ''; viewKey = key; renderContent(); }
   else if (state.panel && !['settings', 'about'].includes(state.panel)) renderList();
-  else if (key === 'home') renderQuickLinks();
+  else if (key === 'home' || key === 'private-home') renderQuickLinks();
 }
 function home() {
-  if (current()?.private) return `<section class="home flashcognito-home"><div class="private-emblem"><span class="flash-card-icon"><canvas id="home-bolt" width="192" height="192" role="img" aria-label="Silver lightning bolt"></canvas></span></div><div class="private-eyebrow">Flashcognito</div><h1>A little more private.</h1><p class="home-description">A fresh session. No saved browsing trail.</p><form id="home-search" class="search-box">${icon('search')}<input id="home-input" aria-label="Search the web privately" placeholder="Search the web or paste a link" spellcheck="false" autocomplete="off"><button class="search-submit" title="Go" aria-label="Go">${icon('arrow')}</button></form><div class="private-details"><div><h2>No saved trail</h2><p>These tabs stay out of your browsing history and won’t reopen when you return.</p></div><div><h2>Fresh site sessions</h2><p>Temporary cookies and site data are cleared when you close your last Flashcognito tab.</p></div></div><button class="private-library-link" data-panel="library">Old favorites are still welcome. <span>Open your Flash library ${icon('forward')}</span></button><p class="private-footnote">Bookmarks and downloaded files you choose to keep remain on your device.<br>Flashcognito doesn’t hide your activity from websites or your network.</p></section>`;
-  return `<section class="home"><h1>Where would you like to go?</h1><p class="home-description">A fresh start. An old favorite. Something unexpected.</p><form id="home-search" class="search-box">${icon('search')}<input id="home-input" aria-label="Search the web" placeholder="Search the web or paste a link" spellcheck="false" autocomplete="off"><button class="search-submit" title="Go" aria-label="Go">${icon('arrow')}</button></form><div id="quick-links" class="quick-links"></div><div class="home-divider"></div><div class="home-bottom"><button class="flash-library-link" data-panel="library"><span class="flash-card-icon"><canvas id="home-bolt" width="128" height="128" aria-hidden="true"></canvas></span><span class="flash-copy"><span class="flash-card-title">Some things never get old.</span><span class="flash-card-description">Your Flash games and movies, ready to play again.</span></span></button><button class="subtle-button" data-action="open-file">Open a SWF ${icon('forward')}</button></div><div class="home-footnote">${icon('lock')}Your history and bookmarks stay on this device.</div></section>`;
+  const privateMode = !!current()?.private;
+  return `<section class="home${privateMode ? ' flashcognito-home' : ''}"><h1>${privateMode ? 'A little more private.' : 'Where would you like to go?'}</h1><p class="home-description">${privateMode ? 'A fresh session. No saved browsing trail.' : 'A fresh start. An old favorite. Something unexpected.'}</p><form id="home-search" class="search-box">${icon('search')}<input id="home-input" aria-label="${privateMode ? 'Search the web privately' : 'Search the web'}" placeholder="Search the web or paste a link" spellcheck="false" autocomplete="off"><button class="search-submit" title="Go" aria-label="Go">${icon('arrow')}</button></form><div id="quick-links" class="quick-links"></div><div class="home-divider"></div><div class="home-bottom"><button class="flash-library-link" data-panel="library"><span class="flash-card-icon"><canvas id="home-bolt" width="128" height="128" role="img" aria-label="${privateMode ? 'Silver' : 'Gold'} lightning bolt"></canvas></span><span class="flash-copy"><span class="flash-card-title">${privateMode ? 'Old favorites are still welcome.' : 'Some things never get old.'}</span><span class="flash-card-description">${privateMode ? 'Open your Flash library.' : 'Your Flash games and movies, ready to play again.'}</span></span></button><button class="subtle-button" data-action="open-file">Open a SWF ${icon('forward')}</button></div><div class="home-footnote">${icon('lock')}${privateMode ? 'Bookmarks and downloaded files you keep remain on your device.<br>Flashcognito doesn’t hide your activity from websites or your network.' : 'Your history and bookmarks stay on this device.'}</div></section>`;
 }
 function renderQuickLinks() {
   const target = $('#quick-links'); if (!target) return;
@@ -82,10 +83,12 @@ function renderQuickLinks() {
   target.innerHTML = (state.bookmarks.length ? state.bookmarks.slice(0, 5) : defaults).map(b => `<button class="quick-link" data-url="${escape(b.url)}">${icon(state.bookmarks.length ? 'star' : 'globe')}${escape(b.title.slice(0, 24))}</button>`).join('');
 }
 function panelHeader(name, description, actions) {
-  return `<section class="panel"><div class="panel-eyebrow">Your space</div><h1>${name}</h1><p class="description">${description}</p>${actions ? '<div class="panel-actions">' + actions + '</div>' : ''}<div id="item-list" class="item-list"></div></section>`;
+  return `<section class="panel"><h1>${name}</h1><p class="description">${description}</p>${actions ? '<div class="panel-actions">' + actions + '</div>' : ''}<div id="item-list" class="item-list"></div></section>`;
 }
 function renderContent() {
   listRenderKey = '';
+  for (const [id, controller] of predictiveFields) if (id !== 'address') { clearTimeout(controller.timer); predictiveFields.delete(id); }
+  if (activePrediction?.input.id !== 'address') activePrediction = null;
   if (aboutBolt) { aboutBolt.dispose(); aboutBolt = null; }
   if (homeBolt) { homeBolt.dispose(); homeBolt = null; }
   const t = current();
@@ -102,9 +105,13 @@ function renderContent() {
   if ($('#about-bolt')) aboutBolt = new GoldLightning($('#about-bolt'), { continuous: true });
   if ($('#home-bolt')) homeBolt = new GoldLightning($('#home-bolt'), { metal: t?.private ? 'silver' : 'gold' });
   renderQuickLinks(); renderList();
-  if ($('#home-search')) $('#home-search').addEventListener('submit', e => { e.preventDefault(); call('navigate', { value: $('#home-input').value }); });
+  if ($('#home-search')) {
+    const controller = bindPredictiveField($('#home-input'), $('#home-search'));
+    $('#home-search').addEventListener('submit', e => { e.preventDefault(); controller.submit(); });
+  }
   if ($('#library-open-form')) {
-    $('#library-open-form').addEventListener('submit', e => { e.preventDefault(); call('add-library-source', { kind: libraryOpenKind, value: $('#library-open-address').value }); });
+    const controller = bindPredictiveField($('#library-open-address'), $('#library-open-address'), { library: true });
+    $('#library-open-form').addEventListener('submit', e => { e.preventDefault(); controller.submit(); });
     $('#library-browse').addEventListener('click', () => call('browse-library-source', { kind: libraryOpenKind }));
   }
   if ($('#filter')) $('#filter').addEventListener('input', e => { filter = e.target.value.toLowerCase(); renderList(); });
@@ -147,7 +154,7 @@ function renderList() {
 }
 function settings() {
   const s = state.settings;
-  return `<section class="panel"><div class="panel-eyebrow">Make it yours</div><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open SWF or PDF · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
+  return `<section class="panel"><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open SWF or PDF · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
 }
 function about() {
   return `<section class="panel about-panel"><canvas id="about-bolt" class="about-bolt" width="336" height="336" role="img" aria-label="Spinning gold lightning bolt"></canvas><div class="about-copy"><h1 class="brand-wordmark about-wordmark" role="img" aria-label="flashborn"></h1><div class="about-text"><p class="about-motto">A quieter kind of browsing. Original Adobe Flash playback.</p><p class="about-dedication">This browser is dedicated to the team at Firstborn—one of the first digital design groups to help shape UI design as we know it today. Firstborn used Flash to create and share its work around the world. Flashborn was designed to preserve that legacy after browser support for Flash was discontinued in 2020. Please enjoy the browser, and send your comments or support to <a class="about-email" data-contact-email href="mailto:sloutchevsky@gmail.com">sloutchevsky@gmail.com</a>.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Modern browser</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash player</dt><dd>Adobe Flash ${escape(state.flashVersion)} · PPAPI</dd><dt>Flash runtime</dt><dd>Electron ${escape(state.flashRuntime)} · separate process</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Native Flash</dt><dd>${state.flashReady ? 'Bundled and ready' : 'Runtime missing — reinstall Flashborn'}</dd></dl><p class="about-note">The original Adobe player from your installed Flash Browser is bundled without modification. Adobe Flash and its required legacy Chromium runtime no longer receive security updates. Ordinary pages use the current browser engine; Flash pages use the legacy runtime. The lightning button switches a website between modes.</p><a class="about-copyright" data-browser-url href="https://www.sloutchevsky.com/">© 2026 Vas Sloutchevsky</a><details class="about-license"><summary>MIT open source license</summary><p>Flashborn’s application source is free to use, copy, modify, merge, publish, distribute, sublicense, and sell under the MIT License. Third-party components, including Adobe Flash Player, retain their own licenses.</p><p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p><p>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p><p>THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p></details></div></div></section>`;
@@ -216,50 +223,69 @@ document.addEventListener('keydown', event => {
     document.querySelector(`[data-reorder-id="${row.dataset.reorderId}"] button`)?.focus();
   });
 });
-function submitAddress() {
-  clearTimeout(suggestionTimer);
-  const selected = state?.suggestions?.selected ?? -1;
-  if (selected >= 0) call('suggest-open', { index: selected });
-  else call('navigate', { value: inlineAddress?.value === $('#address').value ? inlineAddress.url : $('#address').value.trim() });
-  inlineAddress = null;
-  $('#address').blur();
-}
-$('#address-form').addEventListener('submit', e => { e.preventDefault(); submitAddress(); });
-$('#address').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); submitAddress(); } });
-$('#address').addEventListener('focus', e => e.target.select());
-$('#address').setAttribute('aria-autocomplete', 'both');
-$('#address').addEventListener('input', event => {
-  typedAddress = event.target.value; inlineAddress = null; clearTimeout(suggestionTimer);
-  const query = typedAddress, inline = event.inputType === 'insertText' && !/\s/.test(query);
-  suggestionTimer = setTimeout(async () => {
-    const rect = $('#address-form').getBoundingClientRect();
-    const result = await window.browser.call('suggest', { query, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
-    if (!result.ok || document.activeElement !== $('#address') || typedAddress !== query) return;
-    render(result.state);
-    const suggestion = result.state.suggestions?.items[0];
-    if (inline && suggestion) {
-      let completion = suggestion.url;
-      if (!/^https?:\/\//i.test(query)) completion = completion.replace(/^https?:\/\//, '');
-      if (!/^www\./i.test(query) && !/^https?:\/\//i.test(query)) completion = completion.replace(/^www\./, '');
-      if (completion.toLowerCase().startsWith(query.toLowerCase()) && completion.length > query.length) {
-        inlineAddress = { value: completion, url: suggestion.url };
-        $('#address').value = completion; $('#address').setSelectionRange(query.length, completion.length);
-      }
+function bindPredictiveField(input, container, { selectOnFocus = false, library = false } = {}) {
+  const controller = { input, typed: input.value, inline: null, timer: null, revision: 0 };
+  predictiveFields.set(input.id, controller);
+  input.setAttribute('aria-autocomplete', 'both'); input.setAttribute('aria-expanded', 'false');
+  input.setAttribute('role', 'combobox'); input.setAttribute('aria-haspopup', 'listbox');
+  controller.submit = () => {
+    clearTimeout(controller.timer); controller.revision++;
+    const data = state?.suggestions;
+    const selected = data?.field === input.id && data.query === controller.typed && (!library || data.libraryKind === libraryOpenKind) ? data.selected : -1;
+    if (selected >= 0) call('suggest-open', { index: selected });
+    else {
+      const value = controller.inline?.value === input.value ? controller.inline.url : input.value.trim();
+      call(library ? 'add-library-source' : 'navigate', library ? { kind: libraryOpenKind, value } : { value });
     }
-  }, 90);
-});
-$('#address').addEventListener('keydown', async event => {
-  if (event.key === 'Escape') {
-    event.preventDefault(); inlineAddress = null; clearTimeout(suggestionTimer); $('#address').value = typedAddress; call('suggest-close'); return;
-  }
-  if (!state?.suggestions) return;
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    event.preventDefault();
-    const next = await call('suggest-select', { direction: event.key === 'ArrowDown' ? 1 : -1 });
-    if (next?.suggestions) $('#address').value = next.suggestions.items[next.suggestions.selected]?.url || typedAddress;
-  }
-});
-$('#address').addEventListener('blur', () => { clearTimeout(suggestionTimer); setTimeout(() => { if (document.activeElement !== $('#address')) call('suggest-close'); }, 120); });
+    controller.inline = null; input.blur();
+  };
+  input.addEventListener('focus', () => { activePrediction = controller; controller.typed = input.value; if (selectOnFocus) input.select(); });
+  input.addEventListener('input', event => {
+    controller.typed = input.value; controller.inline = null; clearTimeout(controller.timer);
+    const revision = ++controller.revision, query = controller.typed;
+    if (event.isComposing) return;
+    const inline = event.inputType === 'insertText' && !/\s/.test(query);
+    if (!query.trim()) { call('suggest-close'); return; }
+    controller.timer = setTimeout(async () => {
+      if (!input.isConnected || document.activeElement !== input || revision !== controller.revision) return;
+      const rect = container.getBoundingClientRect();
+      const result = await window.browser.call('suggest', { query, field: input.id, libraryKind: libraryOpenKind, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+      if (!result.ok || document.activeElement !== input || revision !== controller.revision) return;
+      render(result.state);
+      const suggestion = result.state.suggestions?.items[0];
+      if (inline && suggestion?.type === 'url') {
+        let completion = suggestion.url;
+        if (!/^https?:\/\//i.test(query)) completion = completion.replace(/^https?:\/\//, '');
+        if (!/^www\./i.test(query) && !/^https?:\/\//i.test(query)) completion = completion.replace(/^www\./, '');
+        if (completion.toLowerCase().startsWith(query.toLowerCase()) && completion.length > query.length) {
+          controller.inline = { value: completion, url: suggestion.url };
+          input.value = completion; input.setSelectionRange(query.length, completion.length);
+        }
+      }
+    }, 100);
+  });
+  input.addEventListener('keydown', async event => {
+    if (event.isComposing) return;
+    if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); controller.submit(); return; }
+    if (event.key === 'Escape') {
+      event.preventDefault(); controller.inline = null; clearTimeout(controller.timer); controller.revision++;
+      input.value = controller.typed; call('suggest-close'); return;
+    }
+    if (state?.suggestions?.field !== input.id || state.suggestions.query !== controller.typed) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); clearTimeout(controller.timer); controller.inline = null;
+      const next = await call('suggest-select', { direction: event.key === 'ArrowDown' ? 1 : -1 });
+      if (next?.suggestions?.field === input.id) input.value = next.suggestions.items[next.suggestions.selected]?.inputText || controller.typed;
+    }
+  });
+  input.addEventListener('blur', () => {
+    clearTimeout(controller.timer); controller.revision++;
+    setTimeout(() => { if (document.activeElement !== input && state?.suggestions?.field === input.id) call('suggest-close'); }, 120);
+  });
+  return controller;
+}
+const addressPrediction = bindPredictiveField($('#address'), $('#address-form'), { selectOnFocus: true });
+$('#address-form').addEventListener('submit', e => { e.preventDefault(); addressPrediction.submit(); });
 $('#menu-button').addEventListener('click', () => call('menu'));
 function find(next = false, forward = true) { call('find', { text: $('#find-input').value, next, forward }); }
 $('#find-input').addEventListener('input', () => find());
