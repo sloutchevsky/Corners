@@ -31,6 +31,7 @@ async function run() {
   delete env.ELECTRON_RUN_AS_NODE;
   let app;
   const results = [];
+  const addResult=results.push.bind(results); results.push=value=>{console.log('PASS '+value);return addResult(value);};
   try {
     app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: process.env.FLASHBORN_EXE ? [] : [root], env, timeout: 45000 });
     app.process().stderr.on('data', data => fs.appendFileSync(path.join(output, 'electron.log'), data));
@@ -39,22 +40,29 @@ async function run() {
     const saveUI = async filename => { await new Promise(resolve => setTimeout(resolve, 300)); const bytes = await app.evaluate(async () => (await global.__flashborn.win.webContents.capturePage()).toPNG().toString('base64')); fs.writeFileSync(path.join(output, filename), Buffer.from(bytes, 'base64')); };
     const command = (action, args = {}) => app.evaluate(({ }, { action, args }) => global.__flashborn.command(action, args), { action, args });
     const state = () => app.evaluate(() => global.__flashborn.getState());
-    const pageScript = code => app.evaluate(({ }, code) => global.__flashborn.activeTab().view.webContents.executeJavaScript(code, true), code);
-    const saveView = async filename => { await app.evaluate(async () => { await global.__flashborn.activeTab().view.webContents.capturePage(); }); await new Promise(resolve => setTimeout(resolve, 500)); const bytes = await app.evaluate(async () => (await global.__flashborn.activeTab().view.webContents.capturePage()).toPNG().toString('base64')); fs.writeFileSync(path.join(output, filename), Buffer.from(bytes, 'base64')); };
+    const pageScript = code => app.evaluate(({ }, code) => {const t=global.__flashborn.activeTab(); return t.native ? t.native.evaluate(code) : t.view.webContents.executeJavaScript(code,true);}, code);
+    const saveView = async filename => { await new Promise(resolve => setTimeout(resolve, 700)); const bytes = await app.evaluate(async () => {const t=global.__flashborn.activeTab();return t.native ? t.native.screenshot() : (await t.view.webContents.capturePage()).toPNG().toString('base64');}); fs.writeFileSync(path.join(output, filename), Buffer.from(bytes, 'base64')); };
+    await app.evaluate(() => global.__flashborn.win.showInactive());
 
     await ui.locator('.home h1').waitFor();
     await saveUI('home.png');
     assert.equal((await state()).tabs.length, 1);
     assert.equal((await state()).flashReady, true);
-    results.push('Desktop shell, home screen and bundled Ruffle extension load');
+    results.push('Desktop shell and bundled native Adobe Flash load');
 
     await ui.locator('#address').fill(base + '/one');
-    await ui.locator('#address-form').evaluate(form => form.requestSubmit());
+    await ui.locator('#address').press('Enter');
     await poll(state, s => s.tabs.find(t => t.id === s.activeId)?.title === 'First page');
     assert.equal(await pageScript('typeof require'), 'undefined');
     assert.equal(await pageScript('typeof process'), 'undefined');
     assert.equal(await pageScript('typeof window.browser'), 'undefined');
-    results.push('Address bar navigates; web pages have no Node or browser IPC access');
+    results.push('Address bar Enter navigates; web pages have no Node or browser IPC access');
+    await ui.locator('#address').fill(base+'/two');
+    await ui.locator('#address-go').click();
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.title==='Second page');
+    await command('back');
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.title==='First page');
+    results.push('Address bar Go button navigates the typed URL');
 
     await pageScript('document.getElementById("next").click()');
     await poll(state, s => s.tabs.find(t => t.id === s.activeId)?.title === 'Second page');
@@ -92,7 +100,7 @@ async function run() {
     assert.equal(found.matches, 2);
     results.push('Find in page reports the correct matches');
 
-    const downloadPath = path.join(output, 'browser-test.txt');
+    const downloadPath = path.join(output, 'browser-test-' + Date.now() + '.txt');
     await app.evaluate(({ }, filename) => { global.__flashborn.browsingSession.once('will-download', (_event, item) => item.setSavePath(filename)); }, downloadPath);
     await pageScript('document.getElementById("download").click()');
     await poll(state, s => s.downloads.some(d => d.state === 'completed'));
@@ -104,19 +112,36 @@ async function run() {
 
     await app.evaluate(async ({ }, filename) => global.__flashborn.openLocal(filename), path.join(root, 'assets', 'Flashborn-Demo.swf'));
     await poll(() => pageScript('({ready:document.body.dataset.ready,error:document.querySelector(".error")?.textContent})'), s => { if (s.error) throw new Error(s.error); return s.ready === 'true'; }, 60000);
-    const metadata = await pageScript('document.querySelector("ruffle-player").ruffle().metadata');
-    assert.equal(metadata.width, 640); assert.equal(metadata.height, 400);
+    assert.equal(await pageScript('document.body.dataset.flashVersion'),'WIN 32,0,0,363');
+    assert.equal(await pageScript('typeof require'),'undefined');
+    assert.equal(await pageScript('typeof process'),'undefined');
+    const initialFrame=await pageScript('document.getElementById("flash-movie").CurrentFrame()');
+    await poll(()=>pageScript('document.getElementById("flash-movie").CurrentFrame()'),n=>n!==initialFrame);
     await pageScript('document.getElementById("pause").click()');
     assert.equal(await pageScript('document.getElementById("pause").textContent'), 'Resume');
-    assert.equal(await pageScript('document.querySelector("ruffle-player").ruffle().suspended'), true);
+    assert.equal(await pageScript('document.getElementById("flash-movie").IsPlaying()'), false);
     await pageScript('document.getElementById("mute").click()');
     assert.equal(await pageScript('document.getElementById("mute").textContent'), 'Unmute');
     await pageScript('document.getElementById("restart").click()');
     await poll(() => pageScript('document.getElementById("player-status").textContent'), s => s === 'Restarted');
-    assert.equal(await pageScript('document.querySelector("ruffle-player").ruffle().volume'), 0);
+    const mutedState=await state(); assert.equal(mutedState.tabs.find(t=>t.id===mutedState.activeId)?.muted,true);
     await saveView('flash-player.png');
     assert.equal((await state()).library.length, 1);
-    results.push('Local SWF decodes in bundled WASM player; pause, mute, restart and library work');
+    results.push('Genuine Adobe WIN 32,0,0,363 executes SWF frames; pause, mute, restart and library work');
+
+    await ui.locator('#menu-button').click();
+    await poll(state,s=>s.menuOpen);
+    const nativeMenu=await app.evaluate(()=>({items:global.__flashborn.menu.items.map(i=>i.label),flashWindow:global.__flashborn.activeTab().native.hwnd}));
+    assert.ok(nativeMenu.flashWindow);
+    assert.ok(nativeMenu.items.includes('Native Adobe Flash mode'));
+    await app.evaluate(()=>global.__flashborn.menu.closePopup(global.__flashborn.win));
+    await poll(state,s=>!s.menuOpen);
+    results.push('Three-dot button opens a native popup above the Flash child window');
+
+    await ui.locator('#address').fill(base+'/one');
+    await ui.locator('#address').press('Enter');
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.title==='First page'&&!s.tabs.find(t=>t.id===s.activeId)?.native);
+    results.push('Address bar Enter works with Flash active and returns ordinary URLs to modern Chromium');
 
     await command('navigate', { value: base + '/movie.swf' });
     await poll(() => pageScript('({ready:document.body.dataset.ready,error:document.querySelector(".error")?.textContent})'), s => { if (s.error) throw new Error(s.error); return s.ready === 'true'; }, 60000);
@@ -128,10 +153,18 @@ async function run() {
     results.push('Flash MIME responses without .swf extension open in the player');
 
     await command('navigate', { value: base + '/embed' });
-    await poll(() => pageScript('({player:!!document.querySelector("ruffle-object,ruffle-embed,ruffle-player"),title:document.title})'), s => s.player);
-    await poll(() => pageScript('document.querySelector("ruffle-object,ruffle-embed,ruffle-player").ruffle().metadata'), s => s?.width === 640, 60000);
+    await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.native);
+    await poll(() => pageScript('document.querySelector("object")?.PercentLoaded?.()'), s => s===100, 60000);
+    assert.equal(await pageScript('document.querySelector("object").GetVariable("$version")'),'WIN 32,0,0,363');
     await saveView('embedded-flash.png');
-    results.push('Legacy object embed is replaced by Ruffle and plays under a website CSP');
+    results.push('Embedded Flash website automatically loads the native Adobe plugin under a website CSP');
+    await command('native-mode');
+    await poll(state,s=>!s.tabs.find(t=>t.id===s.activeId)?.native);
+    await new Promise(resolve=>setTimeout(resolve,500));
+    const modernState=await state(); assert.ok(!modernState.tabs.find(t=>t.id===modernState.activeId)?.native);
+    await command('native-mode');
+    await poll(()=>pageScript('document.querySelector("object")?.PercentLoaded?.()'),s=>s===100);
+    results.push('Native Flash mode can be switched off and back on');
 
     await command('panel', { name: 'library' });
     await saveUI('library.png');
@@ -144,7 +177,7 @@ async function run() {
     results.push('Sidebar and settings render; invalid IPC actions are rejected');
 
     fs.writeFileSync(path.join(output, process.env.FLASHBORN_EXE ? 'packaged-results.json' : 'smoke-results.json'), JSON.stringify({ passed: results, completedAt: new Date().toISOString() }, null, 2));
-    console.log(results.map(r => 'PASS ' + r).join('\n'));
+    console.log('Completed '+results.length+' browser checks.');
   } catch (e) {
     console.error('Smoke test failed:', e);
     console.log(results.map(r => 'PASS ' + r).join('\n'));

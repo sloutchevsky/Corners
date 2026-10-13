@@ -1,79 +1,94 @@
-# Flashborn
+# Flashborn 1.1
 
-A Windows desktop browser with a minimal dark interface, Chromium browsing,
-and bundled Ruffle Flash playback.
+A minimal dark Windows browser with current Chromium for ordinary pages and
+the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.0.0-x64.exe` on Windows 10 or 11 (64-bit).
-The setup wizard lets you choose an installation directory and creates Start
-menu and desktop shortcuts. Chromium and Ruffle are bundled; no separate
-Flash installation is needed. Use Windows Settings → Apps to uninstall.
+Run `release/Flashborn-Setup-1.1.0-x64.exe` on Windows 10 or 11 x64. The installer
+contains both browser engines and the Adobe player. No separate Flash install
+is needed. Close the previous Flashborn version before updating. Settings,
+bookmarks, history and the Flash library are retained.
 
-The installer is unsigned. Windows may show an unknown publisher or
-SmartScreen prompt. A signing certificate was not supplied for this build.
+This personal local build is unsigned; Windows can show an unknown publisher
+or SmartScreen prompt. Uninstall through Windows Settings → Apps.
 
 ## Use
 
-- Type an address or search in the address bar, or on the new tab page.
-- Use the sidebar for tabs, bookmarks, history, downloads, and settings.
-- Open local Flash games with **Open a SWF**, the folder button, or **Ctrl+O**.
-- Visit a direct `.swf` URL to play it in the dedicated player.
-- Embedded Flash objects are automatically replaced by Ruffle on supported sites.
-- Pause, restart, mute, or go full screen in the dedicated Flash player.
-- Try the original `assets/Flashborn-Demo.swf` to check offline playback.
+- Enter an address or search in the top bar. Press **Enter** or click **Go**.
+- Open local SWFs with **Ctrl+O**, the folder button, or **Open a SWF**.
+- Direct SWF URLs and Flash MIME responses open in the native player.
+- Pages with embedded Flash are detected and opened in native mode.
+- Click the **lightning button** for pages that hide Flash behind detection scripts,
+  or to switch a website between modern and native mode.
+- The three-dot menu uses a separate native popup above Flash content.
+- The sidebar provides tabs, bookmarks, history, downloads, settings and a SWF library.
+- The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
 
-The Flash library references your original files. Keep a movie's companion
-assets in the same folder. Moving or deleting the original file prevents
-playback until you open it again. Remote games may depend on discontinued
-servers or unavailable assets.
+The original demo `assets/Flashborn-Demo.swf` displays a moving cream square.
+The library references your files; keep their companion assets in the same folder.
+Pause controls the movie timeline; games may continue running script or timers.
+Missing game servers, external assets and site dependencies can still prevent playback.
+
+## Compatibility and security
+
+The bundled DLL was copied from your installed Flash Browser 0.8.1. Its Adobe
+signature is valid and its SHA-256 is:
+
+`4acafedca8bb62529527029aeb485318866e4fd71bf298e73f735bc75f6d720d`
+
+Adobe Flash support was removed from Electron 12. Flashborn therefore embeds a
+separate Electron 9.4.4 / Chromium 83 process for each native Flash tab, while
+ordinary browsing and the application UI use Electron 44.7.0. This is the real
+PPAPI player, without binary patches or a substituted emulator.
+
+**Adobe Flash and its legacy browser engine no longer receive security updates.**
+Use native mode for trusted legacy content. Process separation is not a VM or a
+guarantee against vulnerabilities in the old engine. Ordinary addresses entered
+in the address bar return to modern Chromium; links within a native page remain
+in native mode.
+
+Both engines use isolated renderers without Node.js access. Certificate checks,
+same-origin protections and website CSP stay enabled. The local player can serve
+companion assets only inside its selected folder. Its JavaScript bridge exposes
+only audio muting. Each native tab has separate cookies/storage; these are not
+shared with modern pages or other native tabs, and are discarded when that native
+tab closes. The modern engine prompts for
+site permissions; native pages are allowed fullscreen only.
+
+History, bookmarks, settings and library entries stay under `%APPDATA%/Flashborn`
+(development uses `%APPDATA%/flashborn-browser`). Uninstall keeps user data.
+There is no analytics service or automatic updater. This custom browser does
+not provide Chrome account sync, general extension installation or DRM video.
 
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 | --- | --- |
-| Ctrl+L | Focus address bar |
-| Ctrl+T / Ctrl+W | New tab / close tab |
+| Ctrl+L | Address bar |
+| Ctrl+T / Ctrl+W | New / close tab |
 | Ctrl+Shift+T | Reopen closed website tab |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
-| Ctrl+1…9 | Select tab (9 selects last) |
+| Ctrl+1…9 | Select tab |
 | Alt+Left / Alt+Right | Back / forward |
 | Ctrl+R / F5 | Reload |
 | Ctrl+O | Open SWF |
-| Ctrl+D | Bookmark current website |
+| Ctrl+D | Bookmark |
 | Ctrl+F | Find in page |
 | Ctrl+H / Ctrl+J | History / downloads |
 | Ctrl+P | Print |
-| Ctrl+Plus / Minus / 0 | Zoom in / out / reset |
-| F11 / Esc | Full screen / leave full screen |
-| F12 | Page developer tools |
+| Ctrl+Plus / Minus / 0 | Zoom |
+| F11 / Esc | Fullscreen / leave fullscreen |
+| F12 | Modern page developer tools |
 
-## Privacy and compatibility
+## Build and validate
 
-Web pages run in sandboxed Chromium renderers without Node.js access.
-Browser controls use a separate isolated renderer with validated IPC.
-Certificate checks, same-origin protections, and site CSP remain enabled.
-Site permissions are prompted and remembered for the current session.
-Local SWFs can request companion files only within their selected folder.
-Flash in the dedicated player has JavaScript access disabled.
-
-Bookmarks, history, settings, tabs, and the Flash library are stored locally
-in `%APPDATA%/Flashborn` (the development app may use
-`%APPDATA%/flashborn-browser`). Cookies and site storage are in the local
-Chromium profile. Uninstall keeps profile data. Flashborn has no analytics
-or background telemetry of its own; visited websites make their own requests.
-
-Flash is emulated by **Ruffle 0.7.1**, not Adobe Flash Player. Ruffle supports
-many ActionScript 1, 2, and 3 titles, but compatibility is incomplete. Check
-https://ruffle.rs/compatibility. This is a custom browser, without Chrome
-account sync, general extension installation, or DRM video support. Some
-sites may restrict embedded browsers. There is no automatic updater;
-rebuild with updated supported Electron and Ruffle versions for updates.
-
-## Build from source
-
-Requirements: Windows x64, Node.js **22.12 or newer**, npm, and an internet
-connection for the initial dependency downloads. Node.js 24 LTS is suitable.
+Requirements: Windows x64, Node.js 22.12+ (24 recommended), npm and the existing
+Flash Browser installation at `C:\Program Files (x86)\FlashBrowser`. Override
+its directory with `FLASHBORN_FLASH_BROWSER` if necessary. The preparation script
+checks the pinned player checksum, copies the compatible runtime and replaces
+its application code with Flashborn's helper. It leaves the installed browser
+untouched. Native binaries are excluded from the source archive.
 
 ```powershell
 npm ci
@@ -83,31 +98,23 @@ npm run test:smoke
 npm run dist
 ```
 
-Output: `release/Flashborn-Setup-1.0.0-x64.exe`.
-Run `npm start` during development. `npm run dist:portable` builds a portable
-Windows executable instead of the installer. The app icons are already in
-the repository; regenerate them with `node scripts/create-icon.js`.
+The build produces `release/Flashborn-Setup-1.1.0-x64.exe`. Run `npm start` for
+development. `npm run dist:portable` produces a portable Windows executable.
+Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
-The Ruffle extension release is downloaded from the official GitHub project
-and checked against a pinned SHA-256 digest. `prepare:assets` adapts the
-extension's content scripts and storage for Electron. It does not weaken
-website CSP or change the Flash engine. License notices ship with the app.
+Unit tests cover URL parsing, forbidden schemes, path containment, SWF headers
+and profile persistence. Runtime tests launch the actual application with a
+disposable profile and fixture server. They cover Enter/Go, navigation, tabs,
+bookmarks, history, find, downloads, genuine Adobe version detection and frame
+execution, player controls, remote and MIME SWFs, embedded objects, native mode,
+menus and renderer isolation. Results and screenshots are in `test-output`.
 
-## Validation
-
-`npm test` covers address parsing, forbidden schemes, path traversal, SWF
-headers, and saved profile handling. `npm run test:smoke` launches the real
-Electron application with a disposable profile and a local fixture server.
-It checks browsing, tabs, isolation, history, bookmarks, find, downloads,
-local/remote/MIME-detected SWFs, and embedded Flash under a website CSP.
-It saves screenshots and results in `test-output`.
-
-To run the same checks on an unpacked release:
+To test an unpacked or extracted installer payload:
 
 ```powershell
 $env:FLASHBORN_EXE = (Resolve-Path 'release/win-unpacked/Flashborn.exe').Path
 npm run test:smoke
 ```
 
-The original demo SWF is generated by `scripts/create-demo.js`; it contains
-a moving cream square. No third-party game content is bundled.
+References: [Electron's Flash removal](https://www.electronjs.org/blog/electron-12-0)
+and [Flash Browser](https://github.com/radubirsan/FlashBrowser).

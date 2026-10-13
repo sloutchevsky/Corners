@@ -32,13 +32,16 @@ function render(next) {
   $('#bookmark').classList.toggle('bookmarked', state.bookmarks.some(b => b.url === t?.url));
   if (document.activeElement !== $('#address')) $('#address').value = t?.url || '';
   $('#address-icon').innerHTML = `<use href="#i-${t?.kind === 'flash' ? 'flash' : t?.url.startsWith('https:') ? 'lock' : t?.url ? 'globe' : 'search'}"/>`;
-  $('#zoom-value').textContent = (t?.zoom || 100) + '%';
+  $('#native-mode').disabled = !t?.url?.startsWith('http');
+  $('#native-mode').classList.toggle('native-active', !!t?.native);
+  $('#native-mode').setAttribute('aria-pressed', String(!!t?.native));
+  $('#menu-button').setAttribute('aria-expanded', String(state.menuOpen));
   const downloads = state.downloads.filter(d => d.state === 'progressing').length;
   $('#download-count').textContent = downloads || '';
-  $('#flash-status').textContent = state.flashReady ? 'Flash ready' : state.settings.flashEnabled ? 'Player available' : 'Site Flash disabled';
+  $('#flash-status').textContent = state.flashReady ? 'Adobe Flash ready' : 'Native player missing';
   $('#flash-dot').style.background = state.flashReady ? '#94baa7' : '#b8a88a';
-  $('#page-status').textContent = state.panel ? ({ library: 'Your Flash collection', bookmarks: 'Saved for later', history: 'Recently visited', downloads: 'Your downloads', settings: 'Make it yours', about: 'Flashborn ' + state.version }[state.panel]) : t?.loading ? 'Loading…' : t?.kind === 'home' ? 'Make yourself at home.' : t?.kind === 'flash' ? 'Flash player · Ruffle ' + state.ruffle : t?.url || '';
-  $('#status-right').textContent = t?.audible ? (t.muted ? 'Audio muted' : 'Audio playing') : 'Chromium · Ruffle';
+  $('#page-status').textContent = state.panel ? ({ library: 'Your Flash collection', bookmarks: 'Saved for later', history: 'Recently visited', downloads: 'Your downloads', settings: 'Make it yours', about: 'Flashborn ' + state.version }[state.panel]) : t?.loading ? 'Loading…' : t?.kind === 'home' ? 'Make yourself at home.' : t?.kind === 'flash' ? 'Adobe Flash Player ' + state.flashVersion : t?.url || '';
+  $('#status-right').textContent = t?.audible ? (t.muted ? 'Audio muted' : 'Audio playing') : t?.native ? 'Native Adobe Flash' : 'Chromium · Adobe Flash';
   const key = state.panel || (t?.error ? 'error:' + t.id + t.error : t?.kind === 'home' ? 'home' : 'web');
   if (key !== viewKey) { filter = ''; viewKey = key; renderContent(); }
   else if (state.panel && !['settings', 'about'].includes(state.panel)) renderList();
@@ -49,7 +52,7 @@ function home() {
 }
 function renderQuickLinks() {
   const target = $('#quick-links'); if (!target) return;
-  const defaults = [{ title: 'Wikipedia', url: 'https://www.wikipedia.org/' }, { title: 'Internet Archive', url: 'https://archive.org/' }, { title: 'Ruffle', url: 'https://ruffle.rs/' }];
+  const defaults = [{ title: 'Wikipedia', url: 'https://www.wikipedia.org/' }, { title: 'Internet Archive', url: 'https://archive.org/' }, { title: 'Flash Browser', url: 'https://flash.pm/' }];
   target.innerHTML = (state.bookmarks.length ? state.bookmarks.slice(0, 5) : defaults).map(b => `<button class="quick-link" data-url="${escape(b.url)}">${icon(state.bookmarks.length ? 'star' : 'globe')}${escape(b.title.slice(0, 24))}</button>`).join('');
 }
 function panelHeader(name, description, actions) {
@@ -103,16 +106,16 @@ function renderList() {
 }
 function settings() {
   const s = state.settings;
-  return `<section class="panel"><div class="panel-eyebrow">Make it yours</div><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Play embedded Flash on websites</h2><p>Ruffle automatically replaces supported Flash content.<br>Reload websites after changing this. Local SWF files always work.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open SWF · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
+  return `<section class="panel"><div class="panel-eyebrow">Make it yours</div><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open SWF · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
 }
 function about() {
-  return `<section class="panel"><div class="about-mark">${icon('flash')}</div><h1>Flashborn<span class="brand-dot">.</span></h1><p class="description">A quieter kind of browsing. A second life for Flash.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Browser engine</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash engine</dt><dd>Ruffle ${escape(state.ruffle)}</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Site Flash support</dt><dd>${state.flashReady ? 'Ready' : state.extensionError ? escape(state.extensionError) : 'Disabled in settings'}</dd></dl><div class="about-links"><button class="secondary-button" data-url="https://ruffle.rs/compatibility">Flash compatibility ${icon('forward')}</button><button class="secondary-button" data-url="https://ruffle.rs/">Ruffle project ${icon('forward')}</button></div><p class="about-note">Flashborn uses the open source Ruffle emulator. Flash compatibility varies by game and movie. This app does not include Adobe Flash Player. Websites requiring DRM video or Chrome-specific extensions may have limited support.</p></section>`;
+  return `<section class="panel"><div class="about-mark">${icon('flash')}</div><h1>Flashborn<span class="brand-dot">.</span></h1><p class="description">A quieter kind of browsing. Original Adobe Flash playback.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Modern browser</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash player</dt><dd>Adobe Flash ${escape(state.flashVersion)} · PPAPI</dd><dt>Flash runtime</dt><dd>Electron ${escape(state.flashRuntime)} · separate process</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Native Flash</dt><dd>${state.flashReady ? 'Bundled and ready' : 'Runtime missing — reinstall Flashborn'}</dd></dl><p class="about-note">The original Adobe player from your installed Flash Browser is bundled without modification. Adobe Flash and its required legacy Chromium runtime no longer receive security updates. Ordinary pages use the current browser engine; Flash pages use the legacy runtime. The lightning button switches a website between modes.</p></section>`;
 }
 document.addEventListener('click', async e => {
   const button = e.target.closest('button'); if (!button || button.disabled) return;
   const d = button.dataset;
-  if (d.action) { $('#menu').classList.add('hidden'); await call(d.action); }
-  else if (d.panel) { $('#menu').classList.add('hidden'); await call('panel', { name: d.panel }); }
+  if (d.action) await call(d.action);
+  else if (d.panel) await call('panel', { name: d.panel });
   else if (d.tab) await call('select-tab', { id: d.tab });
   else if (d.closeTab) await call('close-tab', { id: d.closeTab });
   else if (d.url) await call('navigate', { value: d.url });
@@ -124,16 +127,17 @@ document.addEventListener('click', async e => {
   else if (d.downloadCancel) await call('download-cancel', { id: d.downloadCancel });
   else if (d.zoom) await call('zoom', { direction: Number(d.zoom) });
 });
-$('#address-form').addEventListener('submit', e => { e.preventDefault(); $('#address').blur(); call('navigate', { value: $('#address').value }); });
+function submitAddress() { const value = $('#address').value.trim(); call('navigate', { value }); $('#address').blur(); }
+$('#address-form').addEventListener('submit', e => { e.preventDefault(); submitAddress(); });
+$('#address').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); submitAddress(); } });
 $('#address').addEventListener('focus', e => e.target.select());
-$('#menu-button').addEventListener('click', e => { e.stopPropagation(); $('#menu').classList.toggle('hidden'); });
-document.addEventListener('click', e => { if (!e.target.closest('#menu') && !e.target.closest('#menu-button')) $('#menu').classList.add('hidden'); });
+$('#menu-button').addEventListener('click', () => call('menu'));
 function find(next = false, forward = true) { call('find', { text: $('#find-input').value, next, forward }); }
 $('#find-input').addEventListener('input', () => find());
 $('#find-form').addEventListener('submit', e => { e.preventDefault(); find(true); });
 $('#find-prev').addEventListener('click', () => find(true, false));
 $('#find-close').addEventListener('click', () => { $('#find-form').classList.add('hidden'); call('find', { text: '' }); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#menu').classList.add('hidden'); if (!$('#find-form').classList.contains('hidden')) $('#find-close').click(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#find-form').classList.contains('hidden')) $('#find-close').click(); });
 window.browser.onState(render);
 window.browser.onFocusAddress(() => { $('#address').focus(); $('#address').select(); });
 window.browser.onFind(result => {
