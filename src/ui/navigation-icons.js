@@ -2,7 +2,16 @@
 (() => {
   const TAU = Math.PI * 2;
   const durations = { library: 2000, bookmarks: 1200, history: 2000, downloads: 1000, settings: 3000 };
-  const gear = new Path2D('M9.5 3h5l.6 2.6 2.1 1.2 2.6-.8 2.5 4.3-2 1.8v2.4l2 1.8-2.5 4.3-2.6-.8-2.1 1.2-.6 2.6h-5l-.6-2.6-2.1-1.2-2.6.8L1.8 16l2-1.8v-2.4l-2-1.8L4.3 5.7l2.6.8L9 5.3z');
+  // Repeat one tooth around the hub so the outline and hole share the same center.
+  const gear = new Path2D();
+  for (let tooth = 0; tooth < 6; tooth++) {
+    const angle = tooth * TAU / 6, c = Math.cos(angle), s = Math.sin(angle);
+    [[-3.1,-6.4],[-2.5,-9],[2.5,-9],[3.1,-6.4]].forEach(([x,y], vertex) => {
+      const point = [12 + x*c - y*s, 12 + x*s + y*c];
+      if (!tooth && !vertex) gear.moveTo(...point); else gear.lineTo(...point);
+    });
+  }
+  gear.closePath();
   const gearHub = new Path2D(); gearHub.arc(12, 12, 3, 0, TAU);
   const clockArrow = new Path2D('M3 4v5h5M3.8 9a8.5 8.5 0 1 1 .5 7');
   const downloadArrow = new Path2D('M12 3v12m-5-5 5 5 5-5');
@@ -29,14 +38,14 @@
     constructor(canvas) {
       this.canvas = canvas; this.kind = canvas.dataset.navIcon;
       this.button = canvas.closest('button'); this.frame = 0; this.start = 0; this.progress = 0;
-      this.hovered = false; this.focused = false;
+      this.hovered = false; this.focused = false; this.elapsed = 0; this.finishAt = null;
       this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
       this.bolt = this.kind === 'library' ? new GoldLightning(canvas) : null;
       this.tick = this.tick.bind(this);
       this.enter = () => { this.hovered = true; this.play(); };
       this.focus = () => { this.focused = this.button.matches(':focus-visible'); if (this.focused && !this.hovered) this.play(); };
-      this.leave = () => { this.hovered = false; this.stopGear(); };
-      this.blur = () => { this.focused = false; this.stopGear(); };
+      this.leave = () => { this.hovered = false; this.finishGear(); };
+      this.blur = () => { this.focused = false; this.finishGear(); };
       this.motion = () => { if (this.reduced.matches) this.stop(); else if (this.kind === 'settings' && (this.hovered || this.focused)) this.play(); };
       this.visibility = () => { if (document.hidden) this.stop(); else if (this.kind === 'settings' && (this.hovered || this.focused)) this.play(); };
       this.button.addEventListener('pointerenter', this.enter); this.button.addEventListener('pointerleave', this.leave);
@@ -45,22 +54,27 @@
       this.draw(0);
     }
     play() {
+      if (this.kind === 'settings') this.finishAt = null;
       if (this.reduced.matches || document.hidden || this.frame) return;
-      this.start = 0; this.canvas.dataset.motion = 'spinning';
+      this.start = 0; this.elapsed = 0; this.canvas.dataset.motion = 'spinning';
       this.frame = requestAnimationFrame(this.tick);
     }
-    stopGear() { if (this.kind === 'settings' && !this.hovered && !this.focused) this.stop(); }
-    stop() { cancelAnimationFrame(this.frame); this.frame = 0; this.start = 0; this.draw(0); }
+    finishGear() {
+      if (this.kind === 'settings' && !this.hovered && !this.focused && this.frame) this.finishAt = Math.max(1, Math.ceil(this.elapsed - .000001));
+    }
+    stop() { cancelAnimationFrame(this.frame); this.frame = 0; this.start = 0; this.elapsed = 0; this.finishAt = null; this.draw(0); }
     tick(now) {
       this.frame = 0;
       if (this.reduced.matches) { this.stop(); return; }
       if (!this.canvas.isConnected) { this.dispose(); return; }
       if (!this.start) this.start = now;
-      const elapsed = (now - this.start) / durations[this.kind];
+      const elapsed = this.elapsed = (now - this.start) / durations[this.kind];
       const looping = this.kind === 'settings' && (this.hovered || this.focused);
-      this.draw(looping ? elapsed % 1 : Math.min(1, elapsed));
-      this.canvas.dataset.motion = looping || elapsed < 1 ? 'spinning' : 'idle';
-      if (looping || elapsed < 1) this.frame = requestAnimationFrame(this.tick);
+      if (this.kind === 'settings' && !looping && this.finishAt === null) this.finishAt = Math.max(1, Math.ceil(elapsed - .000001));
+      const complete = !looping && elapsed >= (this.kind === 'settings' ? this.finishAt : 1);
+      this.draw(this.kind === 'settings' ? complete ? 1 : elapsed % 1 : Math.min(1, elapsed));
+      this.canvas.dataset.motion = complete ? 'idle' : 'spinning';
+      if (!complete) this.frame = requestAnimationFrame(this.tick);
     }
     draw(progress) {
       this.progress = progress;

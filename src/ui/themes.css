@@ -1,6 +1,7 @@
 :root {
   --menu-bg:#282828; --menu-text:#ececec; --menu-muted:#a3a3a3;
   --menu-hover:#3c3c3c; --menu-border:#444; --menu-selected:#4b4231;
+  --sidebar-label:#bcae97;
 }
 body[data-theme="light"] {
   color-scheme:light;
@@ -8,6 +9,7 @@ body[data-theme="light"] {
   --border:#c6c6c6; --text:#262626; --muted:#626262; --accent:#805c26;
   --menu-bg:#f0f0f0; --menu-text:#262626; --menu-muted:#656565;
   --menu-hover:#ddd; --menu-border:#c5c5c5; --menu-selected:#e2d7c4;
+  --sidebar-label:#705b37;
 }
 .brand-wordmark { display:inline-block; flex:none; background:currentColor; mask:url('brand/wordmark.svg') left center/contain no-repeat; -webkit-mask:url('brand/wordmark.svg') left center/contain no-repeat; }
 .title-brand { font-family:"Segoe UI",Arial,sans-serif; }
@@ -24,6 +26,9 @@ body[data-theme="light"] {
 .collapsed .tab-select { justify-content:flex-start; padding-inline:12px; }
 .collapsed .profile { padding:12px 10px 4px; justify-content:flex-start; }
 .collapsed .tab { width:44px; }
+.collapsed .tabs-label { display:flex; justify-content:center; margin-inline:0; }
+.collapsed .tabs-label > span:first-child { display:none; }
+.collapsed .tabs { margin-top:0; }
 .loading-bolt { display:block; width:32px; height:32px; }
 .native-bolt-button { padding:0; }
 .native-bolt-button:disabled { opacity:1; }
@@ -124,7 +129,9 @@ body[data-theme="light"] .toast { background:#f3f3f3; border-color:#aaa; }
 body[data-theme="light"] .about-panel { --about-ink:#333; }
 .about-text { padding-top:40px; color:#808080; }
 .about-panel .about-motto, .about-panel .about-dedication { max-width:650px; margin:0 0 20px; font-size:13px; line-height:1.8; color:var(--about-ink); }
-.about-email { color:inherit; text-underline-offset:3px; }
+.about-email-wrap { display:inline-block; position:relative; }
+.about-email { color:inherit; background:none; border:0; padding:0; font:inherit; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+.email-copied { position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); padding:4px 8px; border:1px solid var(--border); border-radius:6px; background:var(--sidebar); color:var(--text); font-size:11px; line-height:1.4; white-space:nowrap; pointer-events:none; box-shadow:0 2px 8px #0002; }
 .about-panel .about-text .about-detail,
 .about-panel .about-text .about-detail dt,
 .about-panel .about-text .about-detail dd,
@@ -136,6 +143,12 @@ body[data-theme="light"] .about-panel { --about-ink:#333; }
 /* Small metallic navigation icons stay in their existing sidebar positions. */
 .sidebar .nav-gold { display:block; width:18px; height:18px; flex:none; }
 .sidebar .nav-gold-library { width:20.7px; height:20.7px; margin-inline:-1.35px; }
+body[data-theme="light"] .sidebar .nav-gold { filter:brightness(.7) contrast(.85) saturate(.75); }
+.sidebar-bottom .nav-button > span { color:var(--sidebar-label); }
+.sidebar-bottom .count:empty { display:none; }
+.sidebar-bottom [data-panel="downloads"] { position:relative; }
+.download-badge { margin-left:auto; padding:3px 5px; border:1px solid currentColor; border-radius:5px; font-size:9px; line-height:1; letter-spacing:.3px; }
+.collapsed .sidebar-bottom #download-new:not(.hidden) { display:block; position:absolute; top:1px; right:-4px; padding:2px 3px; font-size:7px; background:var(--sidebar); }
 .private-badge { display:inline-flex; align-items:center; gap:5px; flex:none; color:#a5a9af; font-size:10px; padding:6px 8px; border:1px solid #44474c; border-radius:6px; }
 .private-badge .icon { width:12px; height:12px; }
 .private-tab .tab-icon { color:#a4aab4; }

@@ -2,7 +2,7 @@
 const wheel = document.getElementById('color-wheel'), ctx = wheel.getContext('2d');
 const brightness = document.getElementById('brightness'), hex = document.getElementById('color-hex');
 let hue = 0, saturation = 0, value = 1, applied, painting = false;
-let picking = false, pickAbort;
+let picking = false;
 function rgb(h, s, v) {
   const channel = n => { const k = (n + h / 60) % 6; return Math.round(255 * v * (1 - s * Math.max(0, Math.min(k, 4 - k, 1)))); };
   return [channel(5), channel(3), channel(1)];
@@ -56,22 +56,17 @@ document.querySelectorAll('[data-color]').forEach(button => button.addEventListe
 document.getElementById('color-pick').addEventListener('click', async () => {
   if (picking) return;
   const button = document.getElementById('color-pick'), status = document.getElementById('color-status');
-  if (typeof EyeDropper !== 'function') { status.textContent = 'Screen color picking is unavailable on this system.'; return; }
   picking = true; button.disabled = true;
   try {
-    const result = await window.browser.call('color-picking', { value: true });
-    if (!result.ok) throw new Error(result.error);
-    // Let the host paint the Flash snapshot before Chromium starts screen picking.
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     status.textContent = 'Click a color on your screen. Esc cancels.';
-    pickAbort = new AbortController();
-    const selected = await new EyeDropper().open({ signal: pickAbort.signal });
-    setColor(selected.sRGBHex); await apply();
+    const result = await window.browser.call('color-pick-screen');
+    if (!result.ok) throw new Error(result.error);
+    if (result.state.pickedColor) { applied = result.state.pickedColor; setColor(applied); status.textContent = 'Changing color reloads Flash.'; }
+    else status.textContent = 'Color picking canceled.';
   } catch (error) {
     status.textContent = error.name === 'AbortError' ? 'Color picking canceled.' : error.message;
   } finally {
-    pickAbort = null; picking = false; button.disabled = false;
-    await window.browser.call('color-picking', { value: false });
+    picking = false; button.disabled = false;
   }
 });
 document.getElementById('close').addEventListener('click', () => window.browser.call('color-close'));

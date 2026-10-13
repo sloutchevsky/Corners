@@ -59,8 +59,8 @@ async function run() {
     assert.ok(Math.abs((await rect('.about-motto')).y - 444.20001220703125) < .1);
     assert.equal(await ui.locator('.about-text p').first().getAttribute('class'), 'about-motto');
     assert.equal(await ui.locator('.about-text > p').nth(1).getAttribute('class'), 'about-dedication');
-    assert.equal(await ui.locator('.about-email').getAttribute('href'), 'mailto:sloutchevsky@gmail.com');
-    const dedication = await ui.locator('.about-dedication').innerText(); assert.ok(dedication.startsWith('This browser is dedicated to the team at Firstborn')); assert.ok(dedication.includes('sloutchevsky@gmail.com'));
+    assert.equal(await ui.locator('.about-email').getAttribute('aria-label'), 'Copy email address');
+    const dedication = await ui.locator('.about-dedication').innerText(); assert.ok(dedication.startsWith('This browser is dedicated to the team of Firstborn')); assert.ok(dedication.includes('sloutchevsky@gmail.com'));
     const angle = await ui.locator('#about-bolt').getAttribute('data-angle'); await poll(() => ui.locator('#about-bolt').getAttribute('data-angle'), value => value !== angle);
     const expectedOrder = ['about-motto', 'about-dedication', 'about-detail', 'about-note', 'about-copyright', 'about-license'];
     assert.deepEqual(await ui.locator('.about-text').evaluate(el => Array.from(el.children).map(child => child.className)), expectedOrder);
@@ -73,11 +73,11 @@ async function run() {
       fs.writeFileSync(path.join(output, `about-${theme}-1.5.1.png`), await ui.screenshot());
     }
     await command('theme');
-    await app.evaluate(({ shell }) => { global.__originalOpenExternal = shell.openExternal; shell.openExternal = async url => { global.__mailLinkOpened = url; }; });
-    try { await ui.locator('.about-email').click(); await poll(() => app.evaluate(() => global.__mailLinkOpened), value => value === 'mailto:sloutchevsky@gmail.com'); assert.equal((await state()).panel, 'about'); }
-    finally { await app.evaluate(({ shell }) => { shell.openExternal = global.__originalOpenExternal; }); }
+    await ui.locator('.about-email').click();
+    await poll(() => app.evaluate(({ clipboard }) => clipboard.readText()), value => value === 'sloutchevsky@gmail.com');
+    await ui.locator('.email-copied').waitFor({ state: 'visible' }); assert.equal((await state()).panel, 'about');
     pass('About branding is 30% smaller, body starts 40px lower, paragraphs follow the requested order and both themes use 50% grey metadata');
-    pass('About email invokes the default mail app with the exact mailto URL and keeps the About panel open');
+    pass('About email copies the exact address and shows Copied! while keeping the About panel open');
     await command('navigate', { value: `http://127.0.0.1:${server.address().port}/slow` });
     await poll(() => ui.locator('#loading-bolt').getAttribute('data-angle'), value => Number(value) > .2);
     assert.equal(await ui.locator('#title-bolt').evaluate(el => el.toDataURL()), titlePixels); assert.equal(await ui.locator('#title-bolt').getAttribute('data-motion'), 'idle');
@@ -99,25 +99,31 @@ async function run() {
 
     await script('document.getElementById("background").click()');
     const color = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/color.html'), Boolean);
-    await color.evaluate(() => {
-      const NativeEyeDropper = window.EyeDropper;
-      window.EyeDropper = class extends NativeEyeDropper { open(options) { window.__nativePickStarted = true; const result = super.open(options); result.catch(error => { window.__nativePickError = error.name; }); return result; } };
-    });
+    await app.evaluate(() => { const w = global.__flashborn.win; w.setAlwaysOnTop(true, 'pop-up-menu'); w.moveTop(); });
     const originalColor = (await state()).flashBackground;
     await color.locator('#color-pick').click();
-    await poll(() => color.evaluate(() => ({ started: window.__nativePickStarted, error: window.__nativePickError, picking, abort: !!pickAbort })), v => v.started && v.picking && v.abort);
-    await wait(500); assert.equal(await color.evaluate(() => window.__nativePickError), undefined); assert.equal((await state()).colorPicking, true);
-    await color.evaluate(() => pickAbort.abort());
-    await poll(state, s => !s.colorPicking); assert.equal(await color.locator('#color-status').innerText(), 'Color picking canceled.');
-    assert.equal(await color.evaluate(() => window.__nativePickError), 'AbortError'); assert.equal((await state()).flashBackground, originalColor); assert.ok(await color.locator('#color-pick').isEnabled());
-    pass('Native screen eyedropper opens from a trusted click and cancels without closing the color dialog or changing the background');
+    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.every(e => e.window.isVisible())), Boolean);
+    await app.evaluate(() => global.__flashborn.screenColorPicker.cancel());
+    await poll(state, s => !s.colorPicking);
+    await poll(() => color.locator('#color-status').innerText(), value => value === 'Color picking canceled.');
+    assert.equal((await state()).flashBackground, originalColor); assert.ok(await color.locator('#color-pick').isEnabled());
+    pass('Topmost screen eyedropper opens from a trusted click and cancels without closing the dialog or changing the background');
 
-    // Resolve a controlled selection to verify all downstream paths without sampling another app's pixels.
-    await color.evaluate(() => { window.EyeDropper = class { open() { return new Promise(resolve => { window.__selectColor = resolve; }); } }; });
     await color.locator('#color-pick').click(); await poll(state, s => s.colorPicking);
+    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.every(e => e.window.isVisible())), Boolean);
     await app.evaluate(() => global.__flashborn.colorWindow.emit('blur'));
     assert.ok(await app.evaluate(() => !!global.__flashborn.colorWindow && !global.__flashborn.colorWindow.isDestroyed()));
-    await color.evaluate(() => window.__selectColor({ sRGBHex: '#336699' })); await poll(state, s => !s.colorPicking && s.flashBackground === '#336699'); await ready();
+    const point = await app.evaluate(() => {
+      const host = global.__flashborn.win.getContentBounds(), picker = global.__flashborn.screenColorPicker;
+      const entry = picker.entries.find(e => host.x >= e.bounds.x && host.x < e.bounds.x + e.bounds.width);
+      const point = { x: host.x + 400 - entry.bounds.x, y: host.y + 260 - entry.bounds.y };
+      return { ...point, color: picker.sample(entry, point.x, point.y) };
+    });
+    const picker = await poll(() => app.windows().find(page => !page.isClosed() && page.url() === 'flashborn://ui/screen-color.html'), Boolean);
+    await picker.mouse.click(point.x, point.y); await poll(state, s => !s.colorPicking && s.flashBackground === point.color); await ready();
+    assert.equal(await color.locator('#color-hex').inputValue(), point.color);
+    await color.locator('#color-hex').fill('#336699'); await color.locator('#color-hex').press('Tab');
+    await poll(state, s => s.flashBackground === '#336699'); await ready();
     assert.equal(await script('document.getElementById("flash-movie").getAttribute("bgcolor")'), '#336699');
     assert.equal(await color.locator('#color-hex').inputValue(), '#336699'); assert.ok(await color.locator('#color-pick').isEnabled());
     assert.ok(await color.locator('.color-value').evaluate(el => Array.from(el.children).every(child => { const r = child.getBoundingClientRect(); return r.right <= innerWidth - 10 && r.bottom <= innerHeight; })));

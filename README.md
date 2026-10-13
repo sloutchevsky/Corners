@@ -1,11 +1,11 @@
-# Flashborn 1.7.0
+# Flashborn 1.7.1
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original Adobe Flash Player 32.0.0.363 for Flash content. Ruffle is removed.
 
 ## Install
 
-Run `release/Flashborn-Setup-1.7.0-x64.exe` on Windows 10 or 11 x64. The installer
+Run `release/Flashborn-Setup-1.7.1-x64.exe` on Windows 10 or 11 x64. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
@@ -52,10 +52,14 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   cookies or persistent prediction cache. Local results remain usable offline.
 - Drag tabs, bookmarks, downloads and Flash library entries to reorder them. With an item
   focused, Alt+Up/Down also moves it. Bookmark, download and library order is saved.
+- When the sidebar collapses, its tabs heading shows only the number of open tabs.
+- A completed download shows **NEW** beside Downloads until that panel is opened.
+  It remains visible when collapsed and across restart; private badges stay in
+  their temporary session. Canceled downloads do not trigger it.
 - Ctrl+mouse wheel and Ctrl+/− visibly zoom pages, with a Chrome-style percentage popup and Reset button.
 - Right-click the address, home search or find field for Select all, Cut, Copy and Paste.
 - Click the upper-left logo to open About. The copyright line opens sloutchevsky.com.
-  The About email link opens the default mail app.
+  The About email address copies on click and briefly shows a **Copied!** bubble.
 - On New Tab, click the gold bolt tile or its caption to open the Flash library.
 - App and installer icons use the first frame of the same darker gold animation.
   The Windows publisher/company metadata and installer welcome screen name Vas Sloutchevsky.
@@ -70,18 +74,24 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   180 degrees each time. Theme choice is saved.
 - The three-dot menu uses a separate popup window above Flash content, with
   inline Chrome-style zoom controls, fullscreen, and Adobe High/Medium/Low Flash quality.
+  Its five groups contain new tabs/files; library, bookmarks, history and downloads;
+  Print and Find; zoom/Flash controls; and Settings/About.
 - High/Medium/Low quality is saved and applies to open native movies and future loads.
 - The sidebar provides tabs, bookmarks, history, downloads, settings and a SWF library.
   The simple gold bolt is retained. The Flash library bolt and smaller bookmark
   star spin once on hover; the History arrow and hands complete a counterclockwise
   12-hour cycle; the Downloads arrow hits its tray and bounces back. The gear
-  spins while hovered. The lights stay fixed, and reduced motion disables spins.
+  rotates around the same center as its hub and finishes its current turn when
+  hover ends. The lights stay fixed, and reduced motion disables spins. Lower
+  sidebar labels match the SWF pill; light-mode icons are darker with less shine.
   Flashcognito uses the normal new-tab layout and fonts, cooler greys, a silver
   bolt, and 50% page opacity. The top-left wordmark and browser menu open About.
 - The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
   Its controls stay visible in fullscreen. Background opens a color wheel with a screen eyedropper, defaulting to white.
-  Screen picking temporarily holds the visible Flash image as a snapshot so
-  native Flash cannot cover the eyedropper; live playback returns on selection or cancellation.
+  Screen picking uses independent topmost windows with a magnifier over a captured
+  screen image, so native Flash cannot cover the eyedropper. Click to select a pixel;
+  Escape cancels. Snapshots stay in memory and are discarded when picking ends.
+  Live Flash playback returns on selection or cancellation.
   Each library movie saves its background. Color changes recreate the Flash instance and
   restore its timeline position; interactive game/script state is restarted.
 - Flash library offers **Open HTML with SWF** and **Open a SWF**. Both reveal an
@@ -177,10 +187,11 @@ npm run test:privacy
 npm run test:ui-update
 npm run test:predictions
 npm run test:eyedropper
+npm run test:sidebar
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.7.0-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.7.1-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -199,12 +210,17 @@ The prediction checks verify real DuckDuckGo, Google and Bing responses in both
 search fields, selected-result navigation, offline fallback, cancellation of
 outdated responses, exclusion of URLs and file paths, and private cache isolation.
 
-The eyedropper check opens the actual Chromium screen picker over Adobe Flash,
-checks that Flash's native child is hidden while its image remains visible, and
-verifies that canceling restores live playback without changing the background.
+The eyedropper check selects actual screen pixels over Adobe Flash, verifies the
+Windows click target belongs to the topmost overlay, and checks collapsed and
+fullscreen layouts, Escape and dialog-close cleanup, restored playback, and the
+About email's copy bubble.
+
+The sidebar checks measure gear centering across rotation angles, completion
+after hover-out, collapsed counts, both themes, menu grouping, and real download
+completion badges, including restart, acknowledgment, cancellation and privacy.
 
 The polish checks verify the exact first-frame title bolt, the smaller About branding, 40px text offset, theme-independent grey metadata,
-real Adobe Low/Medium/High quality, native eyedropper opening and cancellation,
+real Adobe Low/Medium/High quality, topmost eyedropper opening and cancellation,
 selected-color application, and quality/background persistence after restart.
 
 The privacy checks exercise the tab context menu and duplication, private cookie

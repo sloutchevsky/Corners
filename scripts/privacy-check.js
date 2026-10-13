@@ -146,23 +146,29 @@ async function run() {
     assert.ok(Math.abs(controls.swatchOffset) < .1); assert.equal(controls.labelGap, '12px');
     await script('document.getElementById("background").click()');
     const color = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/color.html'), Boolean);
-    assert.equal(await color.evaluate(() => typeof EyeDropper), 'function');
-    // Hold the screen picker open to verify the native HWND is hidden while its real pixels remain visible.
-    await color.evaluate(() => { window.EyeDropper = class { open({ signal }) { return new Promise((resolve, reject) => { window.__pickResolve = resolve; signal.addEventListener('abort', () => reject(new DOMException('Canceled', 'AbortError'))); }); } }; });
+    await app.evaluate(() => { const w = global.__flashborn.win; w.setAlwaysOnTop(true, 'pop-up-menu'); w.moveTop(); });
     await color.locator('#color-pick').click();
     await poll(state, s => s.colorPicking && !!s.colorPreview);
+    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.every(e => e.window.isVisible())), Boolean);
     await poll(() => app.evaluate(() => global.__flashborn.activeTab().native.inspect().visible), value => value === 0);
     await ui.locator('#color-pick-preview').evaluate(el => el.decode());
     await saveUI('eyedropper-flash-snapshot.png');
     const preview = await app.evaluate(async ({ nativeImage }) => { const image = nativeImage.createFromBuffer(Buffer.from(global.__flashborn.getState().colorPreview.split(',')[1], 'base64')), pixels = image.toBitmap(); let cream = 0; for (let i=0;i<pixels.length;i+=4) if (pixels[i+2]>200 && pixels[i+1]>160 && pixels[i+1]<235 && pixels[i]>100 && pixels[i]<220) cream++; return { cream, width:image.getSize().width }; });
     assert.ok(preview.cream > 500, JSON.stringify(preview));
-    await color.evaluate(() => window.__pickResolve({ sRGBHex: '#11aa88' }));
-    await poll(state, s => !s.colorPicking && !s.colorPreview && s.flashBackground === '#11aa88');
+    const picked = await app.evaluate(() => {
+      const host = global.__flashborn.win.getContentBounds(), picker = global.__flashborn.screenColorPicker;
+      const entry = picker.entries.find(e => host.x >= e.bounds.x && host.x < e.bounds.x + e.bounds.width);
+      const point = { x: host.x + 400 - entry.bounds.x, y: host.y + 260 - entry.bounds.y };
+      return { ...point, color: picker.sample(entry, point.x, point.y) };
+    });
+    const screenPicker = await poll(() => app.windows().find(page => !page.isClosed() && page.url() === 'flashborn://ui/screen-color.html'), Boolean);
+    await screenPicker.mouse.click(picked.x, picked.y);
+    await poll(state, s => !s.colorPicking && !s.colorPreview && s.flashBackground === picked.color);
     await poll(() => app.evaluate(() => global.__flashborn.activeTab().native.inspect().visible), Boolean); await swfReady();
     await color.locator('#color-pick').click(); await poll(state, s => s.colorPicking);
     await command('color-close'); await poll(state, s => !s.colorPicking && !s.colorPreview);
     await poll(() => app.evaluate(() => global.__flashborn.activeTab().native.inspect().visible), Boolean);
-    pass('Eyedropper retains actual Flash pixels above the hidden native child, restores playback on selection/dialog close, and Flash controls have even gaps, centered swatch and no selection outline');
+    pass('Independent screen eyedropper selects a real pixel in private Flash and restores playback on selection/dialog close; Flash controls have even gaps, centered swatch and no selection outline');
 
     const ids = (await state()).tabs.filter(t => t.private).map(t => t.id);
     for (const id of ids) await command('close-tab', { id });
