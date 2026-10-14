@@ -60,14 +60,16 @@ const html = provider => content + descriptions.map((text, i) => provider === 'G
       assert.equal(await app.evaluate(() => global.__flashborn.activeTab().view.webContents.executeJavaScript('typeof window.browser')), 'undefined');
       console.log('SUMMARY ' + provider + ' ' + text.length + ' characters'); pass(provider + ' results receive a real local summary with sources and the entire web viewport below the summary pane');
     }
+    const pageScheme = await app.evaluate(() => global.__flashborn.activeTab().view.webContents.executeJavaScript('matchMedia("(prefers-color-scheme:dark)").matches'));
     for (const theme of ['current', 'light']) {
       if ((await state()).settings.theme !== theme) await command('theme');
       await poll(() => ui.locator('body').getAttribute('data-theme'), v => v === theme);
       assert.equal(await ui.locator('#page-summary').evaluate(el => getComputedStyle(el).backgroundColor), theme === 'current' ? 'rgb(33, 33, 33)' : 'rgb(233, 233, 233)');
-      assert.equal(await app.evaluate(() => global.__flashborn.activeTab().view.webContents.executeJavaScript('getComputedStyle(document.body).backgroundColor')), theme === 'current' ? 'rgb(33, 33, 33)' : 'rgb(233, 233, 233)');
+      assert.equal(await app.evaluate(() => global.__flashborn.activeTab().view.webContents.executeJavaScript('getComputedStyle(document.body).backgroundColor')), 'rgb(255, 255, 255)');
+      assert.equal(await app.evaluate(() => global.__flashborn.activeTab().view.webContents.executeJavaScript('matchMedia("(prefers-color-scheme:dark)").matches')), pageScheme);
       await capture('summary-' + theme + '.png');
     }
-    pass('Summary and actual result-page backgrounds follow both themes immediately without a page reload');
+    pass('The summary follows both browser themes; result-page colors and preferred color scheme remain unchanged without a reload');
     if (process.env.FLASHBORN_LIVE === '1') {
       fs.writeFileSync(path.join(output, 'live-summary-' + (process.env.FLASHBORN_LIVE_PROVIDER || 'all') + '-results.json'), JSON.stringify({ passed, completedAt: new Date().toISOString() }, null, 2));
       return;

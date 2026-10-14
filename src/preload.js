@@ -4,9 +4,13 @@ contextBridge.exposeInMainWorld('browser', {
   call: (action, args = {}) => ipcRenderer.invoke('browser:command', action, args),
   onState: callback => { ipcRenderer.on('browser:state', (_event, state) => callback(state)); },
   onFocusAddress: callback => { ipcRenderer.on('browser:focus-address', () => callback()); },
+  onBlurFields: callback => { ipcRenderer.on('browser:blur-fields', () => callback()); },
   onFind: callback => { ipcRenderer.on('browser:find', (_event, result) => callback(result)); },
   onNotice: callback => { ipcRenderer.on('browser:notice', (_event, message) => callback(message)); }
 });
+const focusChrome = () => ipcRenderer.send('browser:chrome-focus');
+window.addEventListener('pointerdown', focusChrome, true);
+window.addEventListener('focusin', focusChrome, true);
 window.addEventListener('wheel', event => {
   if (event.isTrusted && event.ctrlKey && event.deltaY) { event.preventDefault(); ipcRenderer.send('browser:wheel', event.deltaY < 0 ? 1 : -1); }
 }, { capture: true, passive: false });

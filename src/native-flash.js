@@ -20,7 +20,10 @@ function winAPI() {
     getParent: user32.func('intptr_t __stdcall GetParent(intptr_t hwnd)'),
     rect: user32.func('int __stdcall GetWindowRect(intptr_t hwnd, _Out_ int32_t *rect)'),
     sibling: user32.func('intptr_t __stdcall GetWindow(intptr_t hwnd, uint32_t direction)'),
-    owner: user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hwnd, _Out_ uint32_t *pid)')
+    owner: user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hwnd, _Out_ uint32_t *pid)'),
+    foreground: user32.func('intptr_t __stdcall GetForegroundWindow()'),
+    attachInput: user32.func('int __stdcall AttachThreadInput(uint32_t from, uint32_t to, int attach)'),
+    focus: user32.func('intptr_t __stdcall SetFocus(intptr_t hwnd)')
   };
   return windows;
 }
@@ -30,7 +33,7 @@ const nativeAvailable = () => fs.existsSync(path.join(directory('native-flash'),
 class NativeFlash {
   constructor(host, tabId, onEvent, options = {}) {
     this.private = !!options.private;
-    this.host = host; this.tabId = tabId; this.onEvent = onEvent; this.pending = new Map(); this.sequence = 0; this.hwnd = null; this.disposed = false; this.state = {};
+    this.host = host; this.tabId = tabId; this.onEvent = onEvent; this.pending = new Map(); this.sequence = 0; this.focusRevision = 0; this.hwnd = null; this.disposed = false; this.stopped = false; this.state = {};
     this.ready = new Promise((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
     this.readyTimer = setTimeout(() => this.rejectReady(new Error('Native Flash runtime did not start.')), 30000);
     this.start().catch(e => this.rejectReady(e));
@@ -67,8 +70,9 @@ class NativeFlash {
     delete env.NODE_OPTIONS;
     this.child = spawn(executable, [], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     this.child.stderr.on('data', bytes => { this.lastLog = bytes.toString().slice(-3000); if (process.env.FLASHBORN_TEST) console.error(this.lastLog.trim()); });
-    this.child.on('error', e => this.rejectReady(e));
+    this.child.on('error', e => { this.stopped = true; this.rejectReady(e); });
     this.child.on('exit', (code, signal) => {
+      this.stopped = true;
       clearTimeout(this.readyTimer);
       this.hwnd = null;
       for (const { reject, timer } of this.pending.values()) { clearTimeout(timer); reject(new Error('Native Flash runtime exited.')); }
@@ -76,7 +80,7 @@ class NativeFlash {
       this.socket?.destroy(); this.server.close();
       // Remove only this helper's generated directory, after its process exits.
       if (path.dirname(path.resolve(this.profile)) === this.profileRoot) fs.promises.rm(this.profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 300 }).catch(() => {});
-      if (!this.disposed) { this.rejectReady(new Error(`Native Flash runtime exited (${code ?? signal}). ${this.lastLog || ''}`)); this.onEvent({ type: 'error', message: 'Native Flash stopped. Reload this tab to restart it.' }); }
+      if (!this.disposed) { this.rejectReady(new Error(`Native Flash runtime exited (${code ?? signal}). ${this.lastLog || ''}`)); this.onEvent({ type: 'error', recreate: true, message: 'Native Flash stopped. Reload this tab to restart it.' }); }
     });
   }
   receive(message) {
@@ -107,6 +111,7 @@ class NativeFlash {
   async call(action, args = {}) {
     await this.ready;
     if (this.disposed) throw new Error('Native Flash tab is closed.');
+    if (this.stopped || !this.socket?.writable) throw new Error('Native Flash stopped. Reload this tab to restart it.');
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`Native Flash ${action} timed out.`)); }, action === 'navigate' ? 60000 : 30000);
@@ -132,7 +137,36 @@ class NativeFlash {
       this.call('visibility', { value: visible }).catch(() => {});
     }
   }
-  focus() { if (this.hwnd) this.call('focus').catch(() => {}); }
+  focus() {
+    if (!this.hwnd || !this.lastVisible || this.disposed || this.stopped) return;
+    if (this.host.getChildWindows().some(popup => !popup.isDestroyed() && popup.isVisible())) return;
+    const api = winAPI(), handle = this.host.getNativeWindowHandle();
+    const parent = handle.length === 8 ? Number(handle.readBigUInt64LE()) : handle.readUInt32LE();
+    // The legacy child has another Windows input queue. Chromium focus alone
+    // does not restore native mouse capture after switching out of that child.
+    // Join the queues only while assigning focus, and never activate another app.
+    if (api.foreground() !== parent) return;
+    const current = api.owner(parent, [0]), target = api.owner(this.hwnd, [0]);
+    const joined = current !== target && api.attachInput(current, target, 1);
+    try { api.focus(this.hwnd); } finally { if (joined) api.attachInput(current, target, 0); }
+    this.call('focus', { epoch: ++this.focusRevision }).catch(() => {});
+  }
+  focusHost() {
+    const revision = ++this.focusRevision;
+    const restore = () => {
+      if (this.disposed || revision !== this.focusRevision || this.host.isDestroyed()) return;
+      const api = winAPI(), handle = this.host.getNativeWindowHandle();
+      const parent = handle.length === 8 ? Number(handle.readBigUInt64LE()) : handle.readUInt32LE();
+      if (api.foreground() !== parent) return;
+      const current = api.owner(parent, [0]), target = this.hwnd && api.valid(this.hwnd) ? api.owner(this.hwnd, [0]) : current;
+      const joined = current !== target && api.attachInput(current, target, 1);
+      try { api.focus(parent); this.host.webContents.focus(); } finally { if (joined) api.attachInput(current, target, 0); }
+    };
+    restore();
+    // Wait past an already queued helper focus request, then return Windows
+    // input to the toolbar again if the user has not selected the page since.
+    if (!this.stopped && !this.disposed) this.call('focus-host', { epoch: revision }).then(restore).catch(() => {});
+  }
   async screenshot() { return this.call('capture'); }
   inspect() {const api=winAPI();const rect=[0,0,0,0];api.rect(this.hwnd,rect);return {hwnd:this.hwnd,parent:api.getParent(this.hwnd),visible:api.visible(this.hwnd),rect,style:api.getStyle(this.hwnd,-16),previous:api.sibling(this.hwnd,3),next:api.sibling(this.hwnd,2),host:this.host.getNativeWindowHandle().readBigUInt64LE().toString()};}
   evaluate(code) { if (process.env.FLASHBORN_TEST !== '1') throw new Error('Evaluation is only available in test launches.'); return this.call('evaluate', { code }); }

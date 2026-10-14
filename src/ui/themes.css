@@ -1,4 +1,5 @@
 :root {
+  color-scheme:dark;
   --summary-height:0px;
   --menu-bg:#282828; --menu-text:#ececec; --menu-muted:#a3a3a3;
   --menu-hover:#3c3c3c; --menu-border:#444; --menu-selected:#4b4231;
@@ -46,6 +47,8 @@ body[data-theme="light"] {
 .collapsed .tabs-label { display:flex; justify-content:center; margin-inline:0; }
 .collapsed .tabs-label > span:first-child { display:none; }
 .collapsed .tabs { margin-top:0; }
+.sidebar { overflow:hidden; }
+.sidebar-animating .sidebar-wordmark,.sidebar-animating .nav-button,.sidebar-animating .tab-select { overflow:hidden; }
 .loading-bolt { display:block; width:32px; height:32px; }
 .native-bolt-button { padding:0; }
 .native-bolt-button:disabled { opacity:1; }

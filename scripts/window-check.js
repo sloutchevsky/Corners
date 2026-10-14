@@ -52,10 +52,10 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     console.log('PASS ' + passed.at(-1));
     // Verify real geometry changes still reach Adobe's renderer.
     await native('test-paints', { reset: true });
-    await command('collapse'); await wait(150);
+    await command('collapse'); await wait(300);
     const collapsed = await app.evaluate(() => global.__flashborn.activeTab().native.inspect());
     assert.ok(collapsed.rect[0] < after.rect[0]); assert.ok(collapsed.rect[2] - collapsed.rect[0] > after.rect[2] - after.rect[0]);
-    await command('collapse');
+    await command('collapse'); await wait(300);
     await app.evaluate(() => global.__flashborn.win.setSize(1200, 800)); await wait(150);
     assert.ok((await native('test-paints')).size > 0);
     const frame = await script('document.getElementById("flash-movie").CurrentFrame()');
@@ -65,11 +65,12 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     const measuredFlash = (await command('tab-memory', { id: flashId })).tabMemory;
     assert.ok(Number.isInteger(measuredFlash.megabytes) && measuredFlash.megabytes > 0, JSON.stringify(measuredFlash));
     const flashRow = ui.locator(`[data-reorder-id="${flashId}"]`); await flashRow.hover();
-    await poll(() => flashRow.getAttribute('title'), v => /Memory: \d+ MB/.test(v));
+    await poll(() => flashRow.getAttribute('aria-description'), v => /· \d+ MB$/.test(v));
     const sameRow = await flashRow.evaluate(el => { window.__memoryRow = el; return true; }); assert.equal(sameRow, true);
     await command('new-tab'); const homeId = (await state()).activeId;
     await ui.locator(`[data-reorder-id="${homeId}"]`).hover();
-    await poll(() => ui.locator(`[data-reorder-id="${homeId}"]`).getAttribute('title'), v => /Memory: \d+ MB/.test(v) && v.includes('Shared renderer'));
+    await poll(() => ui.locator(`[data-reorder-id="${homeId}"]`).getAttribute('aria-description'), v => /· \d+ MB$/.test(v));
+    assert.equal((await command('tab-memory', { id: homeId })).tabMemory.shared, true);
     await command('navigate', { value: 'http://127.0.0.1:' + server.address().port });
     await poll(state, s => !s.tabs.find(t => t.id === homeId).loading);
     const initial = (await command('tab-memory', { id: homeId })).tabMemory;
@@ -79,10 +80,10 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     await command('select-tab', { id: flashId });
     await wait(2100);
     const inactiveRow = ui.locator(`[data-reorder-id="${homeId}"]`); await inactiveRow.hover();
-    await poll(() => inactiveRow.getAttribute('title'), v => /Memory: \d+ MB/.test(v) && !v.includes('Shared renderer'));
+    await poll(() => inactiveRow.getAttribute('aria-description'), v => /· \d+ MB$/.test(v));
     assert.equal((await state()).activeId, flashId, 'Hover must not activate an inactive tab');
-    const memoryTitle = await inactiveRow.getAttribute('title');
-    assert.ok(Number(memoryTitle.match(/Memory: (\d+) MB/)[1]) >= initial.megabytes + 40);
+    const memoryTitle = await inactiveRow.getAttribute('aria-description');
+    assert.ok(Number(memoryTitle.match(/· (\d+) MB/)[1]) >= initial.megabytes + 40);
     passed.push('Tab hover reports real Flash runtime, shared new-tab, and inactive modern renderer memory; a touched 64 MB allocation increases the estimate without activating the tab'); console.log('PASS ' + passed.at(-1));
     if (process.env.FLASHBORN_KPF === '1') {
       await command('new-tab'); await command('navigate', { value: 'https://www.sloutchevsky.com/demos/kpf/main.htm?fullscreen=no' });

@@ -7,8 +7,11 @@ let activePrediction = null;
 let tabRenderKey = '', listRenderKey = '';
 const tabMemory = new Map();
 const memoryRequests = new Map();
+let hoveredTab = null, tabHoverRevision = 0;
 let summaryRenderKey = '';
 let summaryFrame = 0, summaryTargetHeight = 0, summaryVisibleStamp = '';
+const revealDuration = 190;
+let sidebarFrame = 0, sidebarWidth = 248, lastCollapsed;
 let libraryOpenKind = 'swf';
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,13 +29,25 @@ function current() { return state?.tabs.find(t => t.id === state.activeId); }
 const memoryKey = tab => tab && JSON.stringify([tab.url, tab.kind, !!tab.native]);
 function tabTooltip(tab) {
   const measured = tabMemory.get(tab.id);
-  return (tab.private ? 'Flashcognito · ' : '') + (tab.url || 'New tab') + (measured ? '\nMemory: ' + (measured.megabytes === null ? 'unavailable' : measured.megabytes + ' MB') + (measured.shared ? '\nShared renderer' : '') : '');
+  return (tab.title || 'New tab').slice(0, 35) + ' · ' + (measured?.megabytes ?? '…') + ' MB';
+}
+function hideTabTooltip() {
+  hoveredTab = null; tabHoverRevision++;
+  window.browser.call('tab-tooltip-hide').catch(() => {});
+}
+function showTabTooltip(row, tab) {
+  const rect = row.getBoundingClientRect();
+  row.setAttribute('aria-description', tabTooltip(tab));
+  window.browser.call('tab-tooltip', { id: tab.id, x: rect.right, y: rect.y + rect.height / 2, megabytes: tabMemory.get(tab.id)?.megabytes ?? null }).catch(() => {});
 }
 async function measureTab(event) {
   const row = event.target.closest('.tab');
-  if (!row || row.contains(event.relatedTarget)) return;
+  if (!row || row.contains(event.relatedTarget) || dragging || hoveredTab === row) return;
   const id = row.dataset.reorderId, tab = state?.tabs.find(t => t.id === id);
   if (!tab) return;
+  hoveredTab = row;
+  const revision = ++tabHoverRevision;
+  showTabTooltip(row, tab);
   const cached = tabMemory.get(id);
   if (!cached || cached.page !== memoryKey(tab) || Date.now() - cached.measuredAt > 2000) {
     if (!memoryRequests.has(id)) {
@@ -44,11 +59,16 @@ async function measureTab(event) {
     }
     await memoryRequests.get(id);
   }
-  if (row.isConnected) row.title = tabTooltip(tab);
+  if (revision === tabHoverRevision && hoveredTab === row && row.isConnected) showTabTooltip(row, tab);
 }
 document.getElementById('tabs').addEventListener('pointerover', measureTab);
 document.getElementById('tabs').addEventListener('pointermove', measureTab);
-document.getElementById('tabs').addEventListener('focusin', measureTab);
+document.getElementById('tabs').addEventListener('pointerout', event => {
+  if (hoveredTab && !hoveredTab.contains(event.relatedTarget)) hideTabTooltip();
+});
+document.getElementById('tabs').addEventListener('pointerleave', hideTabTooltip);
+document.getElementById('tabs').addEventListener('scroll', hideTabTooltip);
+window.addEventListener('blur', hideTabTooltip);
 const loadingBolt = new GoldLightning(document.getElementById('loading-bolt'));
 const titleBolt = new GoldLightning(document.getElementById('title-bolt'));
 const navigationIcons = [...document.querySelectorAll('[data-nav-icon]')].map(canvas => new GoldNavigation(canvas));
@@ -97,7 +117,7 @@ function measureSummary(animate = false) {
   setSummaryHeight(0);
   const step = now => {
     if (summaryVisibleStamp !== stamp || !state.pageSummary || state.panel || state.fullscreen) { summaryFrame = 0; return; }
-    const progress = Math.min(1, (now - started) / 190);
+    const progress = Math.min(1, (now - started) / revealDuration);
     setSummaryHeight(Math.round(height * (1 - Math.pow(1 - progress, 3))));
     summaryFrame = progress < 1 ? requestAnimationFrame(step) : 0;
     if (progress === 1) section.classList.add('summary-settled');
@@ -105,10 +125,33 @@ function measureSummary(animate = false) {
   summaryFrame = requestAnimationFrame(step);
 }
 new ResizeObserver(() => measureSummary()).observe($('#summary-inner'));
+function renderSidebar() {
+  const target = state.collapsed ? 68 : 248;
+  if (lastCollapsed === state.collapsed) return;
+  cancelAnimationFrame(sidebarFrame); sidebarFrame = 0;
+  const initial = lastCollapsed === undefined;
+  lastCollapsed = state.collapsed;
+  const apply = width => {
+    sidebarWidth = Math.round(width);
+    document.body.style.setProperty('--sidebar-width', sidebarWidth + 'px');
+    window.browser.call('sidebar-width', { width: sidebarWidth }).catch(() => {});
+  };
+  if (initial || matchMedia('(prefers-reduced-motion:reduce)').matches) { document.body.classList.remove('sidebar-animating'); apply(target); return; }
+  const from = sidebarWidth, started = performance.now();
+  document.body.classList.add('sidebar-animating');
+  const step = now => {
+    const progress = Math.min(1, (now - started) / revealDuration);
+    apply(from + (target - from) * (1 - Math.pow(1 - progress, 3)));
+    sidebarFrame = progress < 1 ? requestAnimationFrame(step) : 0;
+    if (progress === 1) document.body.classList.remove('sidebar-animating');
+  };
+  sidebarFrame = requestAnimationFrame(step);
+}
 function render(next) {
   state = next;
   for (const [id, measured] of tabMemory) if (measured.page !== memoryKey(state.tabs.find(t => t.id === id))) tabMemory.delete(id);
   document.body.classList.toggle('collapsed', state.collapsed);
+  renderSidebar();
   document.body.classList.toggle('fullscreen', state.fullscreen);
   const theme = state.settings.theme || 'current';
   document.body.dataset.theme = theme;
@@ -131,8 +174,9 @@ function render(next) {
   $('#tab-count').title = `${state.tabs.length} open tabs`;
   const nextTabKey = JSON.stringify([state.tabs, state.activeId, state.panel]);
   if (!dragging && nextTabKey !== tabRenderKey) {
+    hideTabTooltip();
     tabRenderKey = nextTabKey;
-    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.private ? 'private-tab' : ''} ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}" title="${escape(tabTooltip(tab))}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}${tab.private ? ' (Flashcognito)' : ''}" aria-description="Drag to reorder, or press Alt and Up or Down. Right-click to duplicate or close."><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.private ? icon('lock') : tab.kind === 'flash' ? icon('flash') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" title="Close tab" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
+    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.private ? 'private-tab' : ''} ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}" aria-description="${escape(tabTooltip(tab))}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}${tab.private ? ' (Flashcognito)' : ''}" aria-description="Drag to reorder, or press Alt and Up or Down. Right-click to duplicate or close."><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.private ? icon('lock') : tab.kind === 'flash' ? icon('flash') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
   }
   document.querySelectorAll('[data-panel]').forEach(el => el.classList.toggle('active', el.dataset.panel === state.panel));
   $('#back').disabled = !t?.canBack;
@@ -282,6 +326,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('contextmenu', event => {
   const tab = event.target.closest('[data-collection="tabs"]');
   if (!tab) return;
+  hideTabTooltip();
   event.preventDefault();
   call('tab-menu', { id: tab.dataset.reorderId, x: event.clientX, y: event.clientY });
 });
@@ -289,6 +334,7 @@ function clearDropIndicators() { document.querySelectorAll('.drop-before,.drop-a
 function finishDragging() { dragging = null; clearDropIndicators(); document.querySelectorAll('.dragging').forEach(row => row.classList.remove('dragging')); }
 document.addEventListener('dragstart', event => {
   const row = event.target.closest('[data-reorder-id]'); if (!row) return;
+  hideTabTooltip();
   dragging = { collection: row.dataset.collection, id: row.dataset.reorderId };
   event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragging.id);
   row.classList.add('dragging');
@@ -393,6 +439,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#find-
 window.browser.onState(render);
 window.browser.onNotice(toast);
 window.browser.onFocusAddress(() => { $('#address').focus(); $('#address').select(); });
+window.browser.onBlurFields(() => { if (document.activeElement?.matches('input')) document.activeElement.blur(); });
 window.browser.onFind(result => {
   if (result.open) { $('#find-form').classList.remove('hidden'); $('#find-input').focus(); $('#find-input').select(); }
   else $('#find-count').textContent = `${result.activeMatchOrdinal} / ${result.matches}`;

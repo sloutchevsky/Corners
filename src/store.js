@@ -8,6 +8,7 @@ class Store {
     this.data = { bookmarks: [], history: [], library: [], downloads: [], tabs: [], settings: { searchEngine: 'duckduckgo', restoreTabs: true, pageSummaries: true, flashEnabled: true, flashQuality: 'high', theme: 'current' } };
     try {
       const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      this.data.activeTabIndex = Number.isInteger(saved.activeTabIndex) ? saved.activeTabIndex : 0;
       for (const key of ['bookmarks', 'history', 'library', 'downloads', 'tabs']) if (Array.isArray(saved[key])) this.data[key] = saved[key];
       this.data.settings = { ...this.data.settings, ...saved.settings };
       if (typeof this.data.settings.pageSummaries !== 'boolean') this.data.settings.pageSummaries = true;

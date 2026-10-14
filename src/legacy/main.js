@@ -10,12 +10,13 @@ const { settingsScript } = require('./flash-settings');
 const { pathToFileURL, fileURLToPath } = require('url');
 const flashRuntime = require('./runtime.json');
 app.setPath('userData', process.env.FLASHBORN_NATIVE_PROFILE);
+nativeTheme.themeSource = 'system';
 app.commandLine.appendSwitch('ppapi-flash-path', process.env.FLASHBORN_NATIVE_PLUGIN);
 app.commandLine.appendSwitch('ppapi-flash-version', flashRuntime.version);
-app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashnative', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 let window, runtimeSession, source = null, shuttingDown = false, quality = 'high', theme = 'current', pluginLoading = false, sampling = false, hostFullscreen = false;
+let settingsTimer, settingsDeadline = 0, visible = false, navigationSerial = 0, settingsRuns = 0, captures = 0, focusEpoch = 0;
 const channel = nodeNet.connect(process.env.FLASHBORN_NATIVE_CHANNEL);
 const connected = new Promise(resolve => channel.once('connect', () => { channel.write(JSON.stringify({token:process.env.FLASHBORN_NATIVE_TOKEN})+'\n'); resolve(); }));
 channel.on('error', () => app.quit());
@@ -29,16 +30,26 @@ function state() {
 }
 function publish() { send({ type: 'state', state: state() }); }
 async function applySettings() {
-  if (sampling || !window || window.isDestroyed()) return;
+  if (!window || window.isDestroyed()) return;
+  if (sampling) { scheduleSettings(50, false); return; }
   const wc = window.webContents, url = wc.getURL();
   if ((!isWeb(url) && !url.startsWith('flashnative:')) || wc.isLoadingMainFrame()) return;
   sampling = true;
+  const serial = navigationSerial;
   try {
+    settingsRuns++;
     const result = await window.webContents.executeJavaScript(settingsScript(quality, theme));
+    if (serial !== navigationSerial) return;
     if (pluginLoading !== result.loading) { pluginLoading = result.loading; publish(); }
+    if (result.loading && visible && Date.now() < settingsDeadline) scheduleSettings(250, false);
     return result;
   } catch { /* A navigation destroys its previous JavaScript context. */ }
   finally { sampling = false; }
+}
+function scheduleSettings(delay = 0, renew = true) {
+  clearTimeout(settingsTimer);
+  if (renew) settingsDeadline = Date.now() + 60000;
+  settingsTimer = setTimeout(applySettings, delay);
 }
 function remoteBytes(url) {
   return new Promise((resolve, reject) => {
@@ -89,16 +100,25 @@ async function command(action, args) {
   const wc = window.webContents;
   switch (action) {
     case 'navigate': if (!isWeb(args.url)) throw new Error('Only HTTP and HTTPS pages can use native Flash mode.'); source = null; await wc.loadURL(args.url).catch(e => { if (e.code !== 'ERR_ABORTED') throw e; }); break;
-    case 'movie': source = args; quality = ['low', 'medium', 'high'].includes(args.quality) ? args.quality : 'high'; await wc.loadURL('flashnative://player/index.html'); await applySettings(); break;
+    case 'movie': source = { ...args, flashVersion: flashRuntime.version }; quality = ['low', 'medium', 'high'].includes(args.quality) ? args.quality : 'high'; await wc.loadURL('flashnative://player/index.html'); await applySettings(); break;
     case 'local-html': source = { ...args, kind: 'html', path: fs.realpathSync(args.path) }; await wc.loadURL('flashnative://document/' + source.token + '/' + encodeURIComponent(path.basename(source.path))); await applySettings(); break;
     case 'back': if (wc.canGoBack()) wc.goBack(); break;
     case 'forward': if (wc.canGoForward()) wc.goForward(); break;
-    case 'reload': wc.reload(); break;
-    case 'stop': wc.stop(); break;
-    case 'focus': wc.focus(); break;
-    case 'visibility': args.value ? window.showInactive() : window.hide(); break;
+    case 'reload': pluginLoading = false; wc.reload(); break;
+    case 'stop': clearTimeout(settingsTimer); pluginLoading = false; wc.stop(); break;
+    case 'focus': focusEpoch = args.epoch; if (visible) wc.focus(); break;
+    case 'focus-host': focusEpoch = args.epoch; break;
+    case 'visibility':
+      visible = !!args.value;
+      wc.setBackgroundThrottling(!visible && !captures);
+      if (visible) { window.showInactive(); scheduleSettings(); }
+      else { window.hide(); clearTimeout(settingsTimer); }
+      break;
     case 'mute': wc.setAudioMuted(args.value === undefined ? !wc.isAudioMuted() : !!args.value); break;
     case 'zoom': wc.setZoomFactor(nextZoom(wc.getZoomFactor() * 100, args.direction) / 100); break;
+    case 'restore-state':
+      wc.setZoomFactor(Math.max(25, Math.min(500, Number(args.zoom) || 100)) / 100);
+      wc.setAudioMuted(!!args.muted); break;
     case 'host-fullscreen':
       hostFullscreen = !!args.value;
       if (!hostFullscreen) await wc.executeJavaScript('if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});').catch(() => {});
@@ -111,11 +131,16 @@ async function command(action, args) {
       wc.send('player:state', { background: source.background });
       break;
     case 'quality': quality = ['low', 'medium', 'high'].includes(args.quality) ? args.quality : 'high'; await applySettings(); break;
-    case 'theme': theme = args.theme === 'light' ? 'light' : 'current'; nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark'; await applySettings(); break;
+    case 'theme': theme = args.theme === 'light' ? 'light' : 'current'; await applySettings(); break;
     case 'print': wc.print(); break;
     case 'find': if (args.text) wc.findInPage(args.text, { forward: args.forward !== false, findNext: !args.next }); else wc.stopFindInPage('clearSelection'); break;
     case 'clear-data': await runtimeSession.clearStorageData(); await runtimeSession.clearCache(); break;
-    case 'capture': return (await wc.capturePage()).toPNG().toString('base64');
+    case 'capture':
+      // The screen picker hides the native HWND while acquiring its snapshot.
+      // Chromium 83 cannot finish capturePage with its compositor throttled.
+      captures++; wc.setBackgroundThrottling(false);
+      try { return (await wc.capturePage()).toPNG().toString('base64'); }
+      finally { captures--; wc.setBackgroundThrottling(!visible && !captures); }
     case 'memory': {
       // Each Flash tab has its own complete runtime, including the PPAPI player.
       const metrics = app.getAppMetrics();
@@ -135,6 +160,20 @@ async function command(action, args) {
       return { ...window.paintStats };
     }
     case 'evaluate': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); return wc.executeJavaScript(args.code, true);
+    case 'test-playback':
+      if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
+      return { settingsRuns, visible, focused: wc.isFocused(), windowFocused: window.isFocused(), backgroundThrottling: wc.getWebPreferences().backgroundThrottling };
+    case 'test-renderer-crash':
+      if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
+      setTimeout(() => process.kill(wc.getOSProcessId(), 'SIGKILL'), 0); return;
+    case 'test-key':
+      if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
+      wc.sendInputEvent({ type: 'keyDown', keyCode: args.key, modifiers: args.control ? ['control'] : [] });
+      wc.sendInputEvent({ type: 'keyUp', keyCode: args.key, modifiers: args.control ? ['control'] : [] }); break;
+    case 'test-mouse':
+      if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+      await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: { mouseMove: 'mouseMoved', mouseDown: 'mousePressed', mouseUp: 'mouseReleased' }[args.type], x: args.x, y: args.y, button: args.button || 'none', buttons: args.type === 'mouseDown' || args.type === 'mouseMove' && args.button === 'left' ? 1 : 0, clickCount: args.clickCount || 0 }); return;
     case 'test-wheel': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseWheel', x: args.x || 100, y: args.y || 150, deltaX: 0, deltaY: -args.deltaY, modifiers: 2 }); break;
     case 'close': shuttingDown = true; window.close(); app.quit(); return;
     default: throw new Error('Unsupported native Flash command');
@@ -150,6 +189,7 @@ app.whenReady().then(async () => {
     webPreferences: { session: runtimeSession, plugins: true, sandbox: true, nodeIntegration: false, contextIsolation: true, enableRemoteModule: false, webSecurity: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') } });
   Menu.setApplicationMenu(null);
   const wc = window.webContents;
+  ipcMain.on('browser:content-focus', event => { if (event.sender === wc) send({ type: 'input-focus', epoch: focusEpoch }); });
   if (process.env.FLASHBORN_NATIVE_TEST === '1') {
     runtimeSession.webRequest.onErrorOccurred(details => console.error('NATIVE REQUEST ERROR', details.error, details.url));
     wc.on('console-message', (_event, level, message, line, source) => { if (level >= 2) console.error('NATIVE PAGE', message, source, line); });
@@ -171,11 +211,16 @@ app.whenReady().then(async () => {
   wc.on('will-redirect', (event, url) => { if (!isWeb(url) && !(source && source.kind === 'html' && url.startsWith('flashnative://document/' + source.token + '/'))) event.preventDefault(); });
   wc.on('will-attach-webview', event => event.preventDefault());
   for (const name of ['did-start-loading','did-stop-loading','did-navigate','did-navigate-in-page','page-title-updated','audio-state-changed']) wc.on(name, publish);
-  wc.on('did-start-loading', () => { pluginLoading = false; });
-  wc.on('did-finish-load', applySettings);
+  wc.on('focus', () => send({ type: 'input-focus', epoch: focusEpoch }));
+  wc.on('did-start-loading', () => { navigationSerial++; pluginLoading = false; clearTimeout(settingsTimer); });
+  wc.on('did-frame-finish-load', () => scheduleSettings());
+  wc.on('did-finish-load', () => scheduleSettings());
   wc.on('did-finish-load', () => wc.send('player:state', { fullscreen: hostFullscreen }));
-  const settingsTimer = setInterval(applySettings, 350);
-  window.on('closed', () => clearInterval(settingsTimer));
+  window.on('closed', () => clearTimeout(settingsTimer));
+  wc.on('render-process-gone', () => send({ type: 'error', recreate: true, message: 'This Flash tab stopped. Reload to start a fresh player.' }));
+  wc.on('plugin-crashed', () => send({ type: 'error', recreate: true, message: 'The Flash player stopped. Reload this tab to restart it.' }));
+  wc.on('unresponsive', () => send({ type: 'unresponsive' }));
+  wc.on('responsive', () => send({ type: 'responsive' }));
   wc.on('did-fail-load', (_event, code, message, _url, main) => { if (main && code !== -3) send({ type: 'error', message: 'Native Flash page could not load (' + message + ').' }); });
   wc.on('found-in-page', (_event, result) => send({ type: 'find', result }));
   wc.on('enter-html-full-screen', () => send({ type: 'fullscreen', value: true }));
@@ -188,6 +233,7 @@ app.whenReady().then(async () => {
   wc.on('zoom-changed', (_event, direction) => send({ type: 'zoom-wheel', direction }));
   ipcMain.on('browser:wheel', (event, direction) => { if (event.sender === wc && [-1, 1].includes(direction)) send({ type: 'zoom-wheel', direction: direction === 1 ? 'in' : 'out', source: 'dom' }); });
   ipcMain.on('browser:drop-files', (event, paths) => { if (event.sender === wc && Array.isArray(paths)) send({ type: 'drop-files', paths }); });
+  ipcMain.on('browser:flash-changed', event => { if (event.sender === wc) scheduleSettings(120); });
   runtimeSession.on('will-download', (event, item) => { event.preventDefault(); send({ type: item.getMimeType() === 'application/pdf' ? 'open-pdf' : 'download', url: item.getURL() }); });
   ipcMain.handle('player:mute', event => { if (event.sender !== wc || wc.getURL() !== 'flashnative://player/index.html') throw new Error('Untrusted player'); wc.setAudioMuted(!wc.isAudioMuted()); publish(); return wc.isAudioMuted(); });
   ipcMain.on('player:fullscreen', event => { if (event.sender === wc && wc.getURL() === 'flashnative://player/index.html') send({ type: 'player-fullscreen' }); });

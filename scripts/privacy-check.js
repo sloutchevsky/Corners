@@ -148,7 +148,8 @@ async function run() {
     const color = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/color.html'), Boolean);
     await app.evaluate(() => { const w = global.__flashborn.win; w.setAlwaysOnTop(true, 'pop-up-menu'); w.moveTop(); });
     await color.locator('#color-pick').click();
-    await poll(state, s => s.colorPicking && !!s.colorPreview);
+    try { await poll(state, s => s.colorPicking && !!s.colorPreview); }
+    catch (error) { console.error('PICKER DIAGNOSTIC', await color.locator('#color-status').textContent(), await app.evaluate(() => ({ color: !!global.__flashborn.colorWindow, entries: global.__flashborn.screenColorPicker?.entries.length, native: global.__flashborn.activeTab().native.inspect() }))); throw error; }
     await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.every(e => e.window.isVisible())), Boolean);
     await poll(() => app.evaluate(() => global.__flashborn.activeTab().native.inspect().visible), value => value === 0);
     await ui.locator('#color-pick-preview').evaluate(el => el.decode());

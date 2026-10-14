@@ -3,13 +3,13 @@
 A minimal dark Windows browser with current Chromium for ordinary pages and
 native Adobe Flash Player 34.0.0.376 from the Clean Flash distribution for Flash content.
 
-**Current version: 1.8.0 · Windows 10/11 · x64 · MIT application source**
+**Current version: 1.8.1 · Windows 10/11 · x64 · MIT application source**
 
-[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.0/Flashborn-Setup-1.8.0-x64.exe)
+[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.1/Flashborn-Setup-1.8.1-x64.exe)
 · [Releases and update notes](https://github.com/sloutchevsky/Flashborn-Browser/releases)
-· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.0/Flashborn-Source-1.8.0-GitHub.zip)
+· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.1/Flashborn-Source-1.8.1-GitHub.zip)
 
-See [the complete version history](CHANGELOG.md) for all 14 releases, from the
+See [the complete version history](CHANGELOG.md) for all 15 releases, from the
 initial Ruffle build to native Adobe playback and the current browser.
 
 ## Preview
@@ -31,11 +31,19 @@ Flashcognito, search summaries, bookmarks, settings, the Flash Library and About
 
 ## Install
 
-Download and run `Flashborn-Setup-1.8.0-x64.exe` on Windows 10 or 11 x64. When
+Download and run `Flashborn-Setup-1.8.1-x64.exe` on Windows 10 or 11 x64. When
 building locally, the same file is produced in `release/`. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
+
+Version 1.8.1 reduces repeated work during Flash playback and restores interactive
+tabs from their original sources. Restart preserves regular web and local-file
+tabs, their order and the selected tab. Background tabs load when selected; a
+stopped Flash player can be recreated with Reload. Flashcognito tabs are not saved.
+Address and Find fields retain focus while Flash loads. Tab hover bubbles show a
+short title and memory size, and dismiss immediately. Sidebar collapse/restore
+uses the same quick animation as Search summary reveal.
 
 This build is unsigned; Windows can show an unknown publisher
 or SmartScreen prompt. Uninstall through Windows Settings → Apps.
@@ -83,7 +91,7 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   It sends nothing to an external summary service. The panel animates down when
   ready, pushing the HTML viewport down, and aligns with the organic search results.
   Click × to dismiss it for that page visit; reloading makes it available again.
-  The summary and search results background follow browser theme changes immediately.
+  The summary follows browser theme changes; search results retain their own colors.
   **Settings → Generate search summaries** is on by default; turn it off to remove
   summaries from existing and future pages. Summary text stays in memory, including
   in Flashcognito. Empty results, verification pages and unsupported page layouts
@@ -235,11 +243,13 @@ npm run test:predictions
 npm run test:eyedropper
 npm run test:sidebar
 npm run test:window
+npm run test:playback
+npm run test:toolbar
 npm run test:summaries
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.8.0-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.8.1-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -292,6 +302,13 @@ The eyedropper check selects actual screen pixels over Adobe Flash, verifies the
 Windows click target belongs to the topmost overlay, and checks collapsed and
 fullscreen layouts, Escape and dialog-close cleanup, restored playback, and the
 About email's copy bubble.
+
+The playback checks use an original AVM1 movie with a frame clock and mouse/drag
+callbacks. They cover settled playback without recurring settings calls, older
+tab interaction, source/zoom/mute restoration, lazy startup and recovery from
+terminated helpers or crashed renderers. The toolbar checks cover address and
+Find focus while Flash reloads, keyboard shortcuts from the legacy renderer,
+returning to the movie, compact hover dismissal and synchronized sidebar motion.
 
 The sidebar checks measure gear centering across rotation angles, completion
 after hover-out, collapsed counts, both themes, menu grouping, and real download

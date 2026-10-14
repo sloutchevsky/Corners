@@ -114,13 +114,4 @@ function makeSummary(data, value, mode = 'search') {
     passages: selected.map(item => ({ text: item.text, source: item.source })),
     sources: [...new Set(selected.map(item => item.source))].map(index => ({ index, title: documents[index].title, url: documents[index].url, domain: new URL(documents[index].url).hostname.replace(/^www\./, '') })) };
 }
-function searchThemeCSS(theme) {
-  const light = theme === 'light', bg = light ? '#e9e9e9' : '#212121', text = light ? '#292929' : '#ececec', link = light ? '#1558b0' : '#a8c7fa';
-  return `html,body,#search,#main,#b_content,#b_results,#b_header,#b_context,#rcnt,#center_col,[data-testid="mainline"],.MjjYud,.g,.b_algo,.result,[data-testid="result"]{background-color:${bg}!important;color:${text}!important}
-    #search div,#b_results :is(div,li,a),#b_context :is(div,li,a){background-color:${bg}!important}
-    :root{color-scheme:${light ? 'light' : 'dark'}!important}
-    #search :is(div,p,span,cite,h2,h3),#b_results :is(div,p,span,cite,h2,h3,li),.result :is(div,p,span),[data-testid="result"] :is(div,p,span){color:${text}!important}
-    #b_header .b_scopebar :is(a,span,li),#b_header #id_h :is(a,span),#b_context :is(div,p,span,cite,h2,h3){color:${text}!important}
-    #search a,#search h3,#search a span,#b_results a,#b_results a :is(span,h2,h3),.result__a,[data-testid="result-title-a"]{color:${link}!important}`;
-}
-module.exports = { searchPage, sourceURL, readPageScript, makeSummary, searchThemeCSS };
+module.exports = { searchPage, sourceURL, readPageScript, makeSummary };

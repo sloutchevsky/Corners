@@ -8,8 +8,9 @@ const { fileURLToPath, pathToFileURL } = require('node:url');
 const { resolveInput, isWebURL, containedPath, isSWF, isPDFURL, reorderItems } = require('./core');
 const { contentType, supportedLocalFile } = require('./files');
 const { canPredict, suggestions, SearchPredictions } = require('./search-suggestions');
-const { searchPage, readPageScript, makeSummary, searchThemeCSS } = require('./page-summary');
+const { searchPage, readPageScript, makeSummary } = require('./page-summary');
 const { Store } = require('./store');
+const { sessionEntry, savedEntry } = require('./tab-session');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
 const { ScreenColorPicker } = require('./screen-color-picker');
 const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
@@ -23,13 +24,14 @@ if (testMode && process.env.FLASHBORN_PROFILE) app.setPath('userData', process.e
 const gotLock = testMode || app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 app.setAppUserModelId('com.flashborn.browser');
-nativeTheme.themeSource = 'dark';
+nativeTheme.themeSource = 'system';
 
 const UI_URL = 'flashborn://ui/index.html';
 const MENU_URL = 'flashborn://ui/menu.html';
 const ZOOM_URL = 'flashborn://ui/zoom.html';
 const SUGGEST_URL = 'flashborn://ui/suggestions.html';
 const COLOR_URL = 'flashborn://ui/color.html';
+const TOOLTIP_URL = 'flashborn://ui/tab-tooltip.html';
 const MAX_SWF_SIZE = 256 * 1024 * 1024;
 const mimeTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.swf': 'application/x-shockwave-flash', '.json': 'application/json', '.mp3': 'audio/mpeg', '.xml': 'text/xml', '.txt': 'text/plain' };
 let win, store, browsingSession, activeId, panel = null, collapsed = false, closing = false;
@@ -47,6 +49,9 @@ const searchPredictions = new SearchPredictions((url, options) => net.fetch(url,
 let colorWindow, colorTabId, colorPicking = false, colorPreview = null, screenColorPicker, tabMenu;
 let privateSession;
 let layoutScale;
+let sidebarWidth = 248;
+let focusArea = 'chrome';
+let tooltipWindow, tooltipData = null, tooltipRevision = 0;
 const SUMMARY_MODE = 'search';
 const privateDownloads = [];
 
@@ -74,11 +79,11 @@ function publicTab(t) {
   const wc = live(t) ? t.view.webContents : null;
   if (t.native) return { id: t.id, private: !!t.private, kind: t.kind, title: t.title, url: t.url, loading: t.loading, error: t.error, native: true,
     muted: !!t.native.state.muted, audible: !!t.native.state.audible, canBack: !!t.native.state.canBack, canForward: !!t.native.state.canForward, zoom: t.native.state.zoom || 100 };
-  return { id: t.id, private: !!t.private, kind: t.kind, title: t.title, url: t.url, loading: t.loading, error: t.error, muted: wc?.isAudioMuted() || false, audible: wc?.isCurrentlyAudible() || false,
+  return { id: t.id, private: !!t.private, kind: t.kind, title: t.title, url: t.url, loading: t.loading, error: t.error, native: !!t.restoreEntry?.native, muted: wc?.isAudioMuted() || false, audible: wc?.isCurrentlyAudible() || false,
     canBack: wc?.navigationHistory.canGoBack() || false, canForward: wc?.navigationHistory.canGoForward() || false, zoom: Math.round((wc?.getZoomFactor() || 1) * 100) };
 }
 function getState() {
-  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, flashBackground: activeTab()?.flashSource?.background || '#ffffff', colorPicking, colorPreview, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
+  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, tabTooltip: tooltipData, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, flashBackground: activeTab()?.flashSource?.background || '#ffffff', colorPicking, colorPreview, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
     history: activeTab()?.private ? [] : store.data.history, library: store.data.library, downloads: tabDownloads(activeTab()), settings: store.data.settings,
     flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: flashRuntime.version, flashRuntime: '9.4.4' };
 }
@@ -93,12 +98,16 @@ function sendState(immediate = false) {
     if (zoomWindow && !zoomWindow.isDestroyed()) zoomWindow.webContents.send('browser:state', state);
     if (suggestionWindow && !suggestionWindow.isDestroyed()) suggestionWindow.webContents.send('browser:state', state);
     if (colorWindow && !colorWindow.isDestroyed()) colorWindow.webContents.send('browser:state', state);
+    if (tooltipWindow && !tooltipWindow.isDestroyed()) tooltipWindow.webContents.send('browser:state', state);
   } else if (!stateTimer) {
     stateTimer = setTimeout(() => { stateTimer = null; sendState(true); }, 40);
   }
 }
 function persistTabs() {
-  store.data.tabs = tabs.filter(t => !t.private && t.kind === 'web').slice(0, 30).map(t => ({ url: t.url, title: t.title, native: !!t.native }));
+  const saved = tabs.map(t => ({ tab: t, entry: sessionEntry(t) })).filter(item => item.entry).slice(0, 50);
+  store.data.tabs = saved.map(item => item.entry);
+  const selected = saved.findIndex(item => item.tab.id === activeId);
+  if (selected >= 0) store.data.activeTabIndex = selected;
   store.save();
 }
 function layout() {
@@ -107,12 +116,12 @@ function layout() {
   layoutScale = screen.getDisplayMatching(win.getBounds()).scaleFactor;
   for (const t of tabs) {
     const full = win.isFullScreen();
-    const left = full ? 0 : collapsed ? 68 : 248;
+    const left = full ? 0 : sidebarWidth;
     const summaryHeight = !full && !panel && t.id === activeId && summaryFor(t) ? t.summaryHeight || 0 : 0;
     const top = full ? 0 : 100 + summaryHeight;
     const rect = { x: left, y: top, width: Math.max(1, width - left), height: Math.max(1, height - top - (full ? 0 : 24)) };
     if (live(t)) { t.view.setBounds(rect); t.view.setVisible(!t.native && t.id === activeId && !panel && !t.error); }
-    if (t.native) t.native.bounds(rect, t.id === activeId && !panel && !t.error && !(colorPicking && colorTabId === t.id));
+    if (t.native) t.native.bounds(rect, !win.isMinimized() && t.id === activeId && !panel && !t.error && !(colorPicking && colorTabId === t.id));
   }
 }
 function summaryFor(t) {
@@ -124,24 +133,8 @@ function clearSummary(t) {
   const hadSummary = !!t.summary; t.summary = null; t.summaryHeight = 0;
   if (hadSummary) { layout(); sendState(true); }
 }
-async function updateSearchTheme(t) {
-  if (!live(t) || t.native) return;
-  const wc = t.view.webContents, url = wc.getURL(), theme = store.data.settings.theme;
-  const identity = searchPage(url) ? url + '|' + theme : '';
-  if (identity && t.searchThemeIdentity === identity && t.searchStyleKey) return;
-  const serial = t.searchStyleSerial = (t.searchStyleSerial || 0) + 1;
-  const old = t.searchStyleKey; t.searchStyleKey = null; t.searchThemeIdentity = identity;
-  if (old) await wc.removeInsertedCSS(old).catch(() => {});
-  if (!identity || !live(t) || wc.getURL() !== url) return;
-  try {
-    const key = await wc.insertCSS(searchThemeCSS(theme));
-    if (serial === t.searchStyleSerial && live(t) && wc.getURL() === url) t.searchStyleKey = key;
-    else await wc.removeInsertedCSS(key).catch(() => {});
-  } catch { /* A navigation can destroy the page while its style is applying. */ }
-}
 function scheduleSummary(t, delay = 180) {
   clearTimeout(t.summaryTimer);
-  updateSearchTheme(t);
   const eligible = store.data.settings.pageSummaries && t.summaryDismissedURL !== t.url && !t.native && t.kind === 'web' && live(t) && isWebURL(t.url) && (SUMMARY_MODE !== 'search' || !!searchPage(t.url));
   if (live(t)) t.view.webContents.send('browser:summary-watch', !!eligible);
   if (!eligible) { clearSummary(t); return; }
@@ -168,17 +161,48 @@ function scheduleSummary(t, delay = 180) {
 function selectTab(id) {
   const t = tabs.find(t => t.id === id);
   if (!t) return;
+  closeTabTooltip();
   closeZoomPopup();
   closeSuggestions();
   closeColorPicker();
   activeId = id;
   panel = null;
+  focusArea = t.kind === 'home' ? 'chrome' : 'content';
   layout();
+  if (t.restoreEntry) resumeTab(t).catch(e => showError(t, e.message));
   if (t.native && !t.error) t.native.focus();
   else if (live(t) && !t.error) t.view.webContents.focus();
+  else win.webContents.focus();
+  persistTabs();
   sendState(true);
 }
+async function resumeTab(t) {
+  if (t.restoring) return t.restoring;
+  const entry = t.restoreEntry;
+  if (!entry) return;
+  t.restoreEntry = null;
+  t.restoring = (async () => {
+    try {
+      if (entry.kind === 'flash') await loadFlash(t, entry.source);
+      else if (entry.kind === 'local' && entry.native) await addLibrarySource(entry.path, 'html', t);
+      else if (['local', 'pdf'].includes(entry.kind)) await openLocal(entry.path, t);
+      else if (entry.kind === 'web') {
+        if (entry.native) await activateNative(t, entry.url);
+        else await navigate(t, entry.url);
+      }
+      if (t.native) {
+        await t.native.call('restore-state', { zoom: entry.zoom, muted: entry.muted });
+        if (t.id === activeId && !panel && focusArea === 'content') t.native.focus();
+      } else if (live(t)) {
+        t.view.webContents.setZoomFactor((entry.zoom || 100) / 100); t.view.webContents.setAudioMuted(!!entry.muted);
+      }
+    } catch (e) { t.restoreEntry = entry; throw e; }
+    finally { t.restoring = null; }
+  })();
+  return t.restoring;
+}
 function closeTab(id) {
+  closeTabTooltip();
   const index = tabs.findIndex(t => t.id === id);
   if (index < 0) return;
   const t = tabs[index];
@@ -203,6 +227,9 @@ function closeTab(id) {
 }
 function wireContents(t) {
   const wc = t.view.webContents;
+  wc.on('focus', () => {
+    if (t.id === activeId && !panel && !t.native) { focusArea = 'content'; closeSuggestions(); win.webContents.send('browser:blur-fields'); }
+  });
   // Manual mode records zoom levels but deliberately does not scale the renderer.
   wc.setZoomMode('isolated');
   wc.on('zoom-changed', (_event, direction) => wheelZoom(t, direction === 'in' ? 1 : -1, 'browser'));
@@ -238,8 +265,7 @@ function wireContents(t) {
   });
   wc.on('did-start-loading', () => {
     if (wc.isLoadingMainFrame()) {
-      t.summaryDismissedURL = null; t.searchThemeIdentity = null; t.searchStyleKey = null;
-      t.searchStyleSerial = (t.searchStyleSerial || 0) + 1; clearSummary(t);
+      t.summaryDismissedURL = null; clearSummary(t);
     }
     t.loading = true; sendState(true);
   });
@@ -322,9 +348,10 @@ function ensureView(t) {
   wireContents(t);
   layout();
 }
-function showError(t, message) { t.error = message; t.loading = false; layout(); sendState(true); }
+function showError(t, message) { if (closing || !tabs.includes(t)) return; t.error = message; t.loading = false; layout(); sendState(true); }
 async function navigate(t, value) {
   const target = resolveInput(value, store.data.settings.searchEngine);
+  t.restoreEntry = null;
   t.error = null;
   if (target.type === 'home') {
     if (t.native) { t.native.dispose(); t.native = null; }
@@ -387,7 +414,8 @@ async function openDocument(absolute, existing) {
   const real = await fsp.realpath(absolute);
   documents.set(token, { path: real, root: path.dirname(real), assets: /\.html?$/i.test(real), tabId: t.id });
   t.kind = pdf ? 'pdf' : 'local'; t.localPath = real; t.title = path.basename(absolute); t.url = pathToFileURL(absolute).href; t.loading = true; t.error = null;
-  panel = null; ensureView(t); layout(); sendState(true);
+  if (t.id === activeId) panel = null;
+  ensureView(t); layout(); sendState(true);
   await t.view.webContents.loadURL(`flashborn://document/${token}/${encodeURIComponent(t.title)}`);
 }
 async function addLibrarySource(value, kind, existing) {
@@ -411,8 +439,10 @@ async function addLibrarySource(value, kind, existing) {
   t.kind = 'local'; t.localPath = local; t.url = pathToFileURL(local).href; t.title = entry.title; t.loading = true; t.error = null;
   await ensureNative(t);
   if (live(t)) { win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; }
-  panel = null; layout(); sendState(true);
+  if (t.id === activeId) panel = null;
+  layout(); sendState(true);
   await t.native.call('local-html', { path: local, token: crypto.randomUUID() });
+  persistTabs();
 }
 async function loadFlash(t, source) {
   source = { ...source, background: /^#[0-9a-f]{6}$/i.test(source.background || '') ? source.background.toLowerCase() : '#ffffff' };
@@ -421,21 +451,33 @@ async function loadFlash(t, source) {
   t.url = source.url || pathToFileURL(source.path).href;
   sendState(true);
   await ensureNative(t);
+  if (live(t)) { win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; }
   layout(); sendState(true);
   await t.native.call('movie', { ...source, title: t.title, quality: store.data.settings.flashQuality, theme: store.data.settings.theme });
+  persistTabs();
 }
 async function ensureNative(t) {
-  if (t.native?.child && t.native.child.exitCode !== null) { t.native.dispose(); t.native = null; }
+  if (t.native && (t.native.stopped || t.native.child && (t.native.child.exitCode !== null || t.native.child.signalCode !== null))) { t.native.dispose(); t.native = null; }
   if (t.native) { await t.native.ready; return; }
   if (!nativeAvailable()) throw new Error('Native Flash files are missing. Reinstall Flashborn.');
-  t.native = new NativeFlash(win, t.id, message => {
+  const native = t.native = new NativeFlash(win, t.id, message => {
+    if (t.native !== native || !tabs.includes(t) || closing) return;
     if (message.type === 'ready') layout();
+    else if (message.type === 'input-focus' && message.epoch === native.focusRevision && t.id === activeId && !panel) {
+      if (focusArea !== 'content') {
+        focusArea = 'content'; closeSuggestions();
+        win.webContents.send('browser:blur-fields');
+        setImmediate(() => { if (focusArea === 'content' && t.id === activeId) native.focus(); });
+      }
+    }
     else if (message.type === 'state') {
       if (!isWebURL(message.state.url) && !message.state.url?.startsWith('flashnative:')) return;
       const started = !!message.state.loading && !t.loading;
       t.loading = !!message.state.loading;
+      if (started) t.nativeHistoryURL = null;
       if (t.kind === 'web' && isWebURL(message.state.url)) { t.url = message.state.url; t.title = message.state.title || new URL(t.url).hostname; }
-      if (!t.private && !t.loading && t.kind === 'web' && isWebURL(t.url)) {
+      if (!t.private && !t.loading && t.kind === 'web' && isWebURL(t.url) && t.nativeHistoryURL !== t.url) {
+        t.nativeHistoryURL = t.url;
         store.data.history = [{ id: crypto.randomUUID(), url: t.url, title: t.title, visitedAt: new Date().toISOString() }, ...store.data.history.filter(h => h.url !== t.url)].slice(0, 500);
         persistTabs();
       }
@@ -450,10 +492,13 @@ async function ensureNative(t) {
     else if (message.type === 'player-fullscreen' && t.id === activeId) setFullscreen(!win.isFullScreen());
     else if (message.type === 'player-color' && t.id === activeId && t.kind === 'flash') showColorPicker(t).catch(e => win?.webContents.send('browser:notice', e.message));
     else if (message.type === 'find') win.webContents.send('browser:find', message.result);
-    else if (message.type === 'error') showError(t, message.message);
+    else if (message.type === 'unresponsive') t.recreateNative = true;
+    else if (message.type === 'responsive' && !t.error) t.recreateNative = false;
+    else if (message.type === 'error') { if (message.recreate) t.recreateNative = true; showError(t, message.message); }
   }, { private: !!t.private });
   layout();
   await t.native.ready;
+  if (closing || !tabs.includes(t) || t.native !== native) { native.dispose(); throw new Error('Flash tab was closed.'); }
   await t.native.call('quality', { quality: store.data.settings.flashQuality });
   await t.native.call('theme', { theme: store.data.settings.theme });
   layout();
@@ -465,6 +510,7 @@ async function activateNative(t, url) {
   if (live(t)) { win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; }
   layout(); sendState(true);
   await t.native.call('navigate', { url });
+  if (t.id === activeId && !panel && focusArea === 'content') t.native.focus();
 }
 async function duplicateTab(id) {
   const source = tabs.find(tab => tab.id === id);
@@ -474,7 +520,8 @@ async function duplicateTab(id) {
   tabs.splice(tabs.indexOf(copy), 1);
   tabs.splice(tabs.indexOf(source) + 1, 0, copy);
   copy.forceModern = source.forceModern;
-  if (source.kind === 'flash') await loadFlash(copy, { ...source.flashSource });
+  if (source.restoreEntry) { copy.restoreEntry = { ...source.restoreEntry }; await resumeTab(copy); }
+  else if (source.kind === 'flash') await loadFlash(copy, { ...source.flashSource });
   else if (source.kind === 'local' && source.native) await addLibrarySource(source.localPath, 'html', copy);
   else if (['local', 'pdf'].includes(source.kind)) await openLocal(source.localPath, copy);
   else if (source.kind === 'web') {
@@ -499,8 +546,13 @@ function showTabMenu(args) {
     callback: () => { if (tabMenu === menu) tabMenu = null; } });
 }
 function reload(t = activeTab()) {
-  if (t?.native?.child && t.native.child.exitCode !== null) { const url = t.url; t.native.dispose(); t.native = null; (t.kind === 'flash' ? loadFlash(t, t.flashSource) : activateNative(t, url)).catch(e => showError(t, e.message)); return; }
-  if (t?.native) { t.error = null; layout(); t.native.call('reload').catch(e => showError(t, e.message)); return; }
+  if (!t) return;
+  if (t.restoreEntry) { t.error = null; resumeTab(t).catch(e => showError(t, e.message)); return; }
+  if (t.native && (t.recreateNative || t.native.stopped || t.native.child && (t.native.child.exitCode !== null || t.native.child.signalCode !== null))) {
+    const entry = sessionEntry({ ...t, private: false }); t.native.dispose(); t.native = null; t.recreateNative = false;
+    t.restoreEntry = entry; t.error = null; resumeTab(t).catch(e => showError(t, e.message)); return;
+  }
+  if (t.native) { t.error = null; t.loading = true; layout(); sendState(true); t.native.call('reload').then(() => { if (t.id === activeId && focusArea === 'content') t.native?.focus(); }).catch(e => { t.recreateNative = true; showError(t, e.message); }); return; }
   if (!live(t)) return;
   t.error = null;
   layout();
@@ -714,14 +766,14 @@ function handleKeys(event, input) {
   const mod = input.control || input.meta;
   let handled = true;
   const t = activeTab(); const wc = live(t) ? t.view.webContents : null;
-  if (mod && key === 'l') { win.webContents.focus(); win.webContents.send('browser:focus-address'); }
+  if (mod && key === 'l') { focusChrome(); win.webContents.send('browser:focus-address'); }
   else if (mod && key === 'n' && input.shift) createTab('', false, true);
   else if (mod && key === 't' && input.shift) { const last = !t?.private && closedTabs.pop(); if (last) createTab(last, false, false); }
   else if (mod && key === 't') createTab();
   else if (mod && key === 'w') closeTab(activeId);
   else if (mod && key === 'o') command('open-file');
   else if (mod && key === 'r' || key === 'f5') reload();
-  else if (mod && key === 'f') { panel = null; layout(); sendState(true); win.webContents.focus(); win.webContents.send('browser:find', { open: true }); }
+  else if (mod && key === 'f') { panel = null; layout(); sendState(true); focusChrome(); win.webContents.send('browser:find', { open: true }); }
   else if (mod && key === 'd') command('bookmark');
   else if (mod && key === 'h') command('panel', { name: 'history' });
   else if (mod && key === 'j') command('panel', { name: 'downloads' });
@@ -749,6 +801,41 @@ function zoom(direction, popup = true) {
   });
   zoomQueue = task.catch(() => {});
   return task;
+}
+function focusChrome() {
+  focusArea = 'chrome';
+  if (!win || win.isDestroyed()) return;
+  if (activeTab()?.native) activeTab().native.focusHost();
+  else win.webContents.focus();
+}
+function closeTabTooltip() {
+  tooltipRevision++; tooltipData = null;
+  if (tooltipWindow && !tooltipWindow.isDestroyed()) tooltipWindow.hide();
+}
+async function showTabTooltip(args) {
+  const t = tabs.find(tab => tab.id === args.id);
+  if (!t || !win?.isVisible() || win.isMinimized() || !Number.isFinite(args.x) || !Number.isFinite(args.y)) return;
+  const revision = ++tooltipRevision;
+  tooltipData = { id: t.id, title: (t.title || 'New tab').slice(0, 60), megabytes: Number.isFinite(args.megabytes) && args.megabytes >= 0 ? Math.round(args.megabytes) : null };
+  if (!tooltipWindow || tooltipWindow.isDestroyed()) {
+    const popup = tooltipWindow = new BrowserWindow({ width: 240, height: 30, parent: win, frame: false, show: false, skipTaskbar: true,
+      resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, focusable: false,
+      backgroundColor: store.data.settings.theme === 'light' ? '#f0f0f0' : '#282828',
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
+    popup.setAlwaysOnTop(true, 'pop-up-menu'); popup.setIgnoreMouseEvents(true); popup.setMenu(null);
+    popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    popup.webContents.on('will-navigate', event => event.preventDefault());
+    popup.on('closed', () => { if (tooltipWindow === popup) tooltipWindow = null; });
+    popup.tooltipReady = popup.loadURL(TOOLTIP_URL);
+  }
+  const popup = tooltipWindow;
+  await popup.tooltipReady;
+  if (revision !== tooltipRevision || popup.isDestroyed() || !tooltipData || closing) return;
+  const bounds = win.getContentBounds(), work = screen.getDisplayMatching(bounds).workArea;
+  const x = Math.max(work.x, Math.min(work.x + work.width - 240, bounds.x + args.x + 8));
+  const y = Math.max(work.y, Math.min(work.y + work.height - 30, bounds.y + args.y - 15));
+  popup.setPosition(Math.round(x), Math.round(y));
+  popup.webContents.send('browser:state', getState()); popup.showInactive();
 }
 function closeZoomPopup() {
   clearTimeout(zoomTimer);
@@ -831,6 +918,8 @@ async function command(action, args = {}) {
       break;
     }
     case 'summary-dismiss': if (summaryFor(t)) { t.summaryDismissedURL = t.url; clearSummary(t); } break;
+    case 'tab-tooltip': await showTabTooltip(args); return {};
+    case 'tab-tooltip-hide': closeTabTooltip(); return {};
     case 'tab-memory': {
       const tab = tabs.find(item => item.id === args.id);
       if (!tab) throw new Error('This tab is closed.');
@@ -840,11 +929,11 @@ async function command(action, args = {}) {
       const metric = pid && app.getAppMetrics().find(item => item.pid === pid);
       const kb = metric?.memory?.privateBytes ?? metric?.memory?.workingSetSize;
       const shared = tab.kind === 'home' || tabs.some(other => other.id !== tab.id && !other.native && live(other) && other.view.webContents.getOSProcessId() === pid);
-      return { tabMemory: { id: tab.id, megabytes: Number.isFinite(kb) && kb > 0 ? Math.max(1, Math.round(kb / 1024)) : null, shared } };
+      return { tabMemory: { id: tab.id, megabytes: !contents ? 0 : Number.isFinite(kb) && kb > 0 ? Math.max(1, Math.round(kb / 1024)) : null, shared } };
     }
     case 'menu': await showBrowserMenu(); break;
     case 'menu-close': closeBrowserMenu(true); break;
-    case 'menu-find': panel = null; layout(); win.webContents.focus(); win.webContents.send('browser:find', { open: true }); break;
+    case 'menu-find': panel = null; layout(); focusChrome(); win.webContents.send('browser:find', { open: true }); break;
     case 'fullscreen': setFullscreen(typeof args.value === 'boolean' ? args.value : !win.isFullScreen()); break;
     case 'color-close': closeColorPicker(); break;
     case 'color-pick-screen': {
@@ -884,11 +973,9 @@ async function command(action, args = {}) {
     }
     case 'theme': {
       store.data.settings.theme = store.data.settings.theme === 'light' ? 'current' : 'light';
-      nativeTheme.themeSource = store.data.settings.theme === 'light' ? 'light' : 'dark';
       win.setBackgroundColor(store.data.settings.theme === 'light' ? '#e9e9e9' : '#212121');
       store.save();
       await Promise.all(tabs.filter(tab => tab.native).map(tab => tab.native.call('theme', { theme: store.data.settings.theme }).catch(() => {})));
-      await Promise.all(tabs.filter(tab => !tab.native && live(tab)).map(updateSearchTheme));
       break;
     }
     case 'flash-quality': {
@@ -898,7 +985,7 @@ async function command(action, args = {}) {
       break;
     }
     case 'native-mode': if (t && isWebURL(t.url)) { if (t.native) { t.native.dispose(); t.native = null; t.forceModern = true; await navigate(t, t.url); } else { t.forceModern = false; await activateNative(t, t.url); } } break;
-    case 'navigate': closeSuggestions(); closeZoomPopup(); panel = null; await navigate(t, args.value); break;
+    case 'navigate': closeTabTooltip(); closeSuggestions(); closeZoomPopup(); focusArea = 'content'; panel = null; await navigate(t, args.value); break;
     case 'contact-email': clipboard.writeText('sloutchevsky@gmail.com'); break;
     case 'suggest': await showSuggestions(args); break;
     case 'suggest-close': closeSuggestions(); break;
@@ -908,7 +995,7 @@ async function command(action, args = {}) {
       if (item && data.tabId === activeId) {
         closeSuggestions();
         if (data.field === 'library-open-address') await command('add-library-source', { kind: data.libraryKind, value: item.url });
-        else { panel = null; await navigate(t, item.url); }
+        else { focusArea = 'content'; panel = null; await navigate(t, item.url); }
       }
       break;
     }
@@ -930,8 +1017,14 @@ async function command(action, args = {}) {
     case 'reload': reload(); break;
     case 'stop': if (t?.native) await t.native.call('stop'); else wc?.stop(); break;
     case 'home': panel = null; await navigate(t, ''); break;
-    case 'collapse': collapsed = !collapsed; layout(); break;
+    case 'collapse': closeTabTooltip(); closeColorPicker(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); collapsed = !collapsed; break;
+    case 'sidebar-width': {
+      if (!Number.isFinite(args.width) || args.width < 68 || args.width > 248) throw new Error('Invalid sidebar width.');
+      sidebarWidth = Math.round(args.width); layout();
+      return { sidebarWidth };
+    }
     case 'panel':
+      closeTabTooltip();
       closeColorPicker(); closeZoomPopup(); closeSuggestions();
       panel = ['bookmarks', 'history', 'downloads', 'library', 'settings', 'about'].includes(args.name) ? args.name : null;
       if (panel === 'downloads') {
@@ -939,7 +1032,7 @@ async function command(action, args = {}) {
         for (const entry of unseen) entry.isNew = false;
         if (unseen.length && !t?.private) store.save();
       }
-      layout(); if (panel) win.webContents.focus(); break;
+      layout(); if (panel) focusChrome(); break;
     case 'open-file': {
       const result = await dialog.showOpenDialog(win, { title: 'Open file', filters: [{ name: 'Browser files', extensions: ['swf', 'html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico', 'mp4', 'm4v', 'webm', 'ogv', 'mov'] }, { name: 'Flash files', extensions: ['swf'] }, { name: 'PDF documents', extensions: ['pdf'] }], properties: ['openFile', 'multiSelections'] });
       for (const file of result.filePaths) await openLocal(file);
@@ -1010,7 +1103,6 @@ async function command(action, args = {}) {
 
 async function boot() {
   store = new Store(app.getPath('userData'));
-  nativeTheme.themeSource = store.data.settings.theme === 'light' ? 'light' : 'dark';
   browsingSession = session.fromPartition('persist:flashborn');
   await session.defaultSession.protocol.handle('flashborn', handleProtocol);
   await browsingSession.protocol.handle('flashborn', handleProtocol);
@@ -1025,21 +1117,27 @@ async function boot() {
   win.webContents.setZoomMode('manual');
   win.webContents.on('zoom-changed', (_event, direction) => wheelZoom(activeTab(), direction === 'in' ? 1 : -1, 'browser'));
   win.webContents.on('context-menu', (_event, params) => showEditMenu(win.webContents, params));
-  for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeColorPicker(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); layout(); sendState(true); });
+  for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeTabTooltip(); closeColorPicker(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); layout(); sendState(true); });
   for (const event of ['enter-full-screen', 'leave-full-screen']) win.on(event, () => { for (const t of tabs) if (t.native) t.native.call('host-fullscreen', { value: win.isFullScreen() && t.id === activeId }).then(layout).catch(() => {}); });
   win.on('move', () => {
+    closeTabTooltip();
     closeColorPicker(); if (menuWindow) closeBrowserMenu(); closeZoomPopup(); closeSuggestions();
     // Windows moves child HWNDs with their parent. Only a monitor DPI change
     // requires recalculating the Flash viewport's physical pixel bounds.
     if (screen.getDisplayMatching(win.getBounds()).scaleFactor !== layoutScale) layout();
   });
-  win.on('minimize', () => { closeZoomPopup(); closeSuggestions(); });
+  win.on('minimize', () => { closeTabTooltip(); closeZoomPopup(); closeSuggestions(); layout(); });
+  win.on('restore', layout);
+  // Windows restores the last input target on activation. Transfer focus on an
+  // explicit tab/page/toolbar action; a parent focus event can itself result
+  // from that transfer and must not start another cross-process handoff.
+  win.on('blur', closeTabTooltip);
   win.on('close', event => {
     if (!closing && downloadItems.size) {
       const response = dialog.showMessageBoxSync(win, { type: 'question', message: 'Downloads are still running.', detail: 'Closing Flashborn will cancel them.', buttons: ['Keep browsing', 'Close browser'], defaultId: 0, cancelId: 0 });
       if (response === 0) { event.preventDefault(); return; }
     }
-    closeColorPicker(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); persistTabs(); closing = true;
+    closeTabTooltip(); if (tooltipWindow && !tooltipWindow.isDestroyed()) tooltipWindow.close(); closeColorPicker(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); persistTabs(); closing = true;
     for (const t of tabs) { if (t.native) t.native.dispose(); if (live(t)) t.view.webContents.close(); }
   });
   win.on('closed', () => { win = null; });
@@ -1048,17 +1146,20 @@ async function boot() {
     const fromZoom = event.sender === zoomWindow?.webContents && event.senderFrame?.url === ZOOM_URL;
     const fromSuggestions = event.sender === suggestionWindow?.webContents && event.senderFrame?.url === SUGGEST_URL;
     const fromColor = event.sender === colorWindow?.webContents && event.senderFrame?.url === COLOR_URL;
-    if (!fromMenu && !fromZoom && !fromSuggestions && !fromColor && (event.sender !== win?.webContents || event.senderFrame?.url !== UI_URL)) throw new Error('Untrusted command source.');
+    const fromTooltip = event.sender === tooltipWindow?.webContents && event.senderFrame?.url === TOOLTIP_URL;
+    if (!fromMenu && !fromZoom && !fromSuggestions && !fromColor && !fromTooltip && (event.sender !== win?.webContents || event.senderFrame?.url !== UI_URL)) throw new Error('Untrusted command source.');
     if (typeof action !== 'string' || !args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid browser command.');
     if (fromZoom && !['state', 'zoom', 'zoom-hold', 'zoom-release'].includes(action)) throw new Error('Unsupported zoom command.');
     if (fromSuggestions && !['state', 'suggest-open'].includes(action)) throw new Error('Unsupported address suggestion command.');
     if (fromColor && !['state', 'flash-background', 'color-close', 'color-pick-screen'].includes(action)) throw new Error('Unsupported color picker command.');
+    if (fromTooltip && action !== 'state') throw new Error('Unsupported tab tooltip command.');
     if (fromMenu && !['state', 'menu-close', 'new-tab', 'new-flashcognito', 'open-file', 'native-mode', 'panel', 'menu-find', 'print', 'zoom', 'mute', 'flash-quality', 'fullscreen'].includes(action)) throw new Error('Unsupported menu command.');
     if (fromMenu && !['state', 'zoom', 'flash-quality', 'mute', 'menu-close'].includes(action)) closeBrowserMenu(true);
     try { return { ok: true, state: await command(action, args) }; }
     catch (e) { return { ok: false, error: e.message }; }
   });
   const trustedInput = event => event.sender === win?.webContents && event.senderFrame?.url === UI_URL || tabs.some(tab => live(tab) && tab.view.webContents === event.sender && event.sender.mainFrame === event.senderFrame);
+  ipcMain.on('browser:chrome-focus', event => { if (event.sender === win?.webContents && event.senderFrame?.url === UI_URL) focusChrome(); });
   ipcMain.on('browser:private-key', event => { if (trustedInput(event)) createTab('', false, true); });
   ipcMain.on('browser:summary-changed', event => {
     const tab = tabs.find(t => live(t) && t.view.webContents === event.sender && event.senderFrame === event.sender.mainFrame);
@@ -1081,14 +1182,19 @@ async function boot() {
     try { await setLibraryImage(id, paths[0]); } catch (e) { win.webContents.send('browser:notice', e.message); }
   });
   await win.loadURL(UI_URL);
-  const saved = [...store.data.tabs];
-  createTab();
-  if (store.data.settings.restoreTabs) for (const tab of saved.slice(0, 20)) if (isWebURL(tab.url)) { const restored = createTab(tab.native ? '' : tab.url, true); if (tab.native) activateNative(restored, tab.url).catch(e => showError(restored, e.message)); }
+  const saved = store.data.settings.restoreTabs ? store.data.tabs.map(savedEntry).filter(Boolean).slice(0, 50) : [];
+  const savedIndex = store.data.activeTabIndex || 0;
+  for (const entry of saved) {
+    const restored = createTab('', true, false);
+    Object.assign(restored, { kind: entry.kind, title: entry.title, url: entry.url, localPath: entry.path, flashSource: entry.source, restoreEntry: entry.kind === 'home' ? null : entry });
+  }
+  if (tabs.length) selectTab(tabs[Math.min(Math.max(0, savedIndex), tabs.length - 1)].id);
+  else createTab();
   const file = process.argv.find(arg => /\.(swf|pdf)$/i.test(arg) && fs.existsSync(arg));
   if (file) await openLocal(file);
   if (testMode) {
     // Accessible only from main-process Playwright evaluation in a test launch.
-    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get privateSession() { return privateSession; }, get tabMenu() { return tabMenu; }, get menuWindow() { return menuWindow; }, get zoomWindow() { return zoomWindow; }, get editMenu() { return editMenu; }, get suggestionWindow() { return suggestionWindow; }, get colorWindow() { return colorWindow; }, get screenColorPicker() { return screenColorPicker; } };
+    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get focusArea() { return focusArea; }, get tooltipWindow() { return tooltipWindow; }, get privateSession() { return privateSession; }, get tabMenu() { return tabMenu; }, get menuWindow() { return menuWindow; }, get zoomWindow() { return zoomWindow; }, get editMenu() { return editMenu; }, get suggestionWindow() { return suggestionWindow; }, get colorWindow() { return colorWindow; }, get screenColorPicker() { return screenColorPicker; } };
   }
 }
 if (gotLock) app.whenReady().then(boot).catch(error => { console.error(error); dialog.showErrorBox('Flashborn could not start', error.stack || error.message); app.quit(); });

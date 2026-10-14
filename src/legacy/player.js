@@ -9,6 +9,7 @@ async function load() {
   source = await (await fetch('/config.json')).json();
   document.getElementById('movie-title').textContent = source.title || 'Flash movie';
   document.title = source.title || 'Flash movie';
+  document.getElementById('flash-engine').textContent = 'Adobe Flash ' + source.flashVersion;
   movie = document.createElement('embed');
   movie.id = 'flash-movie'; movie.type = 'application/x-shockwave-flash';
   movie.src = source.path ? '/movie.swf' : source.url; movie.setAttribute('allowScriptAccess', 'always'); movie.setAttribute('allowFullScreen', 'true');
@@ -30,7 +31,8 @@ function waitUntilReady(restore) {
         clearInterval(readyTimer);
         if (restore) { movie.GotoFrame(restore.frame); restore.playing ? movie.Play() : movie.StopPlay(); }
         buttons.forEach(b => b.disabled = false); document.body.dataset.ready = 'true';
-        document.body.dataset.flashVersion = movie.GetVariable('$version'); status.textContent = 'Ready · ' + document.body.dataset.flashVersion;
+        try { document.body.dataset.flashVersion = movie.GetVariable('$version'); } catch { /* Some movies restrict Flash scripting. Readiness is independent of version access. */ }
+        status.textContent = 'Ready · ' + (document.body.dataset.flashVersion || 'Adobe Flash ' + source.flashVersion);
       } else if (Date.now() > deadline) { clearInterval(readyTimer); status.textContent = 'Movie did not finish loading. Check its companion files and network connection.'; }
     } catch (e) { if (Date.now() > deadline) { clearInterval(readyTimer); status.textContent = e.message; } }
   }, 150);

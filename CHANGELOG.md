@@ -1,6 +1,6 @@
 # Flashborn Browser version history
 
-This history covers releases from 1.0.0 to 1.8.0. Historical updates through 1.7.3 are assigned
+This history covers releases from 1.0.0 to 1.8.1. Historical updates through 1.7.3 are assigned
 to versions by comparing the archived source ZIPs, their READMEs and the recorded
 development requests. Dates are the retained installer build dates in New York
 time. Historical Git commits are imports of these snapshots, not a recovered
@@ -13,6 +13,7 @@ deferred; the production application still uses the simple lightning bolt.
 
 | Version | Build date | Main changes |
 | --- | --- | --- |
+| [1.8.1](#181-2026-10-14) | 2026-10-14 | Smoother Flash, reliable address editing and restored tabs, compact hover bubbles and sidebar animation |
 | [1.8.0](#180-2026-10-14) | 2026-10-14 | Animated search summaries, About corrections, updated native Flash and Embody compatibility |
 | [1.7.3](#173--2026-10-13) | 2026-10-13 | Search result summaries |
 | [1.7.2](#172--2026-10-13) | 2026-10-13 | Flash movement stability and tab memory |
@@ -27,6 +28,25 @@ deferred; the production application still uses the simple lightning bolt.
 | [1.1.1](#111--2026-10-09) | 2026-10-09 | Blank Flash surface and legacy detection fixes |
 | [1.1.0](#110--2026-10-09) | 2026-10-09 | Original Adobe Flash and separate legacy runtime |
 | [1.0.0](#100--2026-10-08) | 2026-10-08 | Initial Windows browser with Ruffle |
+
+## 1.8.1 (2026-10-14)
+
+- Apply Flash rendering quality once to each ready plugin, or when the user changes quality. Stop the repeated calls into settled movies and the repeated writes to HTML quality parameters, allowing sites to retain their own playback adjustments.
+- Watch for newly inserted Flash embeds and loaded frames. Poll only while a movie is still loading, with a bounded timeout; stop this work in hidden tabs.
+- Keep the active legacy renderer unthrottled and allow hidden renderers to throttle. Minimize and restore update the Flash viewport's visibility.
+- Restore the Flash web contents' focus when switching tabs or returning to the browser. Preserve live movie state when revisiting a tab.
+- Save and reopen local SWFs, remote SWFs, local HTML, PDFs, images and videos alongside ordinary websites. Preserve tab order, the selected tab, zoom, mute and Flash source/background settings. Private tabs remain excluded.
+- Start restored tabs when selected, so restart does not launch every legacy runtime and movie simultaneously. Reopen native pages directly in native mode using their original URL or file path.
+- Detect terminated native helpers by both exit code and signal. Reload starts a fresh player for stopped helpers, crashed renderers and crashed plugins, including local HTML pages.
+- Ignore state/error messages from replaced or closed players. Avoid rewriting history and the profile on every unchanged native state notification.
+- Keep native snapshots unthrottled while the eyedropper acquires its image, then restore the tab's normal visibility policy. Open menus and pickers retain focus.
+- Display the bundled player's current version in the standalone SWF bar; restricted version access no longer prevents a loaded movie from showing Ready.
+- Add a real AVM1 mouse/drag and frame-clock fixture, with regression checks for playback, old-tab activation, restart and crash recovery.
+- Transfer Windows input focus back to the browser toolbar when editing an address or find field. Queued Flash focus requests and reload completion cannot interrupt editing; Ctrl+L and Ctrl+F work from the legacy renderer.
+- Replace large native tab tooltips with a small, single-line title and memory bubble above Flash. Hide it immediately on rollout, scroll, drag or a panel change; delayed memory measurements cannot reopen it.
+- Animate sidebar collapse and restore over the same 190 ms as Search summary reveal. Keep the real modern and Flash viewports aligned throughout the motion, including rapid reversals and reduced-motion preferences.
+- Leave search engines' result-page colors and preferred color scheme unchanged by the browser theme. Only the Search summary and browser interface follow the selected skin.
+- Add focused regressions for address/Find editing during Flash reloads, compact bubble dismissal and sidebar viewport motion.
 
 ## 1.8.0 (2026-10-14)
 
