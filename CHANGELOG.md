@@ -1,6 +1,6 @@
 # Flashborn Browser version history
 
-This history covers every retained build from 1.0.0 to 1.7.3. Updates are assigned
+This history covers releases from 1.0.0 to 1.8.0. Historical updates through 1.7.3 are assigned
 to versions by comparing the archived source ZIPs, their READMEs and the recorded
 development requests. Dates are the retained installer build dates in New York
 time. Historical Git commits are imports of these snapshots, not a recovered
@@ -13,6 +13,7 @@ deferred; the production application still uses the simple lightning bolt.
 
 | Version | Build date | Main changes |
 | --- | --- | --- |
+| [1.8.0](#180-2026-10-14) | 2026-10-14 | Animated search summaries, About corrections, updated native Flash and Embody compatibility |
 | [1.7.3](#173--2026-10-13) | 2026-10-13 | Search result summaries |
 | [1.7.2](#172--2026-10-13) | 2026-10-13 | Flash movement stability and tab memory |
 | [1.7.1](#171--2026-10-12) | 2026-10-12 | Working screen eyedropper, sidebar polish, download badges |
@@ -26,6 +27,19 @@ deferred; the production application still uses the simple lightning bolt.
 | [1.1.1](#111--2026-10-09) | 2026-10-09 | Blank Flash surface and legacy detection fixes |
 | [1.1.0](#110--2026-10-09) | 2026-10-09 | Original Adobe Flash and separate legacy runtime |
 | [1.0.0](#100--2026-10-08) | 2026-10-08 | Initial Windows browser with Ruffle |
+
+## 1.8.0 (2026-10-14)
+
+- Rename the panel to Search summary and its setting to Generate search summaries.
+- Reveal completed summaries with a quick downward animation that moves the actual HTML viewport in sync. Respect reduced-motion preferences.
+- Add an accessible close button. Dismissal lasts for the current page visit, survives late result updates, and resets on reload or a new navigation.
+- Align summary text with the first visible organic result, including page zoom and responsive layouts.
+- Show up to four distinct, cited points from different result domains in a taller panel. Rank query relevance and shared topics, remove duplicate passages, and skip promotional launch notices.
+- Apply the browser's dark grey or light grey background to Google, Bing and DuckDuckGo result pages and update it immediately on a theme switch. Summary extraction remains local and makes no additional network requests.
+- Correct About grammar, including "its work", and replace the dedication's double hyphen with a comma. No em dash is added to About.
+- Upgrade the native PPAPI player from Adobe Flash 32.0.0.363 to Clean Flash 34.0.0.376, the latest published Windows Clean Flash build checked for this release. Pin both archive and player checksums and record upstream patch provenance.
+- Recover Flash version-check redirects such as Embody's update.html?required=9.0.0&installed=0.0.0 before they discard the original entry page. Recovery remains within the same origin and respects manual modern mode.
+- Keep current Chromium for ordinary pages and the separate legacy process for native Flash. Existing settings, bookmarks, history and library entries remain compatible.
 
 ## 1.7.3 — 2026-10-13
 

@@ -1,6 +1,14 @@
 'use strict';
 function isFlashFallbackURL(value) {
-  try { return /\/(?:no[-_]?flash|flash[-_]?required)(?:\.html?)?\/?$/i.test(new URL(value).pathname); } catch { return false; }
+  try {
+    const url = new URL(value);
+    if (/\/(?:no[-_]?flash|flash[-_]?required)(?:\.html?)?\/?$/i.test(url.pathname)) return true;
+    // SWFObject redirects before an object exists. Recover the entry page in
+    // the native engine instead of treating its version-check page as content.
+    return /\/(?:update|upgrade)(?:\.html?)?\/?$/i.test(url.pathname)
+      && /^\d+\.\d+\.\d+$/.test(url.searchParams.get('required') || '')
+      && /^0(?:\.0){2,3}$/.test(url.searchParams.get('installed') || '');
+  } catch { return false; }
 }
 function legacyFlashTarget(currentURL, values) {
   if (!values || typeof values.flashPage !== 'string' || !Number.isInteger(values.maxVersion) || values.maxVersion < 2 || values.maxVersion > 9 || !(values.requiredVersion >= 2 && values.requiredVersion <= 32)) return null;

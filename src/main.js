@@ -8,12 +8,13 @@ const { fileURLToPath, pathToFileURL } = require('node:url');
 const { resolveInput, isWebURL, containedPath, isSWF, isPDFURL, reorderItems } = require('./core');
 const { contentType, supportedLocalFile } = require('./files');
 const { canPredict, suggestions, SearchPredictions } = require('./search-suggestions');
-const { searchPage, readPageScript, makeSummary } = require('./page-summary');
+const { searchPage, readPageScript, makeSummary, searchThemeCSS } = require('./page-summary');
 const { Store } = require('./store');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
 const { ScreenColorPicker } = require('./screen-color-picker');
 const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
 const { nextZoom } = require('./legacy/zoom');
+const flashRuntime = require('./legacy/runtime.json');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashborn', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const testMode = process.env.FLASHBORN_TEST === '1';
@@ -79,7 +80,7 @@ function publicTab(t) {
 function getState() {
   return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, flashBackground: activeTab()?.flashSource?.background || '#ffffff', colorPicking, colorPreview, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
     history: activeTab()?.private ? [] : store.data.history, library: store.data.library, downloads: tabDownloads(activeTab()), settings: store.data.settings,
-    flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: '32.0.0.363', flashRuntime: '9.4.4' };
+    flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: flashRuntime.version, flashRuntime: '9.4.4' };
 }
 function sendState(immediate = false) {
   if (closing) return;
@@ -107,7 +108,7 @@ function layout() {
   for (const t of tabs) {
     const full = win.isFullScreen();
     const left = full ? 0 : collapsed ? 68 : 248;
-    const summaryHeight = !full && !panel && t.id === activeId && summaryFor(t) ? t.summaryHeight || 140 : 0;
+    const summaryHeight = !full && !panel && t.id === activeId && summaryFor(t) ? t.summaryHeight || 0 : 0;
     const top = full ? 0 : 100 + summaryHeight;
     const rect = { x: left, y: top, width: Math.max(1, width - left), height: Math.max(1, height - top - (full ? 0 : 24)) };
     if (live(t)) { t.view.setBounds(rect); t.view.setVisible(!t.native && t.id === activeId && !panel && !t.error); }
@@ -123,9 +124,25 @@ function clearSummary(t) {
   const hadSummary = !!t.summary; t.summary = null; t.summaryHeight = 0;
   if (hadSummary) { layout(); sendState(true); }
 }
+async function updateSearchTheme(t) {
+  if (!live(t) || t.native) return;
+  const wc = t.view.webContents, url = wc.getURL(), theme = store.data.settings.theme;
+  const identity = searchPage(url) ? url + '|' + theme : '';
+  if (identity && t.searchThemeIdentity === identity && t.searchStyleKey) return;
+  const serial = t.searchStyleSerial = (t.searchStyleSerial || 0) + 1;
+  const old = t.searchStyleKey; t.searchStyleKey = null; t.searchThemeIdentity = identity;
+  if (old) await wc.removeInsertedCSS(old).catch(() => {});
+  if (!identity || !live(t) || wc.getURL() !== url) return;
+  try {
+    const key = await wc.insertCSS(searchThemeCSS(theme));
+    if (serial === t.searchStyleSerial && live(t) && wc.getURL() === url) t.searchStyleKey = key;
+    else await wc.removeInsertedCSS(key).catch(() => {});
+  } catch { /* A navigation can destroy the page while its style is applying. */ }
+}
 function scheduleSummary(t, delay = 180) {
   clearTimeout(t.summaryTimer);
-  const eligible = store.data.settings.pageSummaries && !t.native && t.kind === 'web' && live(t) && isWebURL(t.url) && (SUMMARY_MODE !== 'search' || !!searchPage(t.url));
+  updateSearchTheme(t);
+  const eligible = store.data.settings.pageSummaries && t.summaryDismissedURL !== t.url && !t.native && t.kind === 'web' && live(t) && isWebURL(t.url) && (SUMMARY_MODE !== 'search' || !!searchPage(t.url));
   if (live(t)) t.view.webContents.send('browser:summary-watch', !!eligible);
   if (!eligible) { clearSummary(t); return; }
   const serial = t.summarySerial = (t.summarySerial || 0) + 1, url = t.url;
@@ -135,7 +152,12 @@ function scheduleSummary(t, delay = 180) {
       const content = await t.view.webContents.executeJavaScript(readPageScript);
       if (serial !== t.summarySerial || t.native || !live(t) || t.url !== url || !store.data.settings.pageSummaries) return;
       const summary = makeSummary(content, url, SUMMARY_MODE);
+      if (summary?.provider && content.results.length < 2 && attempt < 5) {
+        t.summaryTimer = setTimeout(() => read(attempt + 1), 600); return;
+      }
       if (summary) {
+        const zoom = t.view.webContents.getZoomFactor();
+        summary.layout.left *= zoom; summary.layout.width = Math.min(900, summary.layout.width * zoom);
         if (JSON.stringify(summary) !== JSON.stringify(t.summary)) { t.summary = summary; if (t.id === activeId) { layout(); sendState(true); } }
       } else if (attempt < 5) t.summaryTimer = setTimeout(() => read(attempt + 1), 600);
       else clearSummary(t);
@@ -208,9 +230,19 @@ function wireContents(t) {
   wc.on('will-redirect', (event, url) => {
     const destination = event.url || url;
     if (!isWebURL(destination) && !isDocumentURL(destination)) event.preventDefault();
+    else if (store.data.settings.flashEnabled && !t.native && !t.forceModern && isFlashFallbackURL(destination)) {
+      const original = isWebURL(wc.getURL()) ? wc.getURL() : t.url;
+      if (isWebURL(original) && new URL(original).origin === new URL(destination).origin && !isFlashFallbackURL(original)) { event.preventDefault(); activateNative(t, original).catch(e => showError(t, e.message)); }
+    }
     else if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); loadFlash(t, { url: destination }).catch(e => showError(t, e.message)); }
   });
-  wc.on('did-start-loading', () => { if (wc.isLoadingMainFrame()) clearSummary(t); t.loading = true; sendState(true); });
+  wc.on('did-start-loading', () => {
+    if (wc.isLoadingMainFrame()) {
+      t.summaryDismissedURL = null; t.searchThemeIdentity = null; t.searchStyleKey = null;
+      t.searchStyleSerial = (t.searchStyleSerial || 0) + 1; clearSummary(t);
+    }
+    t.loading = true; sendState(true);
+  });
   wc.on('did-stop-loading', () => { t.loading = false; sendState(); });
   wc.on('page-title-updated', (_event, title) => { if (['web', 'local'].includes(t.kind)) t.title = title.slice(0, 200); sendState(); });
   const navigated = () => {
@@ -794,10 +826,11 @@ async function command(action, args = {}) {
     case 'state': return getState();
     case 'summary-height': {
       if (t?.id !== args.id || summaryFor(t)?.url !== args.url || !Number.isFinite(args.height)) break;
-      const height = Math.max(64, Math.min(240, Math.ceil(args.height)));
+      const height = Math.max(0, Math.min(Math.max(120, win.getContentSize()[1] - 300), Math.ceil(args.height)));
       if (t.summaryHeight !== height) { t.summaryHeight = height; layout(); }
       break;
     }
+    case 'summary-dismiss': if (summaryFor(t)) { t.summaryDismissedURL = t.url; clearSummary(t); } break;
     case 'tab-memory': {
       const tab = tabs.find(item => item.id === args.id);
       if (!tab) throw new Error('This tab is closed.');
@@ -855,6 +888,7 @@ async function command(action, args = {}) {
       win.setBackgroundColor(store.data.settings.theme === 'light' ? '#e9e9e9' : '#212121');
       store.save();
       await Promise.all(tabs.filter(tab => tab.native).map(tab => tab.native.call('theme', { theme: store.data.settings.theme }).catch(() => {})));
+      await Promise.all(tabs.filter(tab => !tab.native && live(tab)).map(updateSearchTheme));
       break;
     }
     case 'flash-quality': {

@@ -121,7 +121,7 @@ async function run() {
     pass('Private download records stay in memory and out of normal Downloads; explicitly saved files remain usable');
 
     await command('navigate', { value: base + '/flash-' + secret });
-    await poll(() => script('({version:document.getElementById("embedded")?.GetVariable?.("$version"),percent:document.getElementById("embedded")?.PercentLoaded?.()})'), value => value.version === 'WIN 32,0,0,363' && value.percent === 100, 60000);
+    await poll(() => script('({version:document.getElementById("embedded")?.GetVariable?.("$version"),percent:document.getElementById("embedded")?.PercentLoaded?.()})'), value => value.version === 'WIN 34,0,0,376' && value.percent === 100, 60000);
     assert.equal(await app.evaluate(() => global.__flashborn.activeTab().native.private), true);
     await script(`document.cookie="legacy=${secret};path=/";localStorage.setItem("legacy",${JSON.stringify(secret)})`);
     const nativeProfile = await app.evaluate(() => global.__flashborn.activeTab().native.profile);
@@ -137,7 +137,7 @@ async function run() {
     await command('duplicate-tab', { id: privateMovieId }); await swfReady();
     const movieCopyState = await state();
     assert.ok(movieCopyState.tabs.find(t => t.id === movieCopyState.activeId).private);
-    assert.equal(await script('document.getElementById("flash-movie").GetVariable("$version")'), 'WIN 32,0,0,363');
+    assert.equal(await script('document.getElementById("flash-movie").GetVariable("$version")'), 'WIN 34,0,0,376');
     pass('Real Adobe Flash renders in private mode and private SWF duplicates; native site storage and automatic library additions stay out of the saved profile');
 
     await script('document.getElementById("pause").click()');

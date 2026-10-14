@@ -12,6 +12,10 @@ test('legacy Flash fallback recovery stays within the original site',()=>{
  assert.equal(isFlashFallbackURL('https://example.com/noflash.htm'),true);
  assert.equal(isFlashFallbackURL('https://example.com/no-flash.html'),true);
  assert.equal(isFlashFallbackURL('https://example.com/noflash-game.swf'),false);
+ assert.equal(isFlashFallbackURL('https://www.sloutchevsky.com/demos/embody/update.html?required=9.0.0&installed=0.0.0'),true);
+ assert.equal(isFlashFallbackURL('https://example.com/update.html'),false);
+ assert.equal(isFlashFallbackURL('https://example.com/update.html?required=9.0.0&installed=9.0.0'),false);
+ assert.equal(isFlashFallbackURL('https://example.com/update.html?required=account&installed=0.0.0'),false);
 });
 test('local HTML Flash detector recovery is limited to the selected document folder',()=>{
  const base='flashnative://document/test-token/index.html',values={flashPage:'main.html',maxVersion:9,requiredVersion:7};

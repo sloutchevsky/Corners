@@ -81,7 +81,7 @@ async function run() {
     }),n=>n>2000);
     pass('Dropping a PDF displays the rendered document');
     await drop(path.join(fixture,'Dropped.swf'));
-    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 32,0,0,363');
+    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 34,0,0,376');
     pass('Dropping a Flash file uses the real Adobe player and adds it to the library');
     await command('panel',{name:'library'});
     await ui.locator('[data-open-library="swf"]').click();
@@ -91,7 +91,7 @@ async function run() {
     await ui.locator('#library-open-address').press('ArrowDown');
     await poll(()=>ui.locator('#library-open-address').inputValue(),value=>value===path.join(fixture,'Dropped.swf'));
     await ui.locator('#library-open-address').press('Enter');
-    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 32,0,0,363');
+    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 34,0,0,376');
     pass('Flash library address predictions complete saved local sources and open them with the Adobe player');
     await ui.locator('.sidebar-wordmark').click();
     await ui.locator('.about-copyright').click();

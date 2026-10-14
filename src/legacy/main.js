@@ -8,9 +8,10 @@ const { isFlashFallbackURL, legacyFlashTarget } = require('./compat');
 const { nextZoom } = require('./zoom');
 const { settingsScript } = require('./flash-settings');
 const { pathToFileURL, fileURLToPath } = require('url');
+const flashRuntime = require('./runtime.json');
 app.setPath('userData', process.env.FLASHBORN_NATIVE_PROFILE);
 app.commandLine.appendSwitch('ppapi-flash-path', process.env.FLASHBORN_NATIVE_PLUGIN);
-app.commandLine.appendSwitch('ppapi-flash-version', '32.0.0.363');
+app.commandLine.appendSwitch('ppapi-flash-version', flashRuntime.version);
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashnative', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
@@ -149,6 +150,10 @@ app.whenReady().then(async () => {
     webPreferences: { session: runtimeSession, plugins: true, sandbox: true, nodeIntegration: false, contextIsolation: true, enableRemoteModule: false, webSecurity: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') } });
   Menu.setApplicationMenu(null);
   const wc = window.webContents;
+  if (process.env.FLASHBORN_NATIVE_TEST === '1') {
+    runtimeSession.webRequest.onErrorOccurred(details => console.error('NATIVE REQUEST ERROR', details.error, details.url));
+    wc.on('console-message', (_event, level, message, line, source) => { if (level >= 2) console.error('NATIVE PAGE', message, source, line); });
+  }
   wc.on('new-window', (event, url) => { event.preventDefault(); if (isWeb(url)) send({ type: 'new-tab', url }); });
   wc.on('will-navigate', (event, url) => {
     const scopedLocal = source && source.kind === 'html' && url.startsWith('flashnative://document/' + source.token + '/');
@@ -191,7 +196,7 @@ app.whenReady().then(async () => {
   reader.on('line', async line => { let message; try { message = JSON.parse(line); const value = await command(message.action, message.args || {}); if (message.id) send({ reply: message.id, value }); } catch (e) { if (message && message.id) send({ reply: message.id, error: e.message }); else send({ type: 'error', message: e.message }); } });
   reader.on('close', () => { shuttingDown = true; app.quit(); });
   const handle = window.getNativeWindowHandle();
-  send({ type: 'ready', handle: Buffer.from(handle).reverse().toString('hex'), pid:process.pid, electron: process.versions.electron, chromium: process.versions.chrome, flash: '32.0.0.363' });
+  send({ type: 'ready', handle: Buffer.from(handle).reverse().toString('hex'), pid:process.pid, electron: process.versions.electron, chromium: process.versions.chrome, flash: flashRuntime.version });
 });
 app.on('window-all-closed', () => app.quit());
 process.on('uncaughtException', e => { send({ type: 'error', message: e.stack || e.message }); if (!window) app.quit(); });

@@ -15,15 +15,27 @@ Source: https://github.com/electron/electron
 
 ## Adobe Flash Player
 
-This personal local build bundles the unmodified Adobe PPAPI x64 player 32.0.0.363
-from the user's existing Flash Browser installation. The DLL retains its valid
-Adobe Inc. signature. Adobe Flash is proprietary and remains subject to Adobe's
-license terms; it is excluded from Flashborn's MIT source license and source archive.
+Flashborn 1.8.0 bundles the native Adobe PPAPI x64 player 34.0.0.376 from the
+community Clean Flash distribution, release v1.54. This distribution applies
+upstream FlashPatch compatibility patches. The binary is not the unmodified,
+Adobe-signed 32.0.0.363 player bundled in earlier Flashborn versions. Its original
+Authenticode signature is invalidated by the upstream patches; provenance is
+verified through pinned SHA-256 checksums, not a claim of a valid Adobe signature.
 
-SHA-256: `4acafedca8bb62529527029aeb485318866e4fd71bf298e73f735bc75f6d720d`.
+The Adobe player remains proprietary, subject to its original license terms,
+and excluded from Flashborn's MIT source license and source archive. Flashborn
+application code does not modify the upstream player during packaging.
+
+Distribution: https://github.com/darktohka/clean-flash-builds/releases/tag/v1.54
+Upstream patch project: https://github.com/darktohka/FlashPatch
+Archive SHA-256: `19a8d1036110af024dc877ca96a9184835c3e944fb14ca8d509662f00bf1bd31`.
+Player SHA-256: `cb91e4589f0a854dd0f23a21d6feee623a857a1dee112b8cb5e5a7c9be0af6f2`.
 Build provenance is saved in `resources/native-flash/provenance.json`.
 
-Flash Browser reference: https://github.com/radubirsan/FlashBrowser
+The Flash browser host uses Electron 9.4.4 and Chromium 83, which no longer
+receive security updates. Native mode is intended for trusted legacy content.
+
+Flash Browser runtime reference: https://github.com/radubirsan/FlashBrowser
 
 ## Koffi
 

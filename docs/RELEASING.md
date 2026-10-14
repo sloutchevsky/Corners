@@ -1,59 +1,58 @@
 # GitHub publication
 
-Repository display name: **Flashborn Browser**. GitHub repository slug:
-**Flashborn-Browser**. Repository:
-[sloutchevsky/Flashborn-Browser](https://github.com/sloutchevsky/Flashborn-Browser).
-
-The application is currently version **1.7.3**. Publishing documentation and
-archive history does not require rebuilding the already-verified installer.
+Repository: [sloutchevsky/Flashborn-Browser](https://github.com/sloutchevsky/Flashborn-Browser).
+The current application version is **1.8.0**.
 
 ## Repository contents
 
-Publish the application source, assets, build and validation scripts, tests,
-package lock, README, MIT license, third-party notices, changelog and archive
-manifest. Experimental icon previews are explicitly marked as unshipped work.
+Publish application source, assets, build and validation scripts, tests, package
+lock, README, MIT license, third-party notices and changelog. Keep dependencies,
+generated installers, native runtime binaries, browser profiles, test output,
+credentials and signing certificates outside the Git tree.
 
-The prepared repository has a `main` branch and tags `v1.0.0` through `v1.7.3`.
-Historical commits import the corresponding retained source ZIPs. The latest
-commit includes the current working source and publication documentation.
-Commit dates record this import; the changelog records the original build dates.
+Historical commits and tags through v1.7.3 import retained source snapshots.
+Their timestamps record the import; the changelog records original build dates.
+The 1.8.0 release is a new implementation and build on that history.
 
-Do not add dependencies, generated installers, runtime DLLs, browser profiles,
-test output, credentials or signing certificates to the Git tree.
+## Build and verify
 
-## Current release
+1. Run `npm ci`, `npm run prepare:icon` and `npm run prepare:assets`.
+2. Run the unit, search summary, polish, browser and privacy checks.
+3. Build the Windows x64 installer with `npm run dist`.
+4. Run packaged checks with `FLASHBORN_EXE` pointing to
+   `release/win-unpacked/Flashborn.exe`, including automatic native playback of
+   the Embody website. Verify the packaged player against `src/legacy/runtime.json`.
+5. Review changes, commit the release, and tag the exact commit `v1.8.0`.
 
-Create a release named **Flashborn Browser 1.7.3** on tag **v1.7.3**. Use
-[the prepared notes](release-notes-1.7.3.md). Attach:
+The preparation script downloads only the pinned Clean Flash archive and checks
+both archive and DLL hashes. The compatible Electron 9.4.4 host comes from the
+existing Flash Browser installation; no installed browser is modified.
 
-- `Flashborn-Setup-1.7.3-x64.exe` — existing Windows installer.
-- `Flashborn-Source-1.7.3-GitHub.zip` — current source with publication documentation.
-- `SHA256SUMS-1.7.3-GitHub.txt` — checksums for the installer, source ZIP and repository bundle.
+## Release assets
 
-The installer is 168,955,715 bytes and belongs in a Release rather than Git.
-Old installer versions are retained locally; the changelog and tags provide
-their history without uploading every historical installer.
+Create **Flashborn Browser 1.8.0** on tag **v1.8.0** using
+[the release notes](release-notes-1.8.0.md). Attach:
 
-The application source is MIT licensed. Adobe Flash is proprietary and excluded
-from MIT; the installer retains the original component and runtime notices.
-The installer has publisher metadata for Vas Sloutchevsky but no Authenticode
-certificate, so Windows can still show Unknown publisher.
+- `Flashborn-Setup-1.8.0-x64.exe`: verified Windows installer.
+- `Flashborn-Source-1.8.0-GitHub.zip`: clean source export from the tagged commit.
+- `Flashborn-Repository-1.8.0.bundle`: complete Git history for offline cloning.
+- `SHA256SUMS-1.8.0-GitHub.txt`: checksums for all three files.
+
+Publish installers as release assets, rather than adding them to Git. Preserve
+existing tags and release assets. Use the existing GitHub authentication without
+putting credentials in remote URLs or source files. Verify the published tag,
+release notes, asset sizes and SHA-256 digests before reporting completion.
+
+The MIT license covers Flashborn's application source. Adobe Flash remains
+proprietary; the upstream patched player and legacy host retain their notices.
+Publisher metadata is Vas Sloutchevsky. The installer is unsigned and Windows
+verified-publisher prompts still require a trusted code-signing certificate.
 
 ## Offline handoff
 
-`Flashborn-Repository-1.7.3.bundle` contains the complete prepared Git history.
-It can be cloned without downloading dependencies:
+The repository bundle can be cloned without downloading dependencies:
 
 ```powershell
-git clone .\Flashborn-Repository-1.7.3.bundle Flashborn-Browser
+git clone .\Flashborn-Repository-1.8.0.bundle Flashborn-Browser
 cd Flashborn-Browser
 ```
-
-After creating an empty repository through the signed-in GitHub Chrome tab,
-add its actual HTTPS URL as `origin`, then push `main` and the version tags.
-Use the user's existing Git authentication or let the user complete sign-in;
-do not put credentials into remote URLs or source files.
-
-Verify the remote README, changelog, tags and latest release assets before
-reporting publication complete. The bundle and source ZIP are local preparation
-artifacts until that verification succeeds.

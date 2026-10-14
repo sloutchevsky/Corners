@@ -28,7 +28,7 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     const script = code => app.evaluate(({}, code) => global.__flashborn.activeTab().native.evaluate(code), code);
     const ready = () => poll(() => script('document.body.dataset.ready'), v => v === 'true');
     await app.evaluate(({}, file) => global.__flashborn.openLocal(file), path.join(root, 'assets', 'Flashborn-Demo.swf')); await ready();
-    assert.equal(await script('document.getElementById("flash-movie").GetVariable("$version")'), 'WIN 32,0,0,363');
+    assert.equal(await script('document.getElementById("flash-movie").GetVariable("$version")'), 'WIN 34,0,0,376');
     await script('document.getElementById("pause").click()');
     const open = async () => {
       await script('document.getElementById("background").click()');

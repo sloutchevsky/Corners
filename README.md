@@ -1,18 +1,26 @@
 # Flashborn Browser
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
-the original Adobe Flash Player 32.0.0.363 for Flash content.
+native Adobe Flash Player 34.0.0.376 from the Clean Flash distribution for Flash content.
 
-**Current version: 1.7.3 · Windows 10/11 · x64 · MIT application source**
+**Current version: 1.8.0 · Windows 10/11 · x64 · MIT application source**
 
-[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.7.3/Flashborn-Setup-1.7.3-x64.exe)
+[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.0/Flashborn-Setup-1.8.0-x64.exe)
 · [Releases and update notes](https://github.com/sloutchevsky/Flashborn-Browser/releases)
-· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.7.3/Flashborn-Source-1.7.3-GitHub.zip)
+· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.0/Flashborn-Source-1.8.0-GitHub.zip)
 
-See [the complete version history](CHANGELOG.md) for all 13 releases, from the
+See [the complete version history](CHANGELOG.md) for all 14 releases, from the
 initial Ruffle build to native Adobe playback and the current browser.
 
 ## Preview
+
+Version 1.8.0 restores automatic playback of the Embody website:
+
+![Herman Miller Embody Flash website playing in Flashborn 1.8.0](previews/screenshots/v1.8.0/embody.png)
+
+| Search summary · dark theme | Search summary · light theme |
+| --- | --- |
+| ![Live Bing results and Search summary in dark grey](previews/screenshots/v1.8.0/search-summary-dark.png) | ![The same Bing search after switching to light grey](previews/screenshots/v1.8.0/search-summary-light.png) |
 
 | Dark theme · native Flash | Light theme · native Flash |
 | --- | --- |
@@ -23,7 +31,7 @@ Flashcognito, search summaries, bookmarks, settings, the Flash Library and About
 
 ## Install
 
-Download and run `Flashborn-Setup-1.7.3-x64.exe` on Windows 10 or 11 x64. When
+Download and run `Flashborn-Setup-1.8.0-x64.exe` on Windows 10 or 11 x64. When
 building locally, the same file is produced in `release/`. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
@@ -69,11 +77,14 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   DuckDuckGo, Google or Bing search engine, with no AI mode. Only search phrases
   are sent; full URLs and local paths are excluded. Private predictions use no
   cookies or persistent prediction cache. Local results remain usable offline.
-- Google, DuckDuckGo and Bing result pages receive a compact **Page summary**
-  above the original page. It uses excerpts from the loaded result snippets,
-  with numbered source links, and sends nothing to an external summary service.
-  The summary matches the browser theme immediately and pushes the page down.
-  **Settings → Generate page summaries** is on by default; turn it off to remove
+- Google, DuckDuckGo and Bing result pages receive a **Search summary** above the
+  original page. It ranks useful passages from several loaded result snippets,
+  removes repetition and promotional notices, and cites up to four distinct sources.
+  It sends nothing to an external summary service. The panel animates down when
+  ready, pushing the HTML viewport down, and aligns with the organic search results.
+  Click × to dismiss it for that page visit; reloading makes it available again.
+  The summary and search results background follow browser theme changes immediately.
+  **Settings → Generate search summaries** is on by default; turn it off to remove
   summaries from existing and future pages. Summary text stays in memory, including
   in Flashcognito. Empty results, verification pages and unsupported page layouts
   show the original page without a summary.
@@ -151,9 +162,9 @@ signature is valid and its SHA-256 is:
 Adobe Flash support was removed from Electron 12. Flashborn therefore embeds a
 separate Electron 9.4.4 / Chromium 83 process for each native Flash tab, while
 ordinary browsing and the application UI use Electron 44.7.0. This is the real
-PPAPI player, without binary patches or a substituted emulator.
+PPAPI player from the community Clean Flash distribution, not an emulator. The pinned upstream build includes compatibility patches; it is not the unmodified Adobe 32 binary used in earlier Flashborn releases.
 
-**Adobe Flash and its legacy browser engine no longer receive security updates.**
+**The legacy Chromium engine used for Flash no longer receives security updates.**
 Use native mode for trusted legacy content. Process separation is not a VM or a
 guarantee against vulnerabilities in the old engine. Ordinary addresses entered
 in the address bar return to modern Chromium; links within a native page remain
@@ -204,8 +215,9 @@ when the original font is installed.
 Requirements: Windows x64, Node.js 22.12+ (24 recommended), npm and the existing
 Flash Browser installation at `C:\Program Files (x86)\FlashBrowser`. Override
 its directory with `FLASHBORN_FLASH_BROWSER` if necessary. The preparation script
-checks the pinned player checksum, copies the compatible runtime and replaces
-its application code with Flashborn's helper. It leaves the installed browser
+downloads the pinned Clean Flash distribution, verifies its archive and player
+checksums, copies the compatible runtime and replaces its application code with
+Flashborn's helper. It leaves the installed browser
 untouched. Native binaries are excluded from the source archive.
 
 ```powershell
@@ -227,7 +239,7 @@ npm run test:summaries
 npm run dist
 ```
 
-The build produces `release/Flashborn-Setup-1.7.3-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.8.0-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -241,7 +253,7 @@ Third-party binaries retain their respective licenses; the Adobe binary is not M
 | Logo outline generation | PowerShell and Windows font APIs |
 | Windows installer customization | NSIS |
 | Modern browser | Electron 44.7.0 / Chromium 152.0.7977.130 |
-| Native Flash process | Electron 9.4.4 / Chromium 83 / Adobe Flash 32.0.0.363 PPAPI |
+| Native Flash process | Electron 9.4.4 / Chromium 83 / Clean Flash 34.0.0.376 PPAPI |
 | Windows native integration | Koffi 3.3.2 / Win32 APIs |
 | Packaging and browser checks | electron-builder 26.15.3 / Playwright 1.56.1 |
 
@@ -290,11 +302,12 @@ verify real viewport resizing, and exercise hover memory for normal, inactive,
 shared and Flash tabs. A touched 64 MB renderer allocation verifies the estimate
 responds to actual usage. Set `FLASHBORN_KPF=1` to include the live KPF website.
 
-The summary checks cover all three result layouts, exact viewport displacement,
-theme changes, source navigation, settings persistence, delayed DOM changes,
+The summary checks cover all three result layouts, animated viewport displacement,
+result alignment, close/reload behavior, theme changes, source navigation, settings persistence, delayed DOM changes,
 private-session isolation, and the absence of additional network requests.
-Live Bing and DuckDuckGo were also verified; Google presented a verification
-page during the live test, so its results adapter is verified with fixtures.
+Live Bing's updated summary and both themes were verified in 1.8.0. Live DuckDuckGo
+was also verified in 1.7.3; Google presented a verification page during the live
+check, so its results adapter is verified with fixtures.
 
 The polish checks verify the exact first-frame title bolt, the smaller About branding, 40px text offset, theme-independent grey metadata,
 real Adobe Low/Medium/High quality, topmost eyedropper opening and cancellation,
@@ -309,8 +322,9 @@ visibility during picking, and the Flash control spacing and swatch alignment.
 
 Version 1.1.1 fixes native windows that were rendering while Electron considered
 them hidden. Visibility is now synchronized with the legacy BrowserWindow itself.
-Old Flash 2–9 detectors can misread version 32 as version 2; their declared Flash
+Old Flash 2–9 detectors can misread a two-digit major version; their declared Flash
 page is recovered only for the recognized detector shape and the same website.
+Version-check update redirects are also recovered, including the Embody website.
 
 To test an unpacked or extracted installer payload:
 

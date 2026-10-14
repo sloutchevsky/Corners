@@ -1,0 +1,9 @@
+{
+  "version": "34.0.0.376",
+  "distribution": "Clean Flash",
+  "source": "https://github.com/darktohka/clean-flash-builds/releases/tag/v1.54",
+  "archiveURL": "https://github.com/darktohka/clean-flash-builds/releases/download/v1.54/ChineseFlash-Patched-Win-34.0.0.376.7z",
+  "archiveSHA256": "19a8d1036110af024dc877ca96a9184835c3e944fb14ca8d509662f00bf1bd31",
+  "archivePath": "flash64/pepflashplayer64_34_0_0_376.dll",
+  "sha256": "cb91e4589f0a854dd0f23a21d6feee623a857a1dee112b8cb5e5a7c9be0af6f2"
+}

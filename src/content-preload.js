@@ -16,6 +16,11 @@ ipcRenderer.on('browser:summary-watch', (_event, enabled) => {
   if (changed || summaryEnabled && !summaryObserver) watchSummary();
 });
 document.addEventListener('DOMContentLoaded', () => { if (summaryEnabled) watchSummary(); }, { once: true });
+window.addEventListener('resize', () => {
+  if (!summaryEnabled) return;
+  clearTimeout(summaryTimer);
+  summaryTimer = setTimeout(() => ipcRenderer.send('browser:summary-changed'), 120);
+});
 ipcRenderer.on('browser:pdf-token', (_event, token) => { pdfToken = token; });
 window.addEventListener('message', event => {
   if (pdfToken && event.data?.type === 'flashborn-pdf-zoom' && event.data.token === pdfToken) ipcRenderer.send('browser:pdf-zoom', pdfToken);

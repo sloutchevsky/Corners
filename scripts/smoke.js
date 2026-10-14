@@ -193,12 +193,16 @@ async function run() {
     assert.equal(found.matches, 2);
     results.push('Find in page reports the correct matches');
     await app.evaluate(()=>global.__flashborn.win.webContents.send('browser:find',{open:true}));
-    for(const selector of ['#address','#find-input']) {
+    for(const selector of Array.from({length:5},()=>['#address','#find-input']).flat()) {
       await ui.locator(selector).fill('Field editing test');await ui.locator(selector).click({button:'right'});
+      // Native popup creation is asynchronous; do not cancel it during setup.
+      await new Promise(resolve=>setTimeout(resolve,300));
       const labels=await app.evaluate(()=>global.__flashborn.editMenu.items.filter(item=>item.type!=='separator').map(item=>item.label));
       assert.deepEqual(labels,['Select all','Cut','Copy','Paste']);
-      await app.evaluate(()=>{const b=global.__flashborn;b.win.webContents.focus();b.editMenu.items.find(item=>item.label==='Select all').click();b.editMenu.closePopup(b.win);});
+      // End Windows popup tracking before invoking the action through the test harness.
+      await app.evaluate(()=>{const b=global.__flashborn;global.__testEditAction=b.editMenu.items.find(item=>item.label==='Select all').click;b.editMenu.closePopup(b.win);});
       await poll(()=>app.evaluate(()=>!!global.__flashborn.editMenu),open=>!open);
+      await app.evaluate(()=>{global.__flashborn.win.webContents.focus();global.__testEditAction();delete global.__testEditAction;});
       await poll(()=>ui.locator(selector).evaluate(el=>el.selectionEnd-el.selectionStart),n=>n==='Field editing test'.length);
     }
     await ui.locator('#find-close').click();
@@ -251,7 +255,7 @@ async function run() {
 
     await app.evaluate(async ({ }, filename) => global.__flashborn.openLocal(filename), path.join(root, 'assets', 'Flashborn-Demo.swf'));
     await poll(() => pageScript('({ready:document.body.dataset.ready,error:document.querySelector(".error")?.textContent})'), s => { if (s.error) throw new Error(s.error); return s.ready === 'true'; }, 60000);
-    assert.equal(await pageScript('document.body.dataset.flashVersion'),'WIN 32,0,0,363');
+    assert.equal(await pageScript('document.body.dataset.flashVersion'),'WIN 34,0,0,376');
     assert.equal(await pageScript('typeof require'),'undefined');
     assert.equal(await pageScript('typeof process'),'undefined');
     const initialFrame=await pageScript('document.getElementById("flash-movie").CurrentFrame()');
@@ -266,7 +270,7 @@ async function run() {
     const mutedState=await state(); assert.equal(mutedState.tabs.find(t=>t.id===mutedState.activeId)?.muted,true);
     await saveView('flash-player.png');
     assert.equal((await state()).library.length, 1);
-    results.push('Genuine Adobe WIN 32,0,0,363 executes SWF frames; pause, mute, restart and library work');
+    results.push('Genuine Adobe WIN 34,0,0,376 executes SWF frames; pause, mute, restart and library work');
 
     const flashId=(await state()).activeId;
     await wheel();
@@ -340,7 +344,7 @@ async function run() {
     await command('navigate', { value: base + '/embed' });
     await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.native);
     await poll(() => pageScript('document.querySelector("object")?.PercentLoaded?.()'), s => s===100, 60000);
-    assert.equal(await pageScript('document.querySelector("object").GetVariable("$version")'),'WIN 32,0,0,363');
+    assert.equal(await pageScript('document.querySelector("object").GetVariable("$version")'),'WIN 34,0,0,376');
     await saveView('embedded-flash.png');
     results.push('Embedded Flash website automatically loads the native Adobe plugin under a website CSP');
     await command('native-mode');

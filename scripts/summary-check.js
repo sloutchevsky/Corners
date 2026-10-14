@@ -31,15 +31,32 @@ const html = provider => content + descriptions.map((text, i) => provider === 'G
   const capture = async name => { const screen = await captureVisible(app); fs.writeFileSync(path.join(output, name), Buffer.from(screen.png, 'base64')); };
   try {
     await launch(); assert.equal((await state()).settings.pageSummaries, true);
+    await ui.emulateMedia({ reducedMotion: 'no-preference' });
     for (const [provider, url] of [['Google', 'https://www.google.com/search?q=solar+energy'], ['Bing', 'https://www.bing.com/search?q=solar+energy'], ['DuckDuckGo', 'https://duckduckgo.com/?q=solar+energy']]) {
       if (process.env.FLASHBORN_LIVE_PROVIDER && process.env.FLASHBORN_LIVE_PROVIDER !== provider) continue;
+      await app.evaluate(() => {
+        clearInterval(global.__summaryHeightTimer); global.__summaryHeights = [];
+        global.__summaryHeightTimer = setInterval(() => {
+          const y = global.__flashborn.activeTab()?.view?.getBounds().y;
+          if (Number.isFinite(y) && global.__summaryHeights.at(-1) !== y) global.__summaryHeights.push(y);
+        }, 10);
+      });
       await command('navigate', { value: url });
       if (process.env.FLASHBORN_LIVE === '1') await poll(state, s => !!s.pageSummary || !s.tabs.find(t => t.id === s.activeId).loading);
       await poll(state, s => s.pageSummary?.provider === provider);
+      await poll(state, s => s.pageSummary?.sources.length >= 2);
       await ui.locator('#page-summary').waitFor({ state: 'visible' });
+      await poll(() => ui.locator('#page-summary').evaluate(el => ({ actual: el.getBoundingClientRect().height, target: Math.min(Math.max(120, innerHeight - 300), Math.ceil(document.querySelector('#summary-inner').getBoundingClientRect().height) + 1) })), rect => Math.abs(rect.actual - rect.target) <= 1);
       const text = await ui.locator('.summary-text').innerText(); assert.ok(text.length >= 45);
       const pane = await ui.locator('#page-summary').boundingBox();
       await poll(() => app.evaluate(() => global.__flashborn.activeTab().view.getBounds().y), y => Math.abs(y - (pane.y + pane.height)) <= 1);
+      const movement = await app.evaluate(() => { clearInterval(global.__summaryHeightTimer); return global.__summaryHeights; });
+      assert.ok(movement.filter(y => y > 100 && y < pane.y + pane.height - 1).length >= 2, 'The real HTML viewport must move through intermediate positions while the panel opens');
+      const heading = await ui.locator('.summary-heading').boundingBox();
+      const resultLeft = await app.evaluate(async ({}, code) => { const t = global.__flashborn.activeTab(), wc = t.view.webContents; const data = await wc.executeJavaScript(code); return t.view.getBounds().x + data.layout.left * wc.getZoomFactor(); }, require('../src/page-summary').readPageScript);
+      assert.ok(Math.abs(heading.x - resultLeft) <= 2, 'The summary heading must align with the search results');
+      assert.equal(await ui.locator('.summary-heading').innerText(), 'Search summary');
+      assert.ok((await state()).pageSummary.sources.length >= 2);
       assert.equal(await app.evaluate(() => global.__flashborn.activeTab().view.webContents.executeJavaScript('typeof window.browser')), 'undefined');
       console.log('SUMMARY ' + provider + ' ' + text.length + ' characters'); pass(provider + ' results receive a real local summary with sources and the entire web viewport below the summary pane');
     }
@@ -47,13 +64,20 @@ const html = provider => content + descriptions.map((text, i) => provider === 'G
       if ((await state()).settings.theme !== theme) await command('theme');
       await poll(() => ui.locator('body').getAttribute('data-theme'), v => v === theme);
       assert.equal(await ui.locator('#page-summary').evaluate(el => getComputedStyle(el).backgroundColor), theme === 'current' ? 'rgb(33, 33, 33)' : 'rgb(233, 233, 233)');
+      assert.equal(await app.evaluate(() => global.__flashborn.activeTab().view.webContents.executeJavaScript('getComputedStyle(document.body).backgroundColor')), theme === 'current' ? 'rgb(33, 33, 33)' : 'rgb(233, 233, 233)');
       await capture('summary-' + theme + '.png');
     }
-    pass('Summary background follows both themes immediately without a page reload');
+    pass('Summary and actual result-page backgrounds follow both themes immediately without a page reload');
     if (process.env.FLASHBORN_LIVE === '1') {
       fs.writeFileSync(path.join(output, 'live-summary-' + (process.env.FLASHBORN_LIVE_PROVIDER || 'all') + '-results.json'), JSON.stringify({ passed, completedAt: new Date().toISOString() }, null, 2));
       return;
     }
+    await ui.locator('.summary-close').click(); await poll(state, s => !s.pageSummary);
+    assert.equal(await app.evaluate(() => global.__flashborn.activeTab().view.getBounds().y), 100);
+    await app.evaluate(() => global.__flashborn.activeTab().view.webContents.executeJavaScript('document.querySelector("[data-result=snippet]").textContent = "Solar collectors can supply household hot water and reduce reliance on fossil fuel heating."'));
+    await wait(900); assert.equal((await state()).pageSummary, null);
+    await command('reload'); await poll(state, s => !!s.pageSummary);
+    pass('The close button restores the full HTML viewport; late changes do not reopen a dismissed summary, and reloading starts a fresh summary');
     await command('collapse');
     await poll(() => ui.locator('#page-summary').evaluate(el => el.getBoundingClientRect().x), x => x === 68);
     await command('fullscreen', { value: true }); await ui.locator('#page-summary').waitFor({ state: 'hidden' });

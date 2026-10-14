@@ -2,6 +2,7 @@
 const { _electron: electron } = require('playwright');
 const fs = require('node:fs');
 const path = require('node:path');
+const assert = require('node:assert/strict');
 const root=path.resolve(__dirname,'..');
 const output=path.join(root,'test-output');
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
@@ -20,11 +21,34 @@ async function run(){
    await app.evaluate(async({},url)=>global.__flashborn.command('navigate',{value:url}),urls[i]);
    await delay(6000);
    let state=await app.evaluate(()=>global.__flashborn.getState());
-   if(!state.tabs.find(t=>t.id===state.activeId).native){await app.evaluate(()=>global.__flashborn.command('native-mode'));await delay(6000);}
-   const inspect=`(()=>({url:location.href,title:document.title,text:document.body?.innerText?.slice(0,1600),plugins:[...navigator.plugins].map(p=>({name:p.name,description:p.description})),html:document.documentElement.outerHTML.slice(0,15000),flash:[...document.querySelectorAll('object,embed')].map(e=>{let version,percent,frame,error;try{version=e.GetVariable?.('$version');percent=e.PercentLoaded?.();frame=e.CurrentFrame?.();}catch(ex){error=ex.message;}return {tag:e.tagName,type:e.type,src:e.src||e.data,version,percent,frame,error};})}))()`;
-   const result=await app.evaluate(({},code)=>global.__flashborn.activeTab().native.evaluate(code),inspect);
+   if(!state.tabs.find(t=>t.id===state.activeId).native){
+    assert.notEqual(process.env.FLASHBORN_AUTO_ONLY,'1','The site must switch to native Flash automatically');
+    await app.evaluate(()=>global.__flashborn.command('native-mode'));await delay(6000);
+   }
+   const inspect='('+function inspectSite(){
+    const flash=[];
+    function visit(w){try{
+     for(const e of w.document.querySelectorAll('object,embed')){
+      let version,percent,frame,error;try{version=e.GetVariable?.('$version');percent=e.PercentLoaded?.();frame=e.CurrentFrame?.();}catch(ex){error=ex.message;}
+      flash.push({tag:e.tagName,type:e.type,src:e.src||e.data,version,percent,frame,error});
+     }
+     for(let i=0;i<w.frames.length;i++)visit(w.frames[i]);
+    }catch{}}
+    visit(window);
+    return {url:location.href,title:document.title,text:document.body?.innerText?.slice(0,1600),plugins:[...navigator.plugins].map(p=>({name:p.name,description:p.description})),html:document.documentElement.outerHTML.slice(0,15000),flash};
+   }.toString()+')()';
+   let result=await app.evaluate(({},code)=>global.__flashborn.activeTab().native.evaluate(code),inspect);
+   if(process.env.FLASHBORN_AUTO_ONLY==='1'){
+    const deadline=Date.now()+60000;
+    while(!result.flash.some(movie=>movie.percent===100)&&Date.now()<deadline){await delay(300);result=await app.evaluate(({},code)=>global.__flashborn.activeTab().native.evaluate(code),inspect);}
+   }
+   if(process.env.FLASHBORN_SITE_WAIT){await delay(Number(process.env.FLASHBORN_SITE_WAIT));result=await app.evaluate(({},code)=>global.__flashborn.activeTab().native.evaluate(code),inspect);}
    result.shell=await app.evaluate(()=>global.__flashborn.getState().tabs.find(t=>t.id===global.__flashborn.getState().activeId));
    console.log('RESULT',JSON.stringify({...result,html:undefined},null,2));
+   if(process.env.FLASHBORN_AUTO_ONLY==='1'){
+    assert.ok(!/\/update\.html\?/.test(result.url),'The original site must survive Flash version detection');
+    assert.ok(result.flash.some(movie=>movie.version==='WIN '+require('../src/legacy/runtime.json').version.replaceAll('.',',')&&movie.percent===100),'At least one real Flash instance must load completely');
+   }
    results.push(result);
    console.log('WINDOW',await app.evaluate(()=>global.__flashborn.activeTab().native.inspect?.()));
    const bytes=await app.evaluate(()=>global.__flashborn.activeTab().native.screenshot());

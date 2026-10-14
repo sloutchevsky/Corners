@@ -23,3 +23,15 @@ test('Extractive summaries stay bounded, deduplicate passages, cite valid source
   assert.equal(makeSummary(data, 'https://ordinary.example/'), null);
   assert.equal(makeSummary({ results: [] }, 'https://www.google.com/search?q=solar'), null);
 });
+test('Search summaries reject launch notices and cover distinct relevant sources beyond the first result', () => {
+  const data = { results: [
+    { url: 'https://promo.example/', title: 'Hello', text: 'We are pausing hello while we get ready to launch something even better.' },
+    { url: 'https://dictionary.example/hello', title: 'Hello meaning', text: 'Hello is a greeting in the English language, often used to begin a conversation.' },
+    { url: 'https://history.example/hello', title: 'History of hello', text: 'Hello became a common telephone greeting during the nineteenth century.' },
+    { url: 'https://dictionary.example/duplicate', title: 'Hello dictionary', text: 'Hello is a greeting in the English language, often used to begin a conversation.' }
+  ] };
+  const result = makeSummary(data, 'https://www.google.com/search?q=hello');
+  assert.equal(result.sources.length, 2);
+  assert.ok(result.sources.every(source => source.domain !== 'promo.example'));
+  assert.ok(result.passages.some(passage => passage.text.includes('nineteenth century')));
+});

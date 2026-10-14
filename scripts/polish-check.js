@@ -60,7 +60,7 @@ async function run() {
     assert.equal(await ui.locator('.about-text p').first().getAttribute('class'), 'about-motto');
     assert.equal(await ui.locator('.about-text > p').nth(1).getAttribute('class'), 'about-dedication');
     assert.equal(await ui.locator('.about-email').getAttribute('aria-label'), 'Copy email address');
-    const dedication = await ui.locator('.about-dedication').innerText(); assert.ok(dedication.startsWith('This browser is dedicated to the team of Firstborn')); assert.ok(dedication.includes('sloutchevsky@gmail.com'));
+    const dedication = await ui.locator('.about-dedication').innerText(); assert.ok(dedication.startsWith('This browser is dedicated to the team at Firstborn')); assert.ok(dedication.includes('sloutchevsky@gmail.com'));
     const angle = await ui.locator('#about-bolt').getAttribute('data-angle'); await poll(() => ui.locator('#about-bolt').getAttribute('data-angle'), value => value !== angle);
     const expectedOrder = ['about-motto', 'about-dedication', 'about-detail', 'about-note', 'about-copyright', 'about-license'];
     assert.deepEqual(await ui.locator('.about-text').evaluate(el => Array.from(el.children).map(child => child.className)), expectedOrder);
@@ -102,7 +102,7 @@ async function run() {
     await app.evaluate(() => { const w = global.__flashborn.win; w.setAlwaysOnTop(true, 'pop-up-menu'); w.moveTop(); });
     const originalColor = (await state()).flashBackground;
     await color.locator('#color-pick').click();
-    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.every(e => e.window.isVisible())), Boolean);
+    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.length > 0 && global.__flashborn.screenColorPicker.entries.every(e => e.window.isVisible())), Boolean);
     await app.evaluate(() => global.__flashborn.screenColorPicker.cancel());
     await poll(state, s => !s.colorPicking);
     await poll(() => color.locator('#color-status').innerText(), value => value === 'Color picking canceled.');
@@ -110,7 +110,7 @@ async function run() {
     pass('Topmost screen eyedropper opens from a trusted click and cancels without closing the dialog or changing the background');
 
     await color.locator('#color-pick').click(); await poll(state, s => s.colorPicking);
-    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.every(e => e.window.isVisible())), Boolean);
+    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.length > 0 && global.__flashborn.screenColorPicker.entries.every(e => e.window.isVisible())), Boolean);
     await app.evaluate(() => global.__flashborn.colorWindow.emit('blur'));
     assert.ok(await app.evaluate(() => !!global.__flashborn.colorWindow && !global.__flashborn.colorWindow.isDestroyed()));
     const point = await app.evaluate(() => {

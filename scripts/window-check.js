@@ -88,7 +88,7 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
       await command('new-tab'); await command('navigate', { value: 'https://www.sloutchevsky.com/demos/kpf/main.htm?fullscreen=no' });
       await poll(() => app.evaluate(() => !!global.__flashborn.activeTab().native), Boolean, 60000);
       await poll(state, s => !s.tabs.find(t => t.id === s.activeId).loading && !s.tabs.find(t => t.id === s.activeId).error, 60000);
-      const versions = await poll(() => script(`(()=>{const result=[];function visit(w){try{for(const e of w.document.querySelectorAll('object,embed')){try{const v=e.GetVariable?.('$version');if(v)result.push(v);}catch{}}for(let i=0;i<w.frames.length;i++)visit(w.frames[i]);}catch{}}visit(window);return result;})()`), v => v.includes('WIN 32,0,0,363'), 60000);
+      const versions = await poll(() => script(`(()=>{const result=[];function visit(w){try{for(const e of w.document.querySelectorAll('object,embed')){try{const v=e.GetVariable?.('$version');if(v)result.push(v);}catch{}}for(let i=0;i<w.frames.length;i++)visit(w.frames[i]);}catch{}}visit(window);return result;})()`), v => v.includes('WIN 34,0,0,376'), 60000);
       await wait(1000); await native('test-paints', { reset: true });
       getRect(hostHandle, physical);
       for (let i = 0; i < 35; i++) { position(hostHandle, 0, physical[0] + i * 2, physical[1] + i, 0, 0, 0x0015); await wait(18); }
