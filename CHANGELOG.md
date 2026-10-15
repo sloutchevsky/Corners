@@ -1,6 +1,6 @@
 # Flashborn Browser version history
 
-This history covers releases from 1.0.0 to 1.8.4. Historical updates through 1.7.3 are assigned
+This history covers releases from 1.0.0 to 1.8.5. Historical updates through 1.7.3 are assigned
 to versions by comparing the archived source ZIPs, their READMEs and the recorded
 development requests. Dates are the retained installer build dates in New York
 time. Historical Git commits are imports of these snapshots, not a recovered
@@ -13,6 +13,7 @@ deferred; the production application still uses the simple lightning bolt.
 
 | Version | Build date | Main changes |
 | --- | --- | --- |
+| [1.8.5](#185-2026-10-15) | 2026-10-15 | Visible Flash through theme/toolbar clicks, sRGB startup for both engines, and download-origin audit |
 | [1.8.4](#184-2026-10-15) | 2026-10-15 | Independent Flash input queues, immediate runtime recovery, restored Adobe-signed player and inline tab memory |
 | [1.8.3](#183-2026-10-15) | 2026-10-15 | Website-only Flash, removal of the standalone SWF player, fewer plugin/focus interventions and installer trust audit |
 | [1.8.2](#182-2026-10-15) | 2026-10-15 | Stable Flash mouse capture through fullscreen and resize, smoother light-mode icons |
@@ -31,6 +32,14 @@ deferred; the production application still uses the simple lightning bolt.
 | [1.1.1](#111--2026-10-09) | 2026-10-09 | Blank Flash surface and legacy detection fixes |
 | [1.1.0](#110--2026-10-09) | 2026-10-09 | Original Adobe Flash and separate legacy runtime |
 | [1.0.0](#100--2026-10-08) | 2026-10-08 | Initial Windows browser with Ruffle |
+
+## 1.8.5 (2026-10-15)
+
+- Fix the blank native Flash viewport after clicking the theme button or another toolbar control. The movie kept running while its separate normal window was left behind the foreground shell. Keep the active viewport topmost while the browser group is active, and sort it below browser popup windows.
+- Demote and hide the viewport when switching away, minimizing, selecting another tab or opening a panel. If a hidden host has stopped processing Windows messages, terminate it so an unprocessed hide request cannot leave it floating over other applications. Reload restores its source.
+- Start both modern Chromium and the native Flash engine with force-color-profile=srgb, matching Chrome's sRGB profile option. This is an application startup setting and does not change Windows or monitor configuration.
+- Add a theme/color regression check using real theme-button clicks, on-screen Flash pixel captures without raising the browser for screenshots, movie/process continuity, sRGB flags in both engines, minimize/restore and hung hidden-host recovery.
+- Recheck the Windows warning against actual installers: v1.7.3 and v1.8.4 are both unsigned. The inspected v1.7.3 copy has no Internet-zone marker; downloaded v1.8.0 and v1.8.3 copies have ZoneId=3. This supports download-origin and reputation checks as the reason for the reported version boundary. Restoring Adobe's valid player signature did not remove SmartScreen. Public installers remain unsigned and may still warn; no protection settings or download markers are changed.
 
 ## 1.8.4 (2026-10-15)
 

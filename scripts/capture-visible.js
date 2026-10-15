@@ -1,12 +1,12 @@
 'use strict';
-module.exports = app => app.evaluate(async ({desktopCapturer, screen}) => {
+module.exports = (app, { raise = true } = {}) => app.evaluate(async ({desktopCapturer, screen}, raise) => {
   const w=global.__flashborn.win;
   const wasTopmost=w.isAlwaysOnTop();
   // Foreground locking can leave another window over this test application's crop.
   // Temporarily raise only our own test window so captured pixels belong to it.
-  w.setAlwaysOnTop(true,'pop-up-menu'); w.moveTop();
+  if (raise) { w.setAlwaysOnTop(true,'pop-up-menu'); w.moveTop(); }
   try {
-  if(!global.__flashborn.getState().menuOpen)w.focus();
+  if(raise && !global.__flashborn.getState().menuOpen)w.focus();
   await new Promise(resolve=>setTimeout(resolve,150));
   const b=w.getBounds(), d=screen.getDisplayMatching(b), factor=d.scaleFactor;
   const sources=await desktopCapturer.getSources({types:['screen'],thumbnailSize:{width:Math.round(d.size.width*factor),height:Math.round(d.size.height*factor)}});
@@ -17,5 +17,5 @@ module.exports = app => app.evaluate(async ({desktopCapturer, screen}) => {
   const bitmap=image.toBitmap(), size=image.getSize();let creamPixels=0;
   for(let y=Math.round(170*factor);y<size.height-40*factor;y+=2)for(let x=Math.round(280*factor);x<size.width-25*factor;x+=2){const p=(y*size.width+x)*4,b=bitmap[p],g=bitmap[p+1],r=bitmap[p+2];if(r>225&&g>180&&g<235&&b>140&&b<215)creamPixels++;}
   return {png:image.toPNG().toString('base64'),creamPixels};
-  } finally { if(!w.isDestroyed())w.setAlwaysOnTop(wasTopmost); }
-});
+  } finally { if(raise && !w.isDestroyed())w.setAlwaysOnTop(wasTopmost); }
+}, raise);

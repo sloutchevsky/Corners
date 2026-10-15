@@ -16,6 +16,7 @@ const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
 const { nextZoom } = require('./legacy/zoom');
 const flashRuntime = require('./legacy/runtime.json');
 
+app.commandLine.appendSwitch('force-color-profile', 'srgb');
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashborn', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const testMode = process.env.FLASHBORN_TEST === '1';
 if (testMode) process.on('uncaughtException', error => { console.error('TEST MAIN EXCEPTION', error.stack || error); app.exit(1); });

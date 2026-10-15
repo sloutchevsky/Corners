@@ -3,13 +3,13 @@
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original, Adobe-signed Flash Player 32.0.0.363 for Flash content.
 
-**Current version: 1.8.4 · Windows 10/11 · x64 · MIT application source**
+**Current version: 1.8.5 · Windows 10/11 · x64 · MIT application source**
 
-[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.4/Flashborn-Setup-1.8.4-x64.exe)
+[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.5/Flashborn-Setup-1.8.5-x64.exe)
 · [Releases and update notes](https://github.com/sloutchevsky/Flashborn-Browser/releases)
-· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.4/Flashborn-Source-1.8.4-GitHub.zip)
+· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.5/Flashborn-Source-1.8.5-GitHub.zip)
 
-See [the complete version history](CHANGELOG.md) for all 18 releases, from the
+See [the complete version history](CHANGELOG.md) for all 19 releases, from the
 initial Ruffle build to native Adobe playback and the current browser.
 
 ## Preview
@@ -32,7 +32,7 @@ These earlier screenshots include standalone SWF controls removed in 1.8.3.
 
 ## Install
 
-Download and run `Flashborn-Setup-1.8.4-x64.exe` on Windows 10 or 11 x64. When
+Download and run `Flashborn-Setup-1.8.5-x64.exe` on Windows 10 or 11 x64. When
 building locally, the same file is produced in `release/`. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
@@ -46,11 +46,15 @@ Website and HTML library entries, PDFs, images and video remain supported.
 
 The default Flash path no longer polls loading or calls movie APIs automatically.
 Quality overrides use one call per instance without rewriting embed attributes.
-Theme changes do not touch the Flash page. Flash runs in an unowned window with
+Both browser engines start in sRGB mode, matching Chrome’s Force color profile setting.
+Theme changes do not touch the Flash page or restart its movie. Flash runs in an unowned window with
 its own Windows input queue, so a stalled legacy host cannot lock the modern
 address bar, tab controls or context menus. Reload replaces the entire Flash tab
 runtime, preserving its source, zoom and mute settings. The legacy renderer uses
 normal process priority, matching Flash Browser; hidden tabs still throttle timers.
+The active Flash viewport stays above the shell and below browser popups. It is
+hidden and demoted when the browser group loses activation or is minimized. A
+hung hidden host is terminated to prevent it floating above other applications.
 A deliberate 30-second host hang is covered by the isolation regression check.
 This does not establish that every legacy movie or site is free of internal stalls.
 
@@ -256,12 +260,13 @@ npm run test:playback
 npm run test:toolbar
 npm run test:input-stability
 npm run test:isolation
+npm run test:theme-color
 npm run test:summaries
 npm run dist
 npm run test:package
 ```
 
-The build produces `release/Flashborn-Setup-1.8.4-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.8.5-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 

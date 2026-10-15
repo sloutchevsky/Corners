@@ -9,6 +9,7 @@ const { nextZoom } = require('./zoom');
 const { settingsScript } = require('./flash-settings');
 const flashRuntime = require('./runtime.json');
 app.setPath('userData', process.env.FLASHBORN_NATIVE_PROFILE);
+app.commandLine.appendSwitch('force-color-profile', 'srgb');
 nativeTheme.themeSource = 'system';
 app.commandLine.appendSwitch('ppapi-flash-path', process.env.FLASHBORN_NATIVE_PLUGIN);
 app.commandLine.appendSwitch('ppapi-flash-version', flashRuntime.version);
@@ -117,7 +118,7 @@ async function command(action, args) {
     case 'evaluate': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); return wc.executeJavaScript(args.code, true);
     case 'test-playback':
       if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
-      return { settingsRuns, visible, focused: wc.isFocused(), windowFocused: window.isFocused(), backgroundThrottling: wc.getWebPreferences().backgroundThrottling, normalRendererPriority: app.commandLine.hasSwitch('disable-renderer-backgrounding') };
+      return { settingsRuns, visible, focused: wc.isFocused(), windowFocused: window.isFocused(), backgroundThrottling: wc.getWebPreferences().backgroundThrottling, normalRendererPriority: app.commandLine.hasSwitch('disable-renderer-backgrounding'), colorProfile: app.commandLine.getSwitchValue('force-color-profile') };
     case 'test-renderer-crash':
       if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
       setTimeout(() => process.kill(wc.getOSProcessId(), 'SIGKILL'), 0); return;

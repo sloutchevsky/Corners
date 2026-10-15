@@ -1,6 +1,6 @@
 # Windows distribution and SmartScreen
 
-Flashborn 1.8.4 remains unsigned. The screenshot reported by the user is the
+Flashborn 1.8.5 remains unsigned. The screenshot reported by the user is the
 SmartScreen **unrecognized app** warning. It does not name a malware detection.
 Removing the standalone player cannot guarantee that this warning disappears.
 
@@ -29,6 +29,28 @@ The obsolete player/picker files and unused updater `elevate.exe` are excluded
 from this release. Flashborn has no analytics or automatic updater. Installer
 publisher text and executable company metadata identify Vas Sloutchevsky, but
 neither is a cryptographic signature.
+
+## Why the reported cutoff was v1.8.0
+
+The actual local installer copies were compared on October 15, 2026:
+
+| Installer copy | Authenticode | Internet-origin metadata |
+| --- | --- | --- |
+| v1.7.3 | NotSigned | No Zone.Identifier stream |
+| v1.8.0 downloaded copy | NotSigned | ZoneId=3 (Internet) |
+| v1.8.3 downloaded copy | NotSigned | ZoneId=3 (Internet) |
+| v1.8.4 locally built copy | NotSigned | No Zone.Identifier stream |
+
+The v1.7.3 and current installer configuration use the same NSIS installation
+flow. Differences remove a file association and unused elevation helper; they do
+not add a signing identity. The observed marker difference supports the browser
+download path, rather than the player signature alone, as the reason SmartScreen
+started appearing at that version. File and publisher reputation also matter.
+
+The restored Adobe signature in v1.8.4 did **not** resolve the reported warning.
+No source-code edit can give an unsigned installer a verified publisher or
+inherited signing-certificate reputation. A new release must not be described
+as SmartScreen-free on the strength of a successful local build or launch.
 
 ## What can resolve the warning
 

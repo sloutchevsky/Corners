@@ -14,6 +14,7 @@ function winAPI() {
     position: user32.func('int __stdcall SetWindowPos(intptr_t hwnd, intptr_t after, int x, int y, int width, int height, uint32_t flags)'),
     show: user32.func('int __stdcall ShowWindowAsync(intptr_t hwnd, int command)'),
     valid: user32.func('int __stdcall IsWindow(intptr_t hwnd)'),
+    hung: user32.func('int __stdcall IsHungAppWindow(intptr_t hwnd)'),
     visible: user32.func('int __stdcall IsWindowVisible(intptr_t hwnd)'),
     getParent: user32.func('intptr_t __stdcall GetParent(intptr_t hwnd)'),
     rect: user32.func('int __stdcall GetWindowRect(intptr_t hwnd, _Out_ int32_t *rect)'),
@@ -133,13 +134,18 @@ class NativeFlash {
   }
   syncWindow() {
     if (!this.hwnd || this.disposed || this.host.isDestroyed() || !this.viewport) return;
-    if (!this.wantedVisible && this.lastVisible === false) return;
     const api = winAPI();
     if (!api.valid(this.hwnd)) return;
     const host = this.hostHandle(), foreground = api.foreground(), pid = [0];
     if (foreground) api.owner(foreground, pid);
     const ownGroup = pid[0] === process.pid || pid[0] === this.child.pid;
     const visible = !!this.wantedVisible && this.host.isVisible() && !this.host.isMinimized() && (ownGroup || this.host.isAlwaysOnTop() || !foreground && this.lastVisible);
+    // A hung UI thread cannot process asynchronous hide/demote requests. Do
+    // not leave its viewport floating over another app after switching away.
+    if (!visible && api.hung(this.hwnd)) {
+      this.child.kill(); return;
+    }
+    if (!this.wantedVisible && this.lastVisible === false) return;
     {
       // ClientToScreen supplies physical coordinates, including negative monitor
       // origins. Only the viewport dimensions/offsets need DIP conversion.
@@ -149,15 +155,20 @@ class NativeFlash {
       const pixels = [origin[0] + Math.round(r.x * factor), origin[1] + Math.round(r.y * factor), Math.round(r.width * factor), Math.round(r.height * factor)];
       const changed = !this.lastBounds || pixels.some((n, i) => n !== this.lastBounds[i]);
       const raise = visible && (!this.lastVisible || !isAbove(api, this.hwnd, host));
-      const topmost = this.host.isAlwaysOnTop(), zChanged = this.lastTopmost !== undefined && this.lastTopmost !== topmost;
-      if (changed || raise || zChanged) {
-        const popup = topmost && this.host.getChildWindows().find(w => !w.isDestroyed() && w.isVisible() && w.isAlwaysOnTop());
-        const after = popup ? Number(popup.getNativeWindowHandle().readBigUInt64LE()) : topmost ? -1 : zChanged ? -2 : 0;
+      // A separate application's normal HWND can remain below the foreground
+      // shell despite HWND_TOP requests. Keep the active viewport topmost only
+      // while our browser group is active, and place it below browser popups.
+      const topmost = !!visible, zChanged = this.lastTopmost !== topmost;
+      const popup = topmost && this.host.getChildWindows().find(w => !w.isDestroyed() && w.isVisible() && w.isAlwaysOnTop());
+      const popupHandle = popup ? Number(popup.getNativeWindowHandle().readBigUInt64LE()) : 0;
+      const popupChanged = popupHandle !== this.lastPopup;
+      if (changed || raise || zChanged || popupChanged) {
+        const after = popupHandle || (topmost ? -1 : -2);
         // Asynchronous positioning never waits for the legacy message pump.
-        api.position(this.hwnd, after, ...pixels, 0x0010 | 0x4000 | (raise || zChanged ? 0 : 0x0004));
+        api.position(this.hwnd, after, ...pixels, 0x0010 | 0x4000 | (raise || zChanged || popupChanged ? 0 : 0x0004));
         this.lastBounds = pixels;
       }
-      this.lastTopmost = topmost;
+      this.lastTopmost = topmost; this.lastPopup = popupHandle;
     }
     if (this.lastVisible !== visible) {
       this.lastVisible = visible;
