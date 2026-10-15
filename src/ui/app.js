@@ -155,6 +155,8 @@ function render(next) {
   document.body.classList.toggle('fullscreen', state.fullscreen);
   const theme = state.settings.theme || 'current';
   document.body.dataset.theme = theme;
+  [loadingBolt, titleBolt, homeBolt, aboutBolt].filter(Boolean).forEach(bolt => bolt.setTheme(theme));
+  navigationIcons.forEach(item => item.setTheme(theme));
   if (lastTheme && lastTheme !== theme) { themeTurns++; $('#theme-icon').style.transform = `rotate(${themeTurns * 180}deg)`; }
   lastTheme = theme;
   $('#theme-button').title = `Theme: ${theme === 'current' ? 'dark grey' : theme === 'light' ? 'light grey' : 'dark'} — click to change`;

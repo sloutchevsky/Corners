@@ -1,6 +1,6 @@
 # Flashborn Browser version history
 
-This history covers releases from 1.0.0 to 1.8.1. Historical updates through 1.7.3 are assigned
+This history covers releases from 1.0.0 to 1.8.2. Historical updates through 1.7.3 are assigned
 to versions by comparing the archived source ZIPs, their READMEs and the recorded
 development requests. Dates are the retained installer build dates in New York
 time. Historical Git commits are imports of these snapshots, not a recovered
@@ -13,6 +13,7 @@ deferred; the production application still uses the simple lightning bolt.
 
 | Version | Build date | Main changes |
 | --- | --- | --- |
+| [1.8.2](#182-2026-10-15) | 2026-10-15 | Stable Flash mouse capture through fullscreen and resize, smoother light-mode icons |
 | [1.8.1](#181-2026-10-14) | 2026-10-14 | Smoother Flash, reliable address editing and restored tabs, compact hover bubbles and sidebar animation |
 | [1.8.0](#180-2026-10-14) | 2026-10-14 | Animated search summaries, About corrections, updated native Flash and Embody compatibility |
 | [1.7.3](#173--2026-10-13) | 2026-10-13 | Search result summaries |
@@ -28,6 +29,18 @@ deferred; the production application still uses the simple lightning bolt.
 | [1.1.1](#111--2026-10-09) | 2026-10-09 | Blank Flash surface and legacy detection fixes |
 | [1.1.0](#110--2026-10-09) | 2026-10-09 | Original Adobe Flash and separate legacy runtime |
 | [1.0.0](#100--2026-10-08) | 2026-10-08 | Initial Windows browser with Ruffle |
+
+## 1.8.2 (2026-10-15)
+
+- Preserve the pointer event that already reached Flash instead of assigning focus again after mouse-down. Cancel a pending toolbar handoff without disturbing the movie's mouse capture.
+- Remove repeated AttachThreadInput calls from the parent/child focus bridge. Windows already connects these input queues through SetParent; attaching and detaching them again resets button/key state.
+- Avoid explicit page focus changes while a window owns mouse capture or is in a native move/size operation. Return focus after fullscreen, resize, maximize and restore only when page input is still intended.
+- Track the time of genuine toolbar and page input. Ignore stale notifications and stop treating programmatic legacy focus events as a user click.
+- Keep address and Find fields editable and preserve menu/eyedropper focus.
+- Replace heavy CSS darkening of light-mode gold icons with a softer, muted gold palette that lifts the darkest pixels and limits glare.
+- Render navigation icons and lightning at four times the final resolution, then downsample with high-quality canvas filtering to the actual display density. Keep the existing geometry, motion and stationary lights.
+- Regenerate all seven Windows icon sizes and static bolt assets from the same antialiased first frame.
+- Add regressions for repeated light-mode drag input through fullscreen/resize and toolbar editing, plus actual-density edge coverage and shadow colors. Check the native Windows capture behavior separately with physical computer input.
 
 ## 1.8.1 (2026-10-14)
 

@@ -40,9 +40,9 @@ async function poll(fn,check,timeout=20000){const end=Date.now()+timeout;let val
     const centers=await ui.evaluate(()=>{
       const icon=navigationIcons.find(i=>i.kind==='settings');
       return [0,.125,.25,.375,.5,.625,.75,.875].map(progress=>{
-        icon.draw(progress);const data=icon.canvas.getContext('2d').getImageData(0,0,128,128).data;let x=0,y=0,total=0;
-        for(let row=0;row<128;row++)for(let column=0;column<128;column++){const alpha=data[(row*128+column)*4+3];total+=alpha;x+=(column+.5)*alpha;y+=(row+.5)*alpha;}
-        return {progress,x:x/total,y:y/total};
+        icon.draw(progress);const width=icon.canvas.width,data=icon.canvas.getContext('2d').getImageData(0,0,width,width).data;let x=0,y=0,total=0;
+        for(let row=0;row<width;row++)for(let column=0;column<width;column++){const alpha=data[(row*width+column)*4+3];total+=alpha;x+=(column+.5)*alpha;y+=(row+.5)*alpha;}
+        return {progress,x:x/total/width*128,y:y/total/width*128};
       });
     });
     for(const center of centers){assert.ok(Math.abs(center.x-64)<.2,JSON.stringify(center));assert.ok(Math.abs(center.y-64)<.2,JSON.stringify(center));}
@@ -68,7 +68,7 @@ async function poll(fn,check,timeout=20000){const end=Date.now()+timeout;let val
       await poll(()=>ui.locator('body').getAttribute('data-theme'),v=>v===theme);
       const colors=await ui.evaluate(()=>({swf:getComputedStyle(document.querySelector('.sidebar-bottom .pill')).color,labels:[...document.querySelectorAll('.sidebar-bottom .nav-button > span:first-of-type')].map(el=>getComputedStyle(el).color),filters:[...document.querySelectorAll('.nav-gold')].map(el=>getComputedStyle(el).filter)}));
       assert.ok(colors.labels.every(color=>color===colors.swf),JSON.stringify(colors));
-      if(theme==='light')assert.ok(colors.filters.every(filter=>filter!=='none'&&filter.includes('brightness(0.7)')));
+      assert.ok(colors.filters.every(filter=>filter==='none'));
       await capture('sidebar-'+theme+'-1.7.1.png');
     }
     pass('Every lower sidebar label matches its SWF pill in both themes; light-mode icons use darker, muted highlights');

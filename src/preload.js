@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('browser', {
   onFind: callback => { ipcRenderer.on('browser:find', (_event, result) => callback(result)); },
   onNotice: callback => { ipcRenderer.on('browser:notice', (_event, message) => callback(message)); }
 });
-const focusChrome = () => ipcRenderer.send('browser:chrome-focus');
+const focusChrome = () => ipcRenderer.send('browser:chrome-focus', Date.now());
 window.addEventListener('pointerdown', focusChrome, true);
 window.addEventListener('focusin', focusChrome, true);
 window.addEventListener('wheel', event => {

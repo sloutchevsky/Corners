@@ -26,7 +26,7 @@ async function run() {
     await ui.locator('.flash-card-description').click(); await poll(state, s => s.panel === 'library');
     await command('panel', { name: null });
     assert.equal(await ui.locator('#home-bolt').getAttribute('data-angle'), '0.0000');
-    const homeIcon = await ui.locator('#home-bolt').evaluate(el => el.toDataURL().split(',')[1]);
+    assert.ok(await ui.locator('#home-bolt').evaluate(el => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = el.width; const bolt = new GoldLightning(canvas); const same = canvas.toDataURL() === el.toDataURL(); bolt.dispose(); return same; }));
     const appIcon = await app.evaluate(({ app }) => process.getBuiltinModule('fs').readFileSync(process.getBuiltinModule('path').join(app.getAppPath(), 'assets', 'icon.png')).toString('base64'));
     assert.deepEqual(Buffer.from(appIcon, 'base64'), fs.readFileSync(path.join(root, 'assets', 'icon.png')));
     const ico = fs.readFileSync(path.join(root, 'assets', 'icon.ico'));
@@ -34,7 +34,11 @@ async function run() {
     assert.deepEqual(fs.readFileSync(path.join(root, 'src', 'legacy', 'bolt.png')), fs.readFileSync(path.join(root, 'assets', 'icon.png')));
     assert.equal(ico.readUInt16LE(4), 7);
     const sizes = [];
-    for (let n = 0; n < ico.readUInt16LE(4); n++) { const entry = 6 + n * 16, size = ico[entry] || 256; sizes.push(size); if (size === 128) assert.deepEqual(ico.subarray(ico.readUInt32LE(entry + 12), ico.readUInt32LE(entry + 12) + ico.readUInt32LE(entry + 8)), Buffer.from(homeIcon, 'base64')); }
+    for (let n = 0; n < ico.readUInt16LE(4); n++) {
+      const entry = 6 + n * 16, size = ico[entry] || 256; sizes.push(size);
+      const frame = await ui.evaluate(size => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = size; const bolt = new GoldLightning(canvas); const png = canvas.toDataURL().split(',')[1]; bolt.dispose(); return png; }, size);
+      assert.deepEqual(ico.subarray(ico.readUInt32LE(entry + 12), ico.readUInt32LE(entry + 12) + ico.readUInt32LE(entry + 8)), Buffer.from(frame, 'base64'));
+    }
     assert.deepEqual(sizes, [16, 24, 32, 48, 64, 128, 256]);
     fs.writeFileSync(path.join(output, 'new-tab-1.5.1.png'), await ui.screenshot());
     pass('New Tab bolt tile and caption both open the library; the obsolete top label is removed and the tile matches the Windows icon frame');
@@ -51,7 +55,7 @@ async function run() {
     assert.equal(await ui.locator('.title-note').innerText(), 'A quieter kind of browsing');
     const sameRect = (actual, expected) => { for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(actual[key] - expected[key]) < .1, `${key}: ${actual[key]} versus ${expected[key]}`); };
     sameRect(await rect('.title-note'), baseline.motto); sameRect(await rect('.window-controls'), baseline.controls);
-    assert.ok(await ui.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 96; const bolt = new GoldLightning(canvas); const same = canvas.toDataURL() === document.getElementById('title-bolt').toDataURL(); bolt.dispose(); return same; }));
+    assert.ok(await ui.evaluate(() => { const canvas = document.createElement('canvas'), title = document.getElementById('title-bolt'); canvas.width = canvas.height = title.width; const bolt = new GoldLightning(canvas); const same = canvas.toDataURL() === title.toDataURL(); bolt.dispose(); return same; }));
     const titlePixels = await ui.locator('#title-bolt').evaluate(el => el.toDataURL());
     pass('Title bar has only the exact first-frame gold bolt; motto and window controls retain their positions');
     sameRect(await rect('.about-bolt'), { ...baseline.bolt, width: baseline.bolt.width * .7, height: baseline.bolt.height * .7 });

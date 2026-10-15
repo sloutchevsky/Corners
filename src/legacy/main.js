@@ -189,7 +189,7 @@ app.whenReady().then(async () => {
     webPreferences: { session: runtimeSession, plugins: true, sandbox: true, nodeIntegration: false, contextIsolation: true, enableRemoteModule: false, webSecurity: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') } });
   Menu.setApplicationMenu(null);
   const wc = window.webContents;
-  ipcMain.on('browser:content-focus', event => { if (event.sender === wc) send({ type: 'input-focus', epoch: focusEpoch }); });
+  ipcMain.on('browser:content-focus', (event, at) => { if (event.sender === wc && Number.isFinite(at)) send({ type: 'input-pointer', at }); });
   if (process.env.FLASHBORN_NATIVE_TEST === '1') {
     runtimeSession.webRequest.onErrorOccurred(details => console.error('NATIVE REQUEST ERROR', details.error, details.url));
     wc.on('console-message', (_event, level, message, line, source) => { if (level >= 2) console.error('NATIVE PAGE', message, source, line); });
@@ -211,7 +211,6 @@ app.whenReady().then(async () => {
   wc.on('will-redirect', (event, url) => { if (!isWeb(url) && !(source && source.kind === 'html' && url.startsWith('flashnative://document/' + source.token + '/'))) event.preventDefault(); });
   wc.on('will-attach-webview', event => event.preventDefault());
   for (const name of ['did-start-loading','did-stop-loading','did-navigate','did-navigate-in-page','page-title-updated','audio-state-changed']) wc.on(name, publish);
-  wc.on('focus', () => send({ type: 'input-focus', epoch: focusEpoch }));
   wc.on('did-start-loading', () => { navigationSerial++; pluginLoading = false; clearTimeout(settingsTimer); });
   wc.on('did-frame-finish-load', () => scheduleSettings());
   wc.on('did-finish-load', () => scheduleSettings());

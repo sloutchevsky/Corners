@@ -51,6 +51,7 @@ let privateSession;
 let layoutScale;
 let sidebarWidth = 248;
 let focusArea = 'chrome';
+let focusIntentAt = 0, contentFocusTimer;
 let tooltipWindow, tooltipData = null, tooltipRevision = 0;
 const SUMMARY_MODE = 'search';
 const privateDownloads = [];
@@ -168,6 +169,7 @@ function selectTab(id) {
   activeId = id;
   panel = null;
   focusArea = t.kind === 'home' ? 'chrome' : 'content';
+  focusIntentAt = Date.now();
   layout();
   if (t.restoreEntry) resumeTab(t).catch(e => showError(t, e.message));
   if (t.native && !t.error) t.native.focus();
@@ -463,12 +465,9 @@ async function ensureNative(t) {
   const native = t.native = new NativeFlash(win, t.id, message => {
     if (t.native !== native || !tabs.includes(t) || closing) return;
     if (message.type === 'ready') layout();
-    else if (message.type === 'input-focus' && message.epoch === native.focusRevision && t.id === activeId && !panel) {
-      if (focusArea !== 'content') {
-        focusArea = 'content'; closeSuggestions();
-        win.webContents.send('browser:blur-fields');
-        setImmediate(() => { if (focusArea === 'content' && t.id === activeId) native.focus(); });
-      }
+    else if (message.type === 'input-pointer' && Number.isFinite(message.at) && message.at >= focusIntentAt && t.id === activeId && !panel) {
+      focusIntentAt = message.at; focusArea = 'content'; native.contentPointer(); closeSuggestions();
+      win.webContents.send('browser:blur-fields');
     }
     else if (message.type === 'state') {
       if (!isWebURL(message.state.url) && !message.state.url?.startsWith('flashnative:')) return;
@@ -628,6 +627,8 @@ async function removeLibraryImage(entry) {
 }
 function setFullscreen(value) {
   closeColorPicker();
+  focusArea = 'content'; focusIntentAt = Date.now();
+  win.webContents.send('browser:blur-fields');
   win.setFullScreen(!!value);
   // Exiting the host must also leave a website/plugin's HTML fullscreen state.
   for (const tab of tabs) if (tab.native) tab.native.call('host-fullscreen', { value: !!value && tab.id === activeId }).then(layout).catch(() => {});
@@ -802,11 +803,20 @@ function zoom(direction, popup = true) {
   zoomQueue = task.catch(() => {});
   return task;
 }
-function focusChrome() {
+function focusChrome(at = Date.now()) {
+  if (at < focusIntentAt) return;
+  focusIntentAt = at;
   focusArea = 'chrome';
   if (!win || win.isDestroyed()) return;
   if (activeTab()?.native) activeTab().native.focusHost();
   else win.webContents.focus();
+}
+function restoreContentFocus() {
+  clearTimeout(contentFocusTimer);
+  contentFocusTimer = setTimeout(() => {
+    const t = activeTab();
+    if (!closing && focusArea === 'content' && !panel && !t?.error && !colorWindow && !colorPicking && !menuWindow && !suggestionWindow) t?.native?.focus();
+  }, 120);
 }
 function closeTabTooltip() {
   tooltipRevision++; tooltipData = null;
@@ -1118,6 +1128,7 @@ async function boot() {
   win.webContents.on('zoom-changed', (_event, direction) => wheelZoom(activeTab(), direction === 'in' ? 1 : -1, 'browser'));
   win.webContents.on('context-menu', (_event, params) => showEditMenu(win.webContents, params));
   for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeTabTooltip(); closeColorPicker(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); layout(); sendState(true); });
+  for (const event of ['resize', 'resized', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore']) win.on(event, restoreContentFocus);
   for (const event of ['enter-full-screen', 'leave-full-screen']) win.on(event, () => { for (const t of tabs) if (t.native) t.native.call('host-fullscreen', { value: win.isFullScreen() && t.id === activeId }).then(layout).catch(() => {}); });
   win.on('move', () => {
     closeTabTooltip();
@@ -1159,7 +1170,7 @@ async function boot() {
     catch (e) { return { ok: false, error: e.message }; }
   });
   const trustedInput = event => event.sender === win?.webContents && event.senderFrame?.url === UI_URL || tabs.some(tab => live(tab) && tab.view.webContents === event.sender && event.sender.mainFrame === event.senderFrame);
-  ipcMain.on('browser:chrome-focus', event => { if (event.sender === win?.webContents && event.senderFrame?.url === UI_URL) focusChrome(); });
+  ipcMain.on('browser:chrome-focus', (event, at) => { if (event.sender === win?.webContents && event.senderFrame?.url === UI_URL && Number.isFinite(at)) focusChrome(at); });
   ipcMain.on('browser:private-key', event => { if (trustedInput(event)) createTab('', false, true); });
   ipcMain.on('browser:summary-changed', event => {
     const tab = tabs.find(t => live(t) && t.view.webContents === event.sender && event.senderFrame === event.sender.mainFrame);

@@ -37,6 +37,7 @@
   class GoldNavigation {
     constructor(canvas) {
       this.canvas = canvas; this.kind = canvas.dataset.navIcon;
+      this.surface = document.createElement('canvas'); this.theme = document.body?.dataset.theme || 'current';
       this.button = canvas.closest('button'); this.frame = 0; this.start = 0; this.progress = 0;
       this.hovered = false; this.focused = false; this.elapsed = 0; this.finishAt = null;
       this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
@@ -58,6 +59,10 @@
       if (this.reduced.matches || document.hidden || this.frame) return;
       this.start = 0; this.elapsed = 0; this.canvas.dataset.motion = 'spinning';
       this.frame = requestAnimationFrame(this.tick);
+    }
+    setTheme(theme) {
+      if (theme === this.theme) return;
+      this.theme = theme; this.bolt?.setTheme(theme); this.draw(this.progress);
     }
     finishGear() {
       if (this.kind === 'settings' && !this.hovered && !this.focused && this.frame) this.finishAt = Math.max(1, Math.ceil(this.elapsed - .000001));
@@ -81,17 +86,22 @@
       const canvas = this.canvas;
       if (this.bolt) this.bolt.draw(progress * TAU);
       else {
-        const ctx = canvas.getContext('2d'), scale = canvas.width / 24;
-        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const css = canvas.isConnected ? canvas.getBoundingClientRect() : null;
+        const target = css?.width ? Math.max(8, Math.round(css.width * devicePixelRatio)) : canvas.width;
+        if (canvas.width !== target || canvas.height !== target) canvas.width = canvas.height = target;
+        const surface = this.surface, pixels = Math.min(1024, target * 4);
+        if (surface.width !== pixels || surface.height !== pixels) surface.width = surface.height = pixels;
+        const ctx = surface.getContext('2d'), scale = pixels / 24, lightMode = this.theme === 'light';
+        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, pixels, pixels);
         ctx.setTransform(scale, 0, 0, scale, 0, 0);
         // This studio gradient is in screen/world coordinates. Paths move through it;
         // the gradient never rotates, translates, or changes with animation time.
         const light = ctx.createLinearGradient(1, 1, 24, 25);
-        light.addColorStop(0, '#94621b'); light.addColorStop(.38, '#d6aa4e');
-        light.addColorStop(.53, '#f5e1a2'); light.addColorStop(.7, '#c29435'); light.addColorStop(1, '#916020');
+        light.addColorStop(0, lightMode ? '#a08c64' : '#94621b'); light.addColorStop(.38, lightMode ? '#b49a64' : '#d6aa4e');
+        light.addColorStop(.53, lightMode ? '#cbb987' : '#f5e1a2'); light.addColorStop(.7, lightMode ? '#b09969' : '#c29435'); light.addColorStop(1, lightMode ? '#a08c64' : '#916020');
         const stroke = path => {
           ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-          ctx.strokeStyle = '#79551e'; ctx.lineWidth = 2.25; ctx.stroke(path);
+          ctx.strokeStyle = lightMode ? '#958260' : '#79551e'; ctx.lineWidth = 2.25; ctx.stroke(path);
           ctx.strokeStyle = light; ctx.lineWidth = 1.65; ctx.stroke(path);
         };
         if (this.kind === 'bookmarks') {
@@ -116,6 +126,9 @@
           canvas.dataset.arrowOffset = offset.toFixed(3);
         } else if (this.kind === 'settings') { stroke(rotated(gear, progress * TAU)); stroke(gearHub); }
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const output = canvas.getContext('2d');
+        output.clearRect(0, 0, target, target); output.imageSmoothingEnabled = true; output.imageSmoothingQuality = 'high';
+        output.drawImage(surface, 0, 0, target, target);
       }
       canvas.dataset.progress = progress.toFixed(4);
       canvas.dataset.lights = 'fixed';

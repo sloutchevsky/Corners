@@ -163,7 +163,6 @@ body[data-theme="light"] .about-panel { --about-ink:#333; }
 /* Small metallic navigation icons stay in their existing sidebar positions. */
 .sidebar .nav-gold { display:block; width:18px; height:18px; flex:none; }
 .sidebar .nav-gold-library { width:20.7px; height:20.7px; margin-inline:-1.35px; }
-body[data-theme="light"] .sidebar .nav-gold { filter:brightness(.7) contrast(.85) saturate(.75); }
 .sidebar-bottom .nav-button > span { color:var(--sidebar-label); }
 .sidebar-bottom .count:empty { display:none; }
 .sidebar-bottom [data-panel="downloads"] { position:relative; }

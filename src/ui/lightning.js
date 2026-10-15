@@ -38,6 +38,8 @@
   class GoldLightning {
     constructor(canvas, { continuous = false, thickness = 14, period = 2000, metal = 'gold' } = {}) {
       this.canvas = canvas;
+      this.surface = document.createElement('canvas');
+      this.theme = document.body?.dataset.theme || 'current';
       this.metal = metal;
       this.mesh = buildMesh(thickness);
       this.period = period;
@@ -63,6 +65,11 @@
     setMetal(metal) {
       if (this.metal === metal) return;
       this.metal = metal === 'silver' ? 'silver' : 'gold';
+      this.draw(this.reducedMotion.matches ? 0 : this.angle);
+    }
+    setTheme(theme) {
+      if (theme === this.theme) return;
+      this.theme = theme;
       this.draw(this.reducedMotion.matches ? 0 : this.angle);
     }
     setLoading(loading, key) {
@@ -94,8 +101,12 @@
       this.schedule();
     }
     draw(angle) {
-      const canvas = this.canvas, ctx = canvas.getContext('2d');
-      const size = canvas.width, scale = size * 0.00665;
+      const canvas = this.canvas, css = canvas.isConnected ? canvas.getBoundingClientRect() : null;
+      const target = css?.width ? Math.max(8, Math.round(css.width * devicePixelRatio)) : canvas.width;
+      if (canvas.width !== target || canvas.height !== target) canvas.width = canvas.height = target;
+      const surface = this.surface, size = Math.min(1024, target * 4), scale = size * 0.00665;
+      if (surface.width !== size || surface.height !== size) surface.width = surface.height = size;
+      const ctx = surface.getContext('2d'), lightMode = this.theme === 'light' && this.metal !== 'silver';
       const faces = this.mesh.map(points => {
         points = points.map(point => rotate(point, angle));
         const normal = normalize(cross(subtract(points[1], points[0]), subtract(points[2], points[0])));
@@ -109,12 +120,12 @@
         const points = face.points.map(point => { const perspective = 400 / (400 - point[2]); return [point[0] * perspective, point[1] * perspective]; });
         const illumination = Math.max(0, dot(face.normal, light));
         const specular = Math.pow(Math.max(0, dot(face.normal, halfVector)), 22);
-        const brightness = 0.63 + 0.36 * illumination + 0.22 * specular;
+        const brightness = lightMode ? 0.9 + 0.15 * illumination + 0.06 * specular : 0.63 + 0.36 * illumination + 0.22 * specular;
         // The light and reflected studio band stay fixed; only surface normals rotate.
         const reflectedView = [2 * face.normal[0] * face.normal[2], 2 * face.normal[1] * face.normal[2], 2 * face.normal[2] ** 2 - 1];
         const reflection = 0.48 + 0.2 * dot(reflectedView, light);
         const gradient = ctx.createLinearGradient(-53, 60, 53, -60);
-        const palette = this.metal === 'silver' ? [[85,91,104], [173,182,194], [248,250,255], [191,201,214], [105,112,126]] : [[171,94,9], [241,175,37], [255,237,168], [241,185,49], [174,102,12]];
+        const palette = this.metal === 'silver' ? [[85,91,104], [173,182,194], [248,250,255], [191,201,214], [105,112,126]] : lightMode ? [[161,128,68], [192,163,100], [224,207,161], [199,174,111], [163,132,71]] : [[171,94,9], [241,175,37], [255,237,168], [241,185,49], [174,102,12]];
         gradient.addColorStop(0, metalColor(palette[0], brightness));
         gradient.addColorStop(reflection - 0.19, metalColor(palette[1], brightness));
         gradient.addColorStop(reflection, metalColor(palette[2], brightness + 0.08));
@@ -124,6 +135,9 @@
         ctx.fillStyle = gradient; ctx.fill(); ctx.lineWidth = 0.38; ctx.strokeStyle = gradient; ctx.stroke();
       });
       ctx.restore();
+      const output = canvas.getContext('2d');
+      output.clearRect(0, 0, target, target); output.imageSmoothingEnabled = true; output.imageSmoothingQuality = 'high';
+      output.drawImage(surface, 0, 0, target, target);
       canvas.dataset.angle = angle.toFixed(4);
       canvas.dataset.metal = this.metal;
       canvas.dataset.motion = this.reducedMotion.matches ? 'reduced' : this.loading ? 'spinning' : this.target !== null ? 'finishing' : 'idle';

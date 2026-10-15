@@ -1,6 +1,6 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
-window.addEventListener('mousedown', event => { if (event.isTrusted) ipcRenderer.send('browser:content-focus'); }, true);
+window.addEventListener('mousedown', event => { if (event.isTrusted) ipcRenderer.send('browser:content-focus', Date.now()); }, true);
 // Watch plugin insertion, not ordinary animation/style changes. Settled movies
 // need no recurring JavaScript-to-Flash calls while they render or accept input.
 window.addEventListener('DOMContentLoaded', () => {

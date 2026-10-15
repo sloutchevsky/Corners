@@ -22,7 +22,8 @@ function winAPI() {
     sibling: user32.func('intptr_t __stdcall GetWindow(intptr_t hwnd, uint32_t direction)'),
     owner: user32.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t hwnd, _Out_ uint32_t *pid)'),
     foreground: user32.func('intptr_t __stdcall GetForegroundWindow()'),
-    attachInput: user32.func('int __stdcall AttachThreadInput(uint32_t from, uint32_t to, int attach)'),
+    child: user32.func('int __stdcall IsChild(intptr_t parent, intptr_t child)'),
+    guiInfo: user32.func('int __stdcall GetGUIThreadInfo(uint32_t thread, void *info)'),
     focus: user32.func('intptr_t __stdcall SetFocus(intptr_t hwnd)')
   };
   return windows;
@@ -142,14 +143,24 @@ class NativeFlash {
     if (this.host.getChildWindows().some(popup => !popup.isDestroyed() && popup.isVisible())) return;
     const api = winAPI(), handle = this.host.getNativeWindowHandle();
     const parent = handle.length === 8 ? Number(handle.readBigUInt64LE()) : handle.readUInt32LE();
-    // The legacy child has another Windows input queue. Chromium focus alone
-    // does not restore native mouse capture after switching out of that child.
-    // Join the queues only while assigning focus, and never activate another app.
+    // SetParent already joins these input queues. Explicit attach/detach resets
+    // Windows key/button state and can break a Flash drag or window activation.
     if (api.foreground() !== parent) return;
-    const current = api.owner(parent, [0]), target = api.owner(this.hwnd, [0]);
-    const joined = current !== target && api.attachInput(current, target, 1);
-    try { api.focus(this.hwnd); } finally { if (joined) api.attachInput(current, target, 0); }
+    const input = this.inputState();
+    if (input?.capture || input?.moving) return;
+    api.focus(this.hwnd);
     this.call('focus', { epoch: ++this.focusRevision }).catch(() => {});
+  }
+  contentPointer() {
+    // A real pointer event has already reached Flash. Invalidate any queued
+    // toolbar handoff without changing focus or capture after mouse-down.
+    this.call('focus-host', { epoch: ++this.focusRevision }).catch(() => {});
+  }
+  inputState() {
+    if (!this.hwnd || !winAPI().valid(this.hwnd)) return null;
+    const api = winAPI(), info = Buffer.alloc(72); info.writeUInt32LE(72);
+    if (!api.guiInfo(api.owner(this.hwnd, [0]), info)) return null;
+    return { focus: Number(info.readBigUInt64LE(16)), capture: Number(info.readBigUInt64LE(24)), moving: !!(info.readUInt32LE(4) & 2) };
   }
   focusHost() {
     const revision = ++this.focusRevision;
@@ -158,9 +169,11 @@ class NativeFlash {
       const api = winAPI(), handle = this.host.getNativeWindowHandle();
       const parent = handle.length === 8 ? Number(handle.readBigUInt64LE()) : handle.readUInt32LE();
       if (api.foreground() !== parent) return;
-      const current = api.owner(parent, [0]), target = this.hwnd && api.valid(this.hwnd) ? api.owner(this.hwnd, [0]) : current;
-      const joined = current !== target && api.attachInput(current, target, 1);
-      try { api.focus(parent); this.host.webContents.focus(); } finally { if (joined) api.attachInput(current, target, 0); }
+      const info = Buffer.alloc(72); info.writeUInt32LE(72);
+      const known = api.guiInfo(api.owner(parent, [0]), info), focused = known ? Number(info.readBigUInt64LE(16)) : 0;
+      if (!known || !focused || focused === this.hwnd || this.hwnd && api.child(this.hwnd, focused)) {
+        api.focus(parent); this.host.webContents.focus();
+      } else if (focused === parent) this.host.webContents.focus();
     };
     restore();
     // Wait past an already queued helper focus request, then return Windows
