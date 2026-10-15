@@ -3,13 +3,13 @@
 A minimal dark Windows browser with current Chromium for ordinary pages and
 native Adobe Flash Player 34.0.0.376 from the Clean Flash distribution for Flash content.
 
-**Current version: 1.8.2 · Windows 10/11 · x64 · MIT application source**
+**Current version: 1.8.3 · Windows 10/11 · x64 · MIT application source**
 
-[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.2/Flashborn-Setup-1.8.2-x64.exe)
+[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.3/Flashborn-Setup-1.8.3-x64.exe)
 · [Releases and update notes](https://github.com/sloutchevsky/Flashborn-Browser/releases)
-· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.2/Flashborn-Source-1.8.2-GitHub.zip)
+· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.3/Flashborn-Source-1.8.3-GitHub.zip)
 
-See [the complete version history](CHANGELOG.md) for all 16 releases, from the
+See [the complete version history](CHANGELOG.md) for all 17 releases, from the
 initial Ruffle build to native Adobe playback and the current browser.
 
 ## Preview
@@ -28,24 +28,29 @@ Version 1.8.0 restores automatic playback of the Embody website:
 
 [View all 10 screenshots](previews/screenshots/README.md), including New Tab,
 Flashcognito, search summaries, bookmarks, settings, the Flash Library and About.
+These earlier screenshots include standalone SWF controls removed in 1.8.3.
 
 ## Install
 
-Download and run `Flashborn-Setup-1.8.2-x64.exe` on Windows 10 or 11 x64. When
+Download and run `Flashborn-Setup-1.8.3-x64.exe` on Windows 10 or 11 x64. When
 building locally, the same file is produced in `release/`. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
 
-Version 1.8.2 reduces repeated work during Flash playback and restores interactive
-tabs from their original sources. Restart preserves regular web and local-file
-tabs, their order and the selected tab. Background tabs load when selected; a
-stopped Flash player can be recreated with Reload. Flashcognito tabs are not saved.
-Address and Find fields retain focus while Flash loads. Tab hover bubbles show a
-short title and memory size, and dismiss immediately. Sidebar collapse/restore
-uses the same quick animation as Search summary reveal. Flash mouse capture is
-preserved through fullscreen and resize; light-mode icons use softer shadows
-and antialiasing matched to the display density.
+Version 1.8.3 focuses on Flash embedded in websites and local HTML pages.
+The standalone SWF player, color picker/eyedropper, direct SWF open controls,
+SWF badge and file association have been removed. Existing standalone SWF tabs
+are skipped on restore; their files and old library records are retained on disk.
+Website and HTML library entries, PDFs, images and video remain supported.
+
+The default Flash path no longer polls loading or calls movie APIs automatically.
+Quality overrides use one call per instance without rewriting embed attributes.
+Theme changes do not touch the Flash page. Focus restoration leaves an already
+focused Flash child alone. The legacy renderer uses normal process priority,
+matching the installed Flash Browser; hidden tabs still throttle timers.
+These changes target possible causes of stalls. They do not establish that every
+intermittent Freedom and Partners freeze is resolved.
 
 This build is unsigned; Windows can show an unknown publisher
 or SmartScreen prompt. Uninstall through Windows Settings → Apps.
@@ -58,6 +63,9 @@ configure electron-builder signing and use `npm run dist:signed`; that target
 fails if signing is unavailable instead of silently producing an unsigned build.
 For a PFX certificate, provide its path with `WIN_CSC_LINK` and its password via
 `WIN_CSC_KEY_PASSWORD` in the build environment, outside source control.
+The unused updater elevation helper is excluded. This does not remove SmartScreen
+reputation checks. Signing identifies the publisher; a newly signed release can
+still warn until reputation builds. See [Windows distribution notes](docs/windows-distribution.md).
 See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options).
 
 ## Use
@@ -73,8 +81,8 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   Closing the last private tab clears its temporary site data and download list.
   Bookmarks and downloaded files you explicitly keep remain on disk. Websites
   and your network can still see your activity.
-- Open local files with **Ctrl+O**, **Open a SWF**, or the three-dot menu.
-- Drop Flash, HTML, PDF, image or video files onto the browser to open them in new tabs.
+- Open local HTML, PDF, image and video files with **Ctrl+O** or the three-dot menu.
+- Drop HTML, PDF, image or video files onto the browser to open them in new tabs.
   Local HTML can load companion files within its folder.
 - PDF links, PDF MIME responses and local PDF files display in Chromium’s PDF viewer.
 - Image formats include PNG, JPEG, GIF, WebP, SVG, AVIF, BMP and ICO. Video formats
@@ -115,7 +123,9 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
 - On New Tab, click the gold bolt tile or its caption to open the Flash library.
 - App and installer icons use the first frame of the same darker gold animation.
   The Windows publisher/company metadata and installer welcome screen name Vas Sloutchevsky.
-- Direct SWF URLs and Flash MIME responses open in the native player.
+- Standalone SWF files, URLs and main-frame Flash MIME responses are rejected.
+  Open the website or HTML wrapper containing the movie instead. Embedded SWF
+  subresources continue to load normally.
 - Pages with embedded Flash, including framesets, are detected and opened in native mode.
 - Click the **lightning button** for pages that hide Flash behind detection scripts,
   or to switch a website between modern and native mode.
@@ -129,45 +139,39 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   Its five groups contain new tabs/files; library, bookmarks, history and downloads;
   Print and Find; zoom/Flash controls; and Settings/About.
 - High/Medium/Low quality is saved and applies to open native movies and future loads.
-- The sidebar provides tabs, bookmarks, history, downloads, settings and a SWF library.
+- The sidebar provides tabs, bookmarks, history, downloads, settings and a Flash page library.
   The simple gold bolt is retained. The Flash library bolt and smaller bookmark
   star spin once on hover; the History arrow and hands complete a counterclockwise
   12-hour cycle; the Downloads arrow hits its tray and bounces back. The gear
   rotates around the same center as its hub and finishes its current turn when
   hover ends. The lights stay fixed, and reduced motion disables spins. Lower
-  sidebar labels match the SWF pill; light-mode icons are darker with less shine.
+  sidebar labels use a muted beige; light-mode icons are darker with less shine.
   Flashcognito uses the normal new-tab layout and fonts, cooler greys, a silver
   bolt, and 50% page opacity. The top-left wordmark and browser menu open About.
-- The dedicated player provides timeline pause/resume, restart, mute and fullscreen.
 - Moving the window preserves the native Flash child surface. Frame styles are
   applied once, and geometry/visibility change only when needed; crossing to a
   monitor with a different display scale recalculates the viewport.
-  Its controls stay visible in fullscreen. Background opens a color wheel with a screen eyedropper, defaulting to white.
-  Screen picking uses independent topmost windows with a magnifier over a captured
-  screen image, so native Flash cannot cover the eyedropper. Click to select a pixel;
-  Escape cancels. Snapshots stay in memory and are discarded when picking ends.
-  Live Flash playback returns on selection or cancellation.
-  Each library movie saves its background. Color changes recreate the Flash instance and
-  restore its timeline position; interactive game/script state is restarted.
-- Flash library offers **Open HTML with SWF** and **Open a SWF**. Both reveal an
-  address line for a web URL or an absolute local file path, plus **Browse**.
-  HTML entries run in native Flash mode with companion assets scoped to their folder.
-  Local HTML opened through the main address bar also detects embedded Flash.
+- Flash library offers **Add a Flash page**. Enter a website URL or an absolute
+  local HTML path, or choose **Browse**. Local HTML companion assets stay scoped
+  to the selected folder. The main address bar also detects embedded Flash.
 - Click **Add image** on a library entry, or drop an image onto its thumbnail,
   to add a landscape **2:1** image. Click it to replace it; use its × to remove it.
   The original image stays untouched; the browser keeps a resized PNG copy in its profile.
 
 The original demo `assets/Flashborn-Demo.swf` displays a moving cream square.
 The library references your files; keep their companion assets in the same folder.
-Pause controls the movie timeline; games may continue running script or timers.
 Missing game servers, external assets and site dependencies can still prevent playback.
 
 ## Compatibility and security
 
-The bundled DLL was copied without modification from an installed Flash Browser 0.8.1. Its Adobe
-signature is valid and its SHA-256 is:
+The bundled Clean Flash 34.0.0.376 DLL has SHA-256:
 
-`4acafedca8bb62529527029aeb485318866e4fd71bf298e73f735bc75f6d720d`
+`cb91e4589f0a854dd0f23a21d6feee623a857a1dee112b8cb5e5a7c9be0af6f2`
+
+Upstream compatibility patches invalidate its original Adobe signature.
+Flashborn copies that pinned distribution unchanged; a matching checksum verifies
+provenance, not malware safety or a valid Adobe signature. The app, installer and
+legacy host are unsigned. See [third-party notices](THIRD-PARTY-NOTICES.md).
 
 Adobe Flash support was removed from Electron 12. Flashborn therefore embeds a
 separate Electron 9.4.4 / Chromium 83 process for each native Flash tab, while
@@ -181,9 +185,9 @@ in the address bar return to modern Chromium; links within a native page remain
 in native mode.
 
 Both engines use isolated renderers without Node.js access. Certificate checks,
-same-origin protections and website CSP stay enabled. The local player can serve
-companion assets only inside its selected folder. Its JavaScript bridge exposes
-only audio muting, fullscreen, and the background color control. Each native tab has separate cookies/storage; these are not
+same-origin protections and website CSP stay enabled. Local HTML can serve
+companion assets only inside its selected folder. Websites have no application
+JavaScript bridge. Each native tab has separate cookies/storage; these are not
 shared with modern pages or other native tabs, and are discarded when that native
 tab closes. The modern engine prompts for
 site permissions; native pages are allowed fullscreen only.
@@ -211,7 +215,7 @@ when the original font is installed.
 | Ctrl+1…9 | Select tab |
 | Alt+Left / Alt+Right | Back / forward |
 | Ctrl+R / F5 | Reload |
-| Ctrl+O | Open Flash, HTML, PDF, image or video |
+| Ctrl+O | Open HTML, PDF, image or video |
 | Ctrl+D | Bookmark |
 | Ctrl+F | Find in page |
 | Ctrl+H / Ctrl+J | History / downloads |
@@ -242,7 +246,7 @@ npm run test:polish
 npm run test:privacy
 npm run test:ui-update
 npm run test:predictions
-npm run test:eyedropper
+npm run test:website
 npm run test:sidebar
 npm run test:window
 npm run test:playback
@@ -250,9 +254,10 @@ npm run test:toolbar
 npm run test:input-stability
 npm run test:summaries
 npm run dist
+npm run test:package
 ```
 
-The build produces `release/Flashborn-Setup-1.8.2-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.8.3-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -261,7 +266,7 @@ Third-party binaries retain their respective licenses; the Adobe binary is not M
 | Component | Technology |
 | --- | --- |
 | Application, browser integration, tests and build scripts | JavaScript / Node.js |
-| Interface and player pages | HTML and CSS |
+| Browser interface | HTML and CSS |
 | Gold and silver animations | JavaScript Canvas rendering, SVG assets |
 | Logo outline generation | PowerShell and Windows font APIs |
 | Windows installer customization | NSIS |
@@ -277,7 +282,7 @@ production app uses the simple lightning bolt, not the experimental serif shape.
 
 [CHANGELOG.md](CHANGELOG.md) lists the user-visible updates and relevant validation
 for every archived release. [docs/version-manifest.json](docs/version-manifest.json)
-records the original source archive and installer sizes and SHA-256 checksums.
+records the historical source archive and installer sizes and SHA-256 checksums.
 The imported historical Git commits and tags are reconstructed from those source
 archives; their commit dates record the import, not the original development dates.
 
@@ -290,10 +295,10 @@ Unit tests cover URL parsing, forbidden schemes, path containment, SWF headers
 and profile persistence, reordering, supported file formats and autocomplete. Runtime tests launch the actual application with a
 disposable profile and fixture server. They cover Enter/Go, navigation, tabs,
 bookmarks, history, find, downloads, genuine Adobe version detection and frame
-execution, player controls, remote and MIME SWFs, embedded objects, native mode,
+execution, rejection of direct/MIME SWFs, embedded objects, native mode,
 menus and renderer isolation. It also verifies actual on-screen Flash pixels,
 visibility after tab switching, framesets, and classic plugin detection scripts.
-The file/UI checks cover real HTML, image, video, PDF and SWF drops, relative assets,
+The file/UI checks cover real HTML, image, video and PDF drops, plus SWF drop rejection, relative assets,
 URL suggestions, keyboard selection and the copyright link. Results and screenshots
 are in `test-output`.
 
@@ -301,10 +306,10 @@ The prediction checks verify real DuckDuckGo, Google and Bing responses in both
 search fields, selected-result navigation, offline fallback, cancellation of
 outdated responses, exclusion of URLs and file paths, and private cache isolation.
 
-The eyedropper check selects actual screen pixels over Adobe Flash, verifies the
-Windows click target belongs to the topmost overlay, and checks collapsed and
-fullscreen layouts, Escape and dialog-close cleanup, restored playback, and the
-About email's copy bubble.
+The website-only checks verify migration from profiles containing standalone
+SWF tabs and library records, selection preservation, removed routes/commands,
+chooser filters, and absence of direct-open controls. They also check that theme,
+visibility and repeated focus restoration do not make automatic Flash calls.
 
 The playback checks use an original AVM1 movie with a frame clock and mouse/drag
 callbacks. They cover settled playback without recurring settings calls, older
@@ -330,15 +335,13 @@ was also verified in 1.7.3; Google presented a verification page during the live
 check, so its results adapter is verified with fixtures.
 
 The polish checks verify the exact first-frame title bolt, the smaller About branding, 40px text offset, theme-independent grey metadata,
-real Adobe Low/Medium/High quality, topmost eyedropper opening and cancellation,
-selected-color application, and quality/background persistence after restart.
+real Adobe Low/Medium/High quality and quality persistence after restart.
 
 The privacy checks exercise the tab context menu and duplication, private cookie
 and local-storage isolation, download records, real Adobe execution in private
 tabs, temporary-profile deletion, clean sessions after the last private tab closes,
 and ordinary-only restoration after restart. They also verify the gold hover
-icons, reduced motion, real Flash pixels in the eyedropper snapshot, native-window
-visibility during picking, and the Flash control spacing and swatch alignment.
+icons, reduced motion, and private HTML Flash duplication.
 
 Version 1.1.1 fixes native windows that were rendering while Electron considered
 them hidden. Visibility is now synchronized with the legacy BrowserWindow itself.

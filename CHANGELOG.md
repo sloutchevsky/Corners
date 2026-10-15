@@ -1,6 +1,6 @@
 # Flashborn Browser version history
 
-This history covers releases from 1.0.0 to 1.8.2. Historical updates through 1.7.3 are assigned
+This history covers releases from 1.0.0 to 1.8.3. Historical updates through 1.7.3 are assigned
 to versions by comparing the archived source ZIPs, their READMEs and the recorded
 development requests. Dates are the retained installer build dates in New York
 time. Historical Git commits are imports of these snapshots, not a recovered
@@ -13,6 +13,7 @@ deferred; the production application still uses the simple lightning bolt.
 
 | Version | Build date | Main changes |
 | --- | --- | --- |
+| [1.8.3](#183-2026-10-15) | 2026-10-15 | Website-only Flash, removal of the standalone SWF player, fewer plugin/focus interventions and installer trust audit |
 | [1.8.2](#182-2026-10-15) | 2026-10-15 | Stable Flash mouse capture through fullscreen and resize, smoother light-mode icons |
 | [1.8.1](#181-2026-10-14) | 2026-10-14 | Smoother Flash, reliable address editing and restored tabs, compact hover bubbles and sidebar animation |
 | [1.8.0](#180-2026-10-14) | 2026-10-14 | Animated search summaries, About corrections, updated native Flash and Embody compatibility |
@@ -29,6 +30,20 @@ deferred; the production application still uses the simple lightning bolt.
 | [1.1.1](#111--2026-10-09) | 2026-10-09 | Blank Flash surface and legacy detection fixes |
 | [1.1.0](#110--2026-10-09) | 2026-10-09 | Original Adobe Flash and separate legacy runtime |
 | [1.0.0](#100--2026-10-08) | 2026-10-08 | Initial Windows browser with Ruffle |
+
+## 1.8.3 (2026-10-15)
+
+- Remove the standalone SWF player page, its timeline controls, background color wheel, screen picker, capture overlays and player-specific IPC/protocol routes.
+- Remove direct SWF opening from New Tab, the Flash library, file chooser, drag and drop, command-line arguments, and the Windows file association. Remove the SWF sidebar pill and standalone tab icon.
+- Keep native Flash embedded in websites and local HTML. The library's single Add a Flash page action accepts website URLs and local HTML paths; thumbnails and reordering remain.
+- Skip obsolete standalone SWF tabs on restart while retaining the selected surviving tab. Hide old standalone library entries without deleting their records, thumbnails or source files.
+- Reject direct SWF URLs and top-level Flash MIME responses, including in the legacy engine, while preserving embedded SWF asset requests.
+- Remove plugin loading polls and automatic quality overrides at the default setting. Stop rewriting embed/param attributes and stop calling into Flash on visibility or theme changes. Explicit non-default quality overrides run once per movie instance.
+- Make focus restoration idempotent when a descendant of the native Flash window already owns focus. Keep the legacy renderer at normal process priority, matching the installed Flash Browser, while preserving hidden-tab timer throttling.
+- Update tab accessibility descriptions when memory measurements finish, even after rollout, without reopening a dismissed bubble.
+- Remove the unused electron-updater elevation helper from the installer payload. Keep legitimate installer elevation available for existing all-user installations.
+- Audit Windows signatures: the app, installer and legacy host are unsigned; the community-patched Flash DLL does not retain a valid Adobe signature. Correct stale README signature claims and document the signing/reputation requirements. No Windows protection settings are changed.
+- Adapt browser, playback, toolbar, local-file, quality, private browsing and library checks to HTML-embedded Flash. Add upgrade and website-only regression checks. Intermittent Freedom freezes still require real-world confirmation; this release makes no claim that SmartScreen warnings are eliminated.
 
 ## 1.8.2 (2026-10-15)
 

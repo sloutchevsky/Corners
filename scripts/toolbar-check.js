@@ -21,9 +21,9 @@ async function poll(fn, check, timeout = 25000) {
     const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
     const state = () => app.evaluate(() => global.__flashborn.getState());
     const native = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.activeTab().native.call(data.action, data.args), { action, args });
-    const ready = () => poll(() => app.evaluate(() => global.__flashborn.activeTab().native.evaluate('document.body.dataset.ready')), v => v === 'true');
+    const ready = () => poll(() => app.evaluate(() => global.__flashborn.activeTab().native.evaluate('document.getElementById("flash-movie")?.GetVariable("$version")')), v => v === 'WIN 34,0,0,376');
     await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 80, y: 80, width: 1280, height: 820 }); w.show(); w.focus(); });
-    await app.evaluate(({}, file) => global.__flashborn.openLocal(file), path.join(root, 'assets', 'Flashborn-Demo.swf'));
+    await app.evaluate(({}, file) => global.__flashborn.command('add-library-source', {kind:'html',value:file}), require('./html-fixture')(path.join(output, 'toolbar-check-html')));
     await ready(); const flashId = (await state()).activeId;
     for (let i = 0; i < 4; i++) {
       await command('select-tab', { id: flashId });

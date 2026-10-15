@@ -27,7 +27,6 @@ async function run() {
     fs.mkdirSync(assets, { recursive: true }); fs.writeFileSync(path.join(assets, 'icon.png'), frames.at(-1));
     fs.writeFileSync(path.join(assets, 'icon.ico'), Buffer.concat([header, ...frames]));
     fs.writeFileSync(path.join(root, 'src', 'ui', 'brand', 'bolt.png'), frames.at(-1));
-    fs.writeFileSync(path.join(root, 'src', 'legacy', 'bolt.png'), frames.at(-1));
     console.log('First-frame gold bolt PNG and seven Windows ICO sizes created from the shared animation renderer.');
   } finally { await app.close(); }
 }

@@ -198,6 +198,3 @@ body[data-theme="light"] .flashcognito-home .flash-card-icon { background:#d4d9e
 body[data-theme="light"] .flashcognito-home .subtle-button { color:#5d6b81; }
 body[data-theme="light"] .flashcognito-home .subtle-button:hover { background:#d4d9e3; }
 body[data-theme="light"] .flashcognito-home .home-footnote { color:#717d90; }
-.color-pick-preview { position:fixed; left:248px; top:100px; width:calc(100vw - 248px); height:calc(100vh - 124px); object-fit:fill; pointer-events:none; z-index:8; }
-body.collapsed .color-pick-preview { left:68px; width:calc(100vw - 68px); }
-body.fullscreen .color-pick-preview { left:0; top:0; width:100vw; height:100vh; }

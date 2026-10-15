@@ -2,8 +2,10 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const { supportedLocalFile, contentType, urlSuggestions } = require('../src/files');
 test('local browser formats have useful MIME types and reject executable files', () => {
-  for (const file of ['movie.swf','page.HTML','paper.pdf','photo.JPEG','icon.svg','movie.mp4','movie.webm']) assert.equal(supportedLocalFile(file), true);
+  for (const file of ['page.HTML','paper.pdf','photo.JPEG','icon.svg','movie.mp4','movie.webm']) assert.equal(supportedLocalFile(file), true);
   assert.equal(supportedLocalFile('application.exe'), false);
+  assert.equal(supportedLocalFile('movie.swf'), false);
+  assert.equal(contentType('movie.swf'), 'application/x-shockwave-flash'); // Embedded HTML assets still work.
   assert.equal(contentType('movie.webm'), 'video/webm'); assert.equal(contentType('paper.pdf'), 'application/pdf');
 });
 test('URL autocomplete prioritizes prefixes, deduplicates and excludes unsafe schemes', () => {

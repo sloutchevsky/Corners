@@ -47,9 +47,10 @@ async function run() {
     pass('URL autocomplete preserves HTTP addresses and supports inline completion, arrows, Enter, Escape and clicking suggestions');
     const video=await script(`new Promise(resolve=>{const c=document.createElement('canvas');c.width=320;c.height=180;const g=c.getContext('2d');let n=0;const draw=setInterval(()=>{g.fillStyle=n++%2?'#1e6ed2':'#d26e1e';g.fillRect(0,0,320,180)},50);const chunks=[],rec=new MediaRecorder(c.captureStream(10),{mimeType:'video/webm;codecs=vp8'});rec.ondataavailable=e=>chunks.push(e.data);rec.onstop=()=>{clearInterval(draw);const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(new Blob(chunks,{type:'video/webm'}));c.remove();};rec.start();setTimeout(()=>rec.stop(),650);})`);
     fs.writeFileSync(path.join(fixture,'Dropped.webm'),Buffer.from(video,'base64'));
-    const drop=async(file,content=false)=>{
+    const drop=async(file,content=false,reject=false)=>{
       const count=(await state()).tabs.length;
       await app.evaluate(async({},args)=>{const b=global.__flashborn,wc=args.content?b.activeTab().view.webContents:b.win.webContents;if(!wc.debugger.isAttached())wc.debugger.attach('1.3');for(const type of ['dragEnter','dragOver','drop'])await wc.debugger.sendCommand('Input.dispatchDragEvent',{type,x:args.content?100:180,y:180,data:{items:[],files:[args.file],dragOperationsMask:1}});},{file,content});
+      if (reject) return;
       await poll(state,s=>{const t=s.tabs.find(t=>t.id===s.activeId);return s.tabs.length===count+1&&t&&t.kind!=='home'&&!t.loading;},60000);
       await poll(()=>app.evaluate(()=>{
         const t=global.__flashborn.activeTab(),wc=t?.view?.webContents;
@@ -80,19 +81,24 @@ async function run() {
       let blue=0;for(let i=0;i<bitmap.length;i+=4)if(bitmap[i]>150&&bitmap[i+1]>70&&bitmap[i+1]<150&&bitmap[i+2]<60)blue++;return blue;
     }),n=>n>2000);
     pass('Dropping a PDF displays the rendered document');
-    await drop(path.join(fixture,'Dropped.swf'));
+    const beforeDrop = (await state()).tabs.length;
+    await drop(path.join(fixture,'Dropped.swf'),false,true);
+    await poll(() => ui.locator('#toast').innerText(), value => value.includes('Standalone SWF playback has been removed'));
+    assert.equal((await state()).tabs.length, beforeDrop);
+    const flashHTML = require('./html-fixture')(path.join(fixture,'Flash-page'));
+    await command('add-library-source', {kind:'html',value:flashHTML});
     await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 34,0,0,376');
-    pass('Dropping a Flash file uses the real Adobe player and adds it to the library');
+    pass('Raw SWF drops are rejected; a local HTML page can still load its embedded Adobe Flash movie');
     await command('panel',{name:'library'});
-    await ui.locator('[data-open-library="swf"]').click();
-    await ui.locator('#library-open-address').fill('Dropped');
+    await ui.locator('[data-open-library="html"]').click();
+    await ui.locator('#library-open-address').fill('movie');
     await poll(state,s=>s.suggestions?.field==='library-open-address'&&s.suggestions.items[0]?.type==='file');
     await poll(()=>ui.locator('#library-open-address').getAttribute('aria-expanded'),value=>value==='true');
     await ui.locator('#library-open-address').press('ArrowDown');
-    await poll(()=>ui.locator('#library-open-address').inputValue(),value=>value===path.join(fixture,'Dropped.swf'));
+    await poll(()=>ui.locator('#library-open-address').inputValue(),value=>value===flashHTML);
     await ui.locator('#library-open-address').press('Enter');
     await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 34,0,0,376');
-    pass('Flash library address predictions complete saved local sources and open them with the Adobe player');
+    pass('Flash library predictions complete saved HTML sources and open them with Adobe playback');
     await ui.locator('.sidebar-wordmark').click();
     await ui.locator('.about-copyright').click();
     await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.url==='https://www.sloutchevsky.com/');

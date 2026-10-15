@@ -15,7 +15,7 @@ async function run() {
   const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
   const state = () => app.evaluate(() => global.__flashborn.getState());
   const script = code => app.evaluate(({}, code) => global.__flashborn.activeTab().native.evaluate(code), code);
-  const ready = () => poll(() => script('document.body.dataset.ready'), value => value === 'true', 60000);
+  const ready = () => poll(() => script('document.getElementById("flash-movie")?.GetVariable("$version")'), value => value === 'WIN 34,0,0,376', 60000);
   const quality = () => script('document.getElementById("flash-movie").TGetProperty("/",19)');
   try {
     let ui = await launch();
@@ -31,7 +31,6 @@ async function run() {
     assert.deepEqual(Buffer.from(appIcon, 'base64'), fs.readFileSync(path.join(root, 'assets', 'icon.png')));
     const ico = fs.readFileSync(path.join(root, 'assets', 'icon.ico'));
     assert.deepEqual(fs.readFileSync(path.join(root, 'src', 'ui', 'brand', 'bolt.png')), fs.readFileSync(path.join(root, 'assets', 'icon.png')));
-    assert.deepEqual(fs.readFileSync(path.join(root, 'src', 'legacy', 'bolt.png')), fs.readFileSync(path.join(root, 'assets', 'icon.png')));
     assert.equal(ico.readUInt16LE(4), 7);
     const sizes = [];
     for (let n = 0; n < ico.readUInt16LE(4); n++) {
@@ -88,8 +87,7 @@ async function run() {
     await poll(state, s => !s.tabs.find(t => t.id === s.activeId).loading);
     pass('Title bolt stays on frame one while the toolbar bolt spins during actual page loading');
 
-    await app.evaluate(({}, file) => global.__flashborn.openLocal(file), path.join(root, 'assets', 'Flashborn-Demo.swf')); await ready();
-    assert.equal(await script('document.querySelector("img.bolt").complete && document.querySelector("img.bolt").naturalWidth'), 256);
+    await command('add-library-source',{kind:'html',value:require('./html-fixture')(path.join(profile,'flash-page'))}); await ready();
     await ui.locator('#menu-button').click();
     const menu = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/menu.html'), Boolean);
     assert.deepEqual(await menu.locator('[data-quality]').evaluateAll(buttons => buttons.map(b => b.textContent)), ['Low', 'Medium', 'High']);
@@ -101,44 +99,12 @@ async function run() {
     fs.writeFileSync(path.join(output, 'medium-quality-1.5.1.png'), await menu.screenshot()); await command('menu-close');
     pass('Low, Medium and High buttons change genuine Adobe rendering quality, with the selected state shown in the menu');
 
-    await script('document.getElementById("background").click()');
-    const color = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/color.html'), Boolean);
-    await app.evaluate(() => { const w = global.__flashborn.win; w.setAlwaysOnTop(true, 'pop-up-menu'); w.moveTop(); });
-    const originalColor = (await state()).flashBackground;
-    await color.locator('#color-pick').click();
-    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.length > 0 && global.__flashborn.screenColorPicker.entries.every(e => e.window.isVisible())), Boolean);
-    await app.evaluate(() => global.__flashborn.screenColorPicker.cancel());
-    await poll(state, s => !s.colorPicking);
-    await poll(() => color.locator('#color-status').innerText(), value => value === 'Color picking canceled.');
-    assert.equal((await state()).flashBackground, originalColor); assert.ok(await color.locator('#color-pick').isEnabled());
-    pass('Topmost screen eyedropper opens from a trusted click and cancels without closing the dialog or changing the background');
-
-    await color.locator('#color-pick').click(); await poll(state, s => s.colorPicking);
-    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.length > 0 && global.__flashborn.screenColorPicker.entries.every(e => e.window.isVisible())), Boolean);
-    await app.evaluate(() => global.__flashborn.colorWindow.emit('blur'));
-    assert.ok(await app.evaluate(() => !!global.__flashborn.colorWindow && !global.__flashborn.colorWindow.isDestroyed()));
-    const point = await app.evaluate(() => {
-      const host = global.__flashborn.win.getContentBounds(), picker = global.__flashborn.screenColorPicker;
-      const entry = picker.entries.find(e => host.x >= e.bounds.x && host.x < e.bounds.x + e.bounds.width);
-      const point = { x: host.x + 400 - entry.bounds.x, y: host.y + 260 - entry.bounds.y };
-      return { ...point, color: picker.sample(entry, point.x, point.y) };
-    });
-    const picker = await poll(() => app.windows().find(page => !page.isClosed() && page.url() === 'flashborn://ui/screen-color.html'), Boolean);
-    await picker.mouse.click(point.x, point.y); await poll(state, s => !s.colorPicking && s.flashBackground === point.color); await ready();
-    assert.equal(await color.locator('#color-hex').inputValue(), point.color);
-    await color.locator('#color-hex').fill('#336699'); await color.locator('#color-hex').press('Tab');
-    await poll(state, s => s.flashBackground === '#336699'); await ready();
-    assert.equal(await script('document.getElementById("flash-movie").getAttribute("bgcolor")'), '#336699');
-    assert.equal(await color.locator('#color-hex').inputValue(), '#336699'); assert.ok(await color.locator('#color-pick').isEnabled());
-    assert.ok(await color.locator('.color-value').evaluate(el => Array.from(el.children).every(child => { const r = child.getBoundingClientRect(); return r.right <= innerWidth - 10 && r.bottom <= innerHeight; })));
-    fs.writeFileSync(path.join(output, 'eyedropper-1.5.1.png'), await color.screenshot()); await command('color-close');
-    pass('Eyedropper selection reaches the real Flash background and hex field; focus changes during picking keep the dialog open');
-
     await app.close(); app = null; ui = await launch(); assert.equal((await state()).settings.flashQuality, 'medium');
     await command('panel', { name: 'library' });
-    const entry = (await state()).library.find(e => e.background === '#336699'); assert.ok(entry); await command('play-library', { id: entry.id }); await ready();
-    await poll(quality, actual => actual === 'MEDIUM'); assert.equal(await script('document.getElementById("flash-movie").getAttribute("bgcolor")'), '#336699');
-    pass('Medium quality and picked background persist across restart and initialize a fresh Adobe Flash process');
+    const entry = (await state()).library.find(e => e.kind === 'html'); assert.ok(entry);
+    await command('play-library', { id: entry.id }); await ready();
+    await poll(quality, actual => actual === 'MEDIUM');
+    pass('Explicit Medium quality persists across restart and initializes an embedded HTML movie');
     fs.writeFileSync(path.join(output, process.env.FLASHBORN_EXE ? 'packaged-polish-results.json' : 'polish-results.json'), JSON.stringify({ count: results.length, passed: results }, null, 2));
   } finally { if (app) await app.close(); await new Promise(resolve => server.close(resolve)); }
 }

@@ -14,7 +14,7 @@ async function run() {
   const profile = path.join(output, 'privacy-profile-' + Date.now());
   fs.mkdirSync(profile, { recursive: true });
   fs.writeFileSync(path.join(profile, 'browser.json'), JSON.stringify({ settings: { restoreTabs: true } }));
-  const fixture = path.join(output, 'private-local-' + Date.now() + '.swf'); fs.writeFileSync(fixture, demo);
+  const fixture = require('./html-fixture')(path.join(profile, 'private-html'));
   const secret = 'flashcognito-secret-' + Date.now();
   const server = http.createServer((req, res) => {
     if (req.url === '/movie.swf') { res.writeHead(200, { 'Content-Type': 'application/x-shockwave-flash' }); return res.end(demo); }
@@ -38,7 +38,7 @@ async function run() {
   const state = () => app.evaluate(() => global.__flashborn.getState());
     const script = code => app.evaluate(({}, code) => { const t = global.__flashborn.activeTab(); return t.native ? t.native.evaluate(code) : t.view.webContents.executeJavaScript(code, true); }, code);
   const ready = () => poll(state, s => { const t = s.tabs.find(t => t.id === s.activeId); return !t.loading && !t.error; });
-  const swfReady = () => poll(() => script('document.body.dataset.ready'), value => value === 'true', 60000);
+  const swfReady = () => poll(() => script('document.getElementById("flash-movie")?.GetVariable("$version")'), value => value === 'WIN 34,0,0,376', 60000);
   const persisted = () => JSON.parse(fs.readFileSync(path.join(profile, 'browser.json'), 'utf8'));
   const saveUI = async filename => {
     const bytes = await app.evaluate(async () => (await global.__flashborn.win.webContents.capturePage()).toPNG().toString('base64'));
@@ -71,14 +71,18 @@ async function run() {
     await command('zoom', { direction: 1 });
     await ui.locator(`[data-tab="${originalId}"]`).click({ button: 'right' });
     assert.deepEqual(await app.evaluate(() => global.__flashborn.tabMenu.items.map(item => item.label)), ['Duplicate Tab', 'Close Tab']);
-    await app.evaluate(() => { const menu = global.__flashborn.tabMenu; menu.closePopup(); menu.items[0].click(); });
+    await app.evaluate(() => { const b = global.__flashborn; global.__tabAction = b.tabMenu.items[0].click; b.tabMenu.closePopup(b.win); });
+    await poll(() => app.evaluate(() => !!global.__flashborn.tabMenu), open => !open);
+    await app.evaluate(() => { global.__tabAction(); delete global.__tabAction; });
     await poll(state, s => s.tabs.length === 2 && s.activeId !== originalId); await ready();
     const copyId = (await state()).activeId;
     assert.equal((await state()).tabs[1].url, base + '/ordinary');
     await poll(state, s => s.tabs.find(t => t.id === copyId).zoom === 110);
     assert.equal(await script('localStorage.getItem("mode")'), 'ordinary');
     await ui.locator(`[data-tab="${copyId}"]`).click({ button: 'right' });
-    await app.evaluate(() => { const menu = global.__flashborn.tabMenu; menu.closePopup(); menu.items[1].click(); });
+    await app.evaluate(() => { const b = global.__flashborn; global.__tabAction = b.tabMenu.items[1].click; b.tabMenu.closePopup(b.win); });
+    await poll(() => app.evaluate(() => !!global.__flashborn.tabMenu), open => !open);
+    await app.evaluate(() => { global.__tabAction(); delete global.__tabAction; });
     assert.equal((await state()).tabs.length, 1);
     pass('Native right-click menu duplicates beside the source, keeps its page/session/zoom, and closes the clicked tab');
     pass('Five gold sidebar icons use stationary lighting; four finish one hover animation, the gear loops, and all honor reduced motion');
@@ -131,45 +135,14 @@ async function run() {
     for (const file of storageFiles) assert.ok(!fs.readFileSync(file).includes(Buffer.from(secret)), file);
     assert.ok(!JSON.stringify(persisted()).includes(secret));
     const libraryBefore = JSON.stringify((await state()).library);
-    await command('add-library-source', { kind: 'swf', value: fixture }); await swfReady();
+    await command('add-library-source', { kind: 'html', value: fixture }); await swfReady();
     const privateMovieId = (await state()).activeId;
     assert.equal(JSON.stringify((await state()).library), libraryBefore);
     await command('duplicate-tab', { id: privateMovieId }); await swfReady();
     const movieCopyState = await state();
     assert.ok(movieCopyState.tabs.find(t => t.id === movieCopyState.activeId).private);
     assert.equal(await script('document.getElementById("flash-movie").GetVariable("$version")'), 'WIN 34,0,0,376');
-    pass('Real Adobe Flash renders in private mode and private SWF duplicates; native site storage and automatic library additions stay out of the saved profile');
-
-    await script('document.getElementById("pause").click()');
-    const controls = await script('(()=>{document.getElementById("pause").focus();const buttons=[...document.querySelectorAll(".controls button")],r=buttons.map(b=>b.getBoundingClientRect()),bg=r[0],s=document.getElementById("background-swatch").getBoundingClientRect();return{outline:getComputedStyle(document.getElementById("pause")).outlineStyle,gaps:r.slice(1).map((v,i)=>v.x-r[i].right),swatchOffset:(s.y+s.height/2)-(bg.y+bg.height/2),labelGap:getComputedStyle(buttons[0]).gap}})()');
-    assert.equal(controls.outline, 'none'); assert.ok(controls.gaps.every(gap => Math.abs(gap - 14) < .1));
-    assert.ok(Math.abs(controls.swatchOffset) < .1); assert.equal(controls.labelGap, '12px');
-    await script('document.getElementById("background").click()');
-    const color = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/color.html'), Boolean);
-    await app.evaluate(() => { const w = global.__flashborn.win; w.setAlwaysOnTop(true, 'pop-up-menu'); w.moveTop(); });
-    await color.locator('#color-pick').click();
-    try { await poll(state, s => s.colorPicking && !!s.colorPreview); }
-    catch (error) { console.error('PICKER DIAGNOSTIC', await color.locator('#color-status').textContent(), await app.evaluate(() => ({ color: !!global.__flashborn.colorWindow, entries: global.__flashborn.screenColorPicker?.entries.length, native: global.__flashborn.activeTab().native.inspect() }))); throw error; }
-    await poll(() => app.evaluate(() => global.__flashborn.screenColorPicker?.entries.every(e => e.window.isVisible())), Boolean);
-    await poll(() => app.evaluate(() => global.__flashborn.activeTab().native.inspect().visible), value => value === 0);
-    await ui.locator('#color-pick-preview').evaluate(el => el.decode());
-    await saveUI('eyedropper-flash-snapshot.png');
-    const preview = await app.evaluate(async ({ nativeImage }) => { const image = nativeImage.createFromBuffer(Buffer.from(global.__flashborn.getState().colorPreview.split(',')[1], 'base64')), pixels = image.toBitmap(); let cream = 0; for (let i=0;i<pixels.length;i+=4) if (pixels[i+2]>200 && pixels[i+1]>160 && pixels[i+1]<235 && pixels[i]>100 && pixels[i]<220) cream++; return { cream, width:image.getSize().width }; });
-    assert.ok(preview.cream > 500, JSON.stringify(preview));
-    const picked = await app.evaluate(() => {
-      const host = global.__flashborn.win.getContentBounds(), picker = global.__flashborn.screenColorPicker;
-      const entry = picker.entries.find(e => host.x >= e.bounds.x && host.x < e.bounds.x + e.bounds.width);
-      const point = { x: host.x + 400 - entry.bounds.x, y: host.y + 260 - entry.bounds.y };
-      return { ...point, color: picker.sample(entry, point.x, point.y) };
-    });
-    const screenPicker = await poll(() => app.windows().find(page => !page.isClosed() && page.url() === 'flashborn://ui/screen-color.html'), Boolean);
-    await screenPicker.mouse.click(picked.x, picked.y);
-    await poll(state, s => !s.colorPicking && !s.colorPreview && s.flashBackground === picked.color);
-    await poll(() => app.evaluate(() => global.__flashborn.activeTab().native.inspect().visible), Boolean); await swfReady();
-    await color.locator('#color-pick').click(); await poll(state, s => s.colorPicking);
-    await command('color-close'); await poll(state, s => !s.colorPicking && !s.colorPreview);
-    await poll(() => app.evaluate(() => global.__flashborn.activeTab().native.inspect().visible), Boolean);
-    pass('Independent screen eyedropper selects a real pixel in private Flash and restores playback on selection/dialog close; Flash controls have even gaps, centered swatch and no selection outline');
+    pass('Real Adobe Flash renders in private mode and private HTML duplicates; native site storage and automatic library additions stay out of the saved profile');
 
     const ids = (await state()).tabs.filter(t => t.private).map(t => t.id);
     for (const id of ids) await command('close-tab', { id });

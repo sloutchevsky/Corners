@@ -253,24 +253,16 @@ async function run() {
     await command('navigate', { value: 'javascript:alert(1)' }).then(() => assert.fail('Scheme should be rejected'), () => {});
     results.push('Executable navigation schemes are rejected');
 
-    await app.evaluate(async ({ }, filename) => global.__flashborn.openLocal(filename), path.join(root, 'assets', 'Flashborn-Demo.swf'));
-    await poll(() => pageScript('({ready:document.body.dataset.ready,error:document.querySelector(".error")?.textContent})'), s => { if (s.error) throw new Error(s.error); return s.ready === 'true'; }, 60000);
-    assert.equal(await pageScript('document.body.dataset.flashVersion'),'WIN 34,0,0,376');
+    const firstHTML = require('./html-fixture')(path.join(output,'smoke-html-first'));
+    await command('add-library-source', {kind:'html',value:firstHTML});
+    await poll(() => pageScript('document.getElementById("flash-movie")?.GetVariable("$version")'), value => value === 'WIN 34,0,0,376');
     assert.equal(await pageScript('typeof require'),'undefined');
     assert.equal(await pageScript('typeof process'),'undefined');
     const initialFrame=await pageScript('document.getElementById("flash-movie").CurrentFrame()');
     await poll(()=>pageScript('document.getElementById("flash-movie").CurrentFrame()'),n=>n!==initialFrame);
-    await pageScript('document.getElementById("pause").click()');
-    assert.equal(await pageScript('document.getElementById("pause").textContent'), 'Resume');
-    assert.equal(await pageScript('document.getElementById("flash-movie").IsPlaying()'), false);
-    await pageScript('document.getElementById("mute").click()');
-    assert.equal(await pageScript('document.getElementById("mute").textContent'), 'Unmute');
-    await pageScript('document.getElementById("restart").click()');
-    await poll(() => pageScript('document.getElementById("player-status").textContent'), s => s === 'Restarted');
-    const mutedState=await state(); assert.equal(mutedState.tabs.find(t=>t.id===mutedState.activeId)?.muted,true);
-    await saveView('flash-player.png');
+    await command('mute'); const muted = await state(); assert.equal(muted.tabs.find(t=>t.id===muted.activeId).muted,true);
     assert.equal((await state()).library.length, 1);
-    results.push('Genuine Adobe WIN 34,0,0,376 executes SWF frames; pause, mute, restart and library work');
+    results.push('Local HTML embeds execute genuine Adobe frames without exposing Node; library records HTML pages');
 
     const flashId=(await state()).activeId;
     await wheel();
@@ -278,14 +270,14 @@ async function run() {
     assert.ok(await app.evaluate(()=>global.__flashborn.zoomWindow.isAlwaysOnTop()));
     await command('zoom',{direction:0});
     results.push('Ctrl+wheel also zooms genuine Flash content and its zoom popup stays above the native player');
-    const secondMovie=path.join(output,'Flashborn-Second.swf');fs.writeFileSync(secondMovie,demo);
-    await app.evaluate(async({},filename)=>global.__flashborn.openLocal(filename),secondMovie);
-    await poll(()=>pageScript('document.body.dataset.ready'),value=>value==='true',60000);
+    const secondMovie=require('./html-fixture')(path.join(output,'smoke-html-second'));
+    await app.evaluate(async({},filename)=>global.__flashborn.command("add-library-source",{kind:"html",value:filename}),secondMovie);
+    await poll(()=>pageScript('document.getElementById("flash-movie")?.GetVariable("$version")'),value=>value==='WIN 34,0,0,376',60000);
     const secondFlashId=(await state()).activeId;
     await command('panel',{name:'library'});
     const library=(await state()).library;
     await dragReorder('library',library[1].id,library[0].id);
-    assert.equal((await state()).library[0].path,path.join(root,'assets','Flashborn-Demo.swf'));
+    assert.equal((await state()).library[0].path,firstHTML);
     const persistedLibrary=JSON.parse(fs.readFileSync(path.join(env.FLASHBORN_PROFILE,'browser.json'))).library;
     assert.equal(persistedLibrary[0].id,library[1].id);
     await command('close-tab',{id:secondFlashId});await command('select-tab',{id:flashId});
@@ -332,14 +324,10 @@ async function run() {
     await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.title==='First page'&&!s.tabs.find(t=>t.id===s.activeId)?.native);
     results.push('Address bar Enter works with Flash active and returns ordinary URLs to modern Chromium');
 
-    await command('navigate', { value: base + '/movie.swf' });
-    await poll(() => pageScript('({ready:document.body.dataset.ready,error:document.querySelector(".error")?.textContent})'), s => { if (s.error) throw new Error(s.error); return s.ready === 'true'; }, 60000);
-    results.push('Remote SWF URL plays in the dedicated player');
-
+    await assert.rejects(command('navigate', { value: base + '/movie.swf' }), /Standalone SWF playback has been removed/);
     await command('navigate', { value: base + '/mime-flash' });
-    await poll(state, s => s.tabs.find(t => t.id === s.activeId)?.kind === 'flash');
-    await poll(() => pageScript('document.body.dataset.ready'), s => s === 'true', 60000);
-    results.push('Flash MIME responses without .swf extension open in the player');
+    await poll(state, s => s.tabs.find(t => t.id === s.activeId)?.error?.includes('Standalone SWF playback has been removed'));
+    results.push('Direct SWF URLs and main-frame Flash MIME responses cannot launch a standalone player');
 
     await command('navigate', { value: base + '/embed' });
     await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.native);

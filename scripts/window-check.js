@@ -22,10 +22,10 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
     const state = () => app.evaluate(() => global.__flashborn.getState());
     await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 100, y: 80, width: 1100, height: 760 }); w.setAlwaysOnTop(true, 'pop-up-menu'); w.show(); w.focus(); });
-    await app.evaluate(({}, file) => global.__flashborn.openLocal(file), path.join(root, 'assets', 'Flashborn-Demo.swf'));
+    await app.evaluate(({}, file) => global.__flashborn.command('add-library-source', {kind:'html',value:file}), require('./html-fixture')(path.join(output, 'window-check-html')));
     const native = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.activeTab().native.call(data.action, data.args), { action, args });
     const script = code => app.evaluate(({}, code) => global.__flashborn.activeTab().native.evaluate(code), code);
-    await poll(() => script('document.body.dataset.ready'), v => v === 'true');
+    await poll(() => script('document.getElementById("flash-movie")?.GetVariable("$version")'), v => v === 'WIN 34,0,0,376');
     await wait(300); await native('test-paints', { reset: true });
     const before = await app.evaluate(() => global.__flashborn.activeTab().native.inspect());
     const hostBefore = await app.evaluate(({ screen }) => ({ bounds: global.__flashborn.win.getBounds(), content: global.__flashborn.win.getContentBounds(), scale: screen.getDisplayMatching(global.__flashborn.win.getBounds()).scaleFactor }));
@@ -64,7 +64,7 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     const flashId = (await state()).activeId;
     const measuredFlash = (await command('tab-memory', { id: flashId })).tabMemory;
     assert.ok(Number.isInteger(measuredFlash.megabytes) && measuredFlash.megabytes > 0, JSON.stringify(measuredFlash));
-    const flashRow = ui.locator(`[data-reorder-id="${flashId}"]`); await flashRow.hover();
+    const flashRow = ui.locator(`[data-reorder-id="${flashId}"]`); await ui.mouse.move(28,70); await flashRow.hover();
     await poll(() => flashRow.getAttribute('aria-description'), v => /· \d+ MB$/.test(v));
     const sameRow = await flashRow.evaluate(el => { window.__memoryRow = el; return true; }); assert.equal(sameRow, true);
     await command('new-tab'); const homeId = (await state()).activeId;
@@ -79,7 +79,7 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     const grown = await poll(async () => (await command('tab-memory', { id: homeId })).tabMemory, v => v.megabytes >= initial.megabytes + 40);
     await command('select-tab', { id: flashId });
     await wait(2100);
-    const inactiveRow = ui.locator(`[data-reorder-id="${homeId}"]`); await inactiveRow.hover();
+    const inactiveRow = ui.locator(`[data-reorder-id="${homeId}"]`); await ui.mouse.move(28,70); await inactiveRow.hover();
     await poll(() => inactiveRow.getAttribute('aria-description'), v => /· \d+ MB$/.test(v));
     assert.equal((await state()).activeId, flashId, 'Hover must not activate an inactive tab');
     const memoryTitle = await inactiveRow.getAttribute('aria-description');

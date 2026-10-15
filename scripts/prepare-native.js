@@ -32,7 +32,10 @@ async function main() {
     if (digest(bytes) !== player.sha256) throw new Error('Extracted Flash player checksum mismatch.');
     await fs.mkdir(flash, { recursive: true }); await fs.writeFile(bundled, bytes);
   }
-  await fs.cp(path.join(ROOT, 'src', 'legacy'), path.join(runtime, 'resources', 'app'), { recursive: true, force: true });
+  const helper = path.join(runtime, 'resources', 'app');
+  // Explicitly remove obsolete generated assets so upgrades cannot package the old player.
+  for (const name of ['player.html', 'player.js', 'player.css', 'bolt.png']) await fs.rm(path.join(helper, name), { force: true });
+  await fs.cp(path.join(ROOT, 'src', 'legacy'), helper, { recursive: true, force: true });
   if (digest(bytes) !== player.sha256) throw new Error('Bundled player does not match the pinned ' + player.version + ' distribution.');
   try { await fs.access(path.join(runtime, 'FlashRuntime.exe')); } catch {
     await fs.mkdir(runtime, { recursive: true });

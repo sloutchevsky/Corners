@@ -30,7 +30,6 @@ async function run() {
   const key = keyCode => app.evaluate(({}, keyCode) => { const wc = global.__flashborn.activeTab().view.webContents; wc.focus(); wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers: ['control'] }); wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers: ['control'] }); }, keyCode);
   // Windows' display ICC profile changes captured RGB values; classify colors by dominance.
   const pixels = async () => app.evaluate(async () => { const image = await global.__flashborn.activeTab().view.webContents.capturePage(), data = image.toBitmap(); let red = 0; for (let i = 0; i < data.length; i += 4) if (data[i] < 100 && data[i + 1] < 100 && data[i + 2] > 150) red++; return red; });
-  const swfReady = () => poll(() => script('document.body.dataset.ready'), value => value === 'true', 60000);
   const htmlReady = () => poll(() => script('({percent:document.getElementById("embedded")?.PercentLoaded?.(),version:document.getElementById("embedded")?.GetVariable?.("$version"),css:getComputedStyle(document.querySelector("h1")).color})'), value => value.percent === 100 && value.version === 'WIN 34,0,0,376' && value.css === 'rgb(30, 120, 210)', 60000);
   try {
     let ui = await launch();
@@ -59,42 +58,14 @@ async function run() {
     const bookmarkOrder = (await state()).bookmarks.map(b => b.id);
     pass('Bookmarks reorder through dragging and Alt+arrow shortcuts');
 
-    await command('panel', { name: 'library' }); await ui.locator('[data-open-library="swf"]').click();
-    await ui.locator('#library-open-address').fill(path.join(fixture, 'movie.swf')); await ui.locator('#library-open-form button[type="submit"]').click(); await swfReady();
-    const swfId = (await state()).activeId, entryId = (await state()).library[0].id;
-    assert.equal(await script('document.getElementById("flash-movie").getAttribute("bgcolor")'), '#ffffff');
-    assert.equal(await script('getComputedStyle(document.getElementById("stage")).backgroundColor'), 'rgb(255, 255, 255)');
+    await command('add-library-source', {kind:'html',value:path.join(fixture,'Flash.html')}); await htmlReady();
+    const entryId = (await state()).library[0].id;
     for (let n = 0; n < 3; n++) {
-      await script('document.getElementById("fullscreen").click()'); await poll(state, s => s.fullscreen);
-      await poll(() => script('document.getElementById("fullscreen").textContent'), text => text === 'Exit full screen');
-      assert.ok(await script('document.querySelector("header").getBoundingClientRect().height > 50 && !document.fullscreenElement'));
-      await script('document.getElementById("fullscreen").click()'); await poll(state, s => !s.fullscreen);
-      await poll(() => script('document.getElementById("fullscreen").textContent'), text => text === 'Full screen');
-      assert.ok(await script('document.elementFromPoint(20,20).closest("header") !== null'));
+      await command('fullscreen', {value:true}); await poll(state,s=>s.fullscreen);
+      await command('fullscreen', {value:false}); await poll(state,s=>!s.fullscreen);
+      await htmlReady();
     }
-    await script('document.getElementById("stage").requestFullscreen()'); await poll(state, s => s.fullscreen);
-    await command('fullscreen', { value: false });
-    await poll(state, s => !s.fullscreen); await poll(() => script('!!document.fullscreenElement'), value => !value);
-    assert.ok(await script('document.elementFromPoint(20,20).closest("header") !== null'));
-    pass('SWF bar survives repeated fullscreen toggles and exit from HTML fullscreen');
-
-    await script('document.getElementById("pause").click()'); const frame = await script('document.getElementById("flash-movie").CurrentFrame()');
-    await script('document.getElementById("background").click()');
-    const color = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/color.html'), Boolean);
-    assert.ok(await app.evaluate(() => global.__flashborn.colorWindow.isAlwaysOnTop()));
-    await color.locator('#color-wheel').click({ position: { x: 35, y: 90 } });
-    await poll(state, s => s.flashBackground !== '#ffffff'); await swfReady();
-    await color.locator('#color-hex').fill('#00ff00'); await color.locator('#color-hex').press('Tab');
-    await poll(state, s => s.flashBackground === '#00ff00'); await swfReady();
-    assert.equal(await script('document.getElementById("flash-movie").CurrentFrame()'), frame);
-    assert.equal(await script('document.getElementById("flash-movie").IsPlaying()'), false);
-    assert.equal(await script('document.getElementById("flash-movie").getAttribute("bgcolor")'), '#00ff00');
-    const popupPNG = await color.screenshot(); fs.writeFileSync(path.join(output, 'color-wheel.png'), popupPNG);
-    await command('color-close'); await wait(500);
-    const visible = await captureVisible(app); fs.writeFileSync(path.join(output, 'swf-background-green.png'), Buffer.from(visible.png, 'base64'));
-    const green = await app.evaluate(({ nativeImage }, png) => { const p = nativeImage.createFromBuffer(Buffer.from(png, 'base64')).toBitmap(); let count = 0; for (let i = 0; i < p.length; i += 4) if (p[i + 1] > 130 && p[i + 1] > p[i] * 1.5 && p[i + 1] > p[i + 2] * 1.3) count++; return count; }, visible.png);
-    assert.ok(green > 10000, 'Background must visibly change inside the real Flash player: ' + green);
-    pass('Color wheel stays above native Flash, defaults white, changes rendered movie background, and retains paused timeline position');
+    pass('Embedded HTML Flash remains available across repeated host fullscreen transitions');
 
     const imagePath = path.join(fixture, 'Library-art.png');
     const art = await app.evaluate(({ nativeImage }) => { const p = Buffer.alloc(320 * 160 * 4); for (let y = 0; y < 160; y++) for (let x = 0; x < 320; x++) { const i = (y * 320 + x) * 4; p[i] = 100 + Math.round(x / 3); p[i + 1] = 60 + y; p[i + 2] = 220; p[i + 3] = 255; } return nativeImage.createFromBitmap(p, { width: 320, height: 160 }).toPNG().toString('base64'); }); fs.writeFileSync(imagePath, Buffer.from(art, 'base64'));
@@ -120,18 +91,16 @@ async function run() {
     pass('HTML library opens local Flash pages with real Adobe execution and scoped CSS/SWF companion files');
     await command('panel', { name: 'library' }); await ui.locator('[data-open-library="html"]').click(); await ui.locator('#library-open-address').fill(base + '/Flash.html'); await ui.locator('#library-open-form button[type="submit"]').click(); await htmlReady();
     assert.ok((await state()).library.some(e => e.kind === 'html' && e.url === base + '/Flash.html'));
-    await command('panel', { name: 'library' }); await ui.locator('[data-open-library="swf"]').click(); await ui.locator('#library-open-address').fill(base + '/movie.swf'); await ui.locator('#library-open-form button[type="submit"]').click(); await swfReady();
-    assert.ok((await state()).library.some(e => e.url === base + '/movie.swf' && e.kind === 'swf'));
     await command('panel', { name: 'library' }); await ui.locator(`[data-library="${htmlEntry.id}"]`).first().click(); await htmlReady();
     await command('navigate', { value: path.join(fixture, 'Flash.html') }); await poll(state, s => s.tabs.find(t => t.id === s.activeId).native); await htmlReady();
-    pass('Both library Open buttons accept URLs and local paths; saved HTML entries replay and local HTML address navigation detects Flash');
+    pass('Flash page library accepts URLs and local HTML paths; saved HTML entries replay and local HTML address navigation detects Flash');
 
     await app.close(); app = null; ui = await launch();
     assert.deepEqual((await state()).bookmarks.map(b => b.id), bookmarkOrder);
     await command('panel', { name: 'library' });
     await poll(() => ui.locator(`[data-library-image="${entryId}"] img`).evaluate(el => el.complete && el.naturalWidth === 320), Boolean);
-    await command('play-library', { id: entryId }); await swfReady(); assert.equal(await script('document.getElementById("flash-movie").getAttribute("bgcolor")'), '#00ff00');
-    pass('Bookmark order, thumbnails, SWF/HTML entries and per-movie background persist across application restart');
+    await command('play-library', { id: entryId }); await htmlReady();
+    pass('Bookmark order, thumbnails and HTML entries persist across application restart');
     fs.writeFileSync(path.join(output, process.env.FLASHBORN_EXE ? 'packaged-refinements-results.json' : 'refinements-results.json'), JSON.stringify({ passed: results, count: results.length }, null, 2));
   } finally { if (app) await app.close(); await new Promise(resolve => server.close(resolve)); }
 }

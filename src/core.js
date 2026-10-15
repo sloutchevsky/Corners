@@ -18,7 +18,7 @@ function resolveInput(value, engine = 'duckduckgo') {
   }
   if (/^[a-z][\w+.-]*:/i.test(text) && !/^(localhost|[\w.-]+\.\w+):\d/i.test(text)) {
     const url = new URL(text);
-    if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Enter an http or https address, or open a local SWF or PDF file.');
+    if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Enter an http or https address, or open a local HTML, PDF, image or video file.');
     if (url.username || url.password) throw new Error('Addresses containing passwords are not supported.');
     return { type: /\.swf$/i.test(url.pathname) ? 'flash' : 'web', url: url.href };
   }

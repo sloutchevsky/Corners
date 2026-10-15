@@ -148,6 +148,9 @@ class NativeFlash {
     if (api.foreground() !== parent) return;
     const input = this.inputState();
     if (input?.capture || input?.moving) return;
+    // A resize/tab restore must not pull focus out of the existing plugin or
+    // RenderWidgetHost. Chromium can still report focused after such a pull.
+    if (input?.focus && (input.focus === this.hwnd || api.child(this.hwnd, input.focus))) return;
     api.focus(this.hwnd);
     this.call('focus', { epoch: ++this.focusRevision }).catch(() => {});
   }
@@ -180,7 +183,7 @@ class NativeFlash {
     // input to the toolbar again if the user has not selected the page since.
     if (!this.stopped && !this.disposed) this.call('focus-host', { epoch: revision }).then(restore).catch(() => {});
   }
-  async screenshot() { return this.call('capture'); }
+  async screenshot() { if (process.env.FLASHBORN_TEST !== '1') throw new Error('Test-only capture'); return this.call('capture'); }
   inspect() {const api=winAPI();const rect=[0,0,0,0];api.rect(this.hwnd,rect);return {hwnd:this.hwnd,parent:api.getParent(this.hwnd),visible:api.visible(this.hwnd),rect,style:api.getStyle(this.hwnd,-16),previous:api.sibling(this.hwnd,3),next:api.sibling(this.hwnd,2),host:this.host.getNativeWindowHandle().readBigUInt64LE().toString()};}
   evaluate(code) { if (process.env.FLASHBORN_TEST !== '1') throw new Error('Evaluation is only available in test launches.'); return this.call('evaluate', { code }); }
   dispose() {

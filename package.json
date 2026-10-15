@@ -1,6 +1,6 @@
 {
   "name": "flashborn-browser",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "A minimal dark Windows browser with native Adobe Flash playback",
   "main": "src/main.js",
   "author": {
@@ -22,14 +22,15 @@
     "test:privacy": "node scripts/privacy-check.js",
     "test:ui-update": "node scripts/ui-update-check.js",
     "test:predictions": "node scripts/predictions-check.js",
-    "test:eyedropper": "node scripts/eyedropper-check.js",
     "test:sidebar": "node scripts/sidebar-check.js",
     "test:window": "node scripts/window-check.js",
     "test:playback": "node scripts/playback-check.js",
     "test:toolbar": "node scripts/toolbar-check.js",
     "test:input-stability": "node scripts/input-stability-check.js",
     "test:summaries": "node scripts/summary-check.js",
-    "prepare:icon": "node scripts/create-icon.js"
+    "prepare:icon": "node scripts/create-icon.js",
+    "test:website": "node scripts/website-check.js",
+    "test:package": "node scripts/verify-package.js"
   },
   "dependencies": {
     "koffi": "3.3.2"
@@ -87,17 +88,9 @@
       "deleteAppDataOnUninstall": false,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "include": "assets/installer.nsh"
+      "include": "assets/installer.nsh",
+      "packElevateHelper": false
     },
-    "fileAssociations": [
-      {
-        "ext": "swf",
-        "name": "Flash movie",
-        "description": "Flash movie or game",
-        "role": "Viewer",
-        "icon": "assets/icon.ico"
-      }
-    ],
     "copyright": "© 2026 Vas Sloutchevsky"
   }
 }

@@ -6,7 +6,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function poll(fn, test, timeout = 25000) { const end = Date.now() + timeout; let value; do { value = await fn(); if (test(value)) return value; await wait(30); } while (Date.now() < end); throw Error('Timeout: ' + JSON.stringify(value)); }
 (async () => {
   const profile = path.join(output, 'input-stability-' + Date.now()); fs.mkdirSync(profile, { recursive: true });
-  const movie = path.join(profile, 'drag.swf'); fs.writeFileSync(movie, require('./playback-fixture'));
+  const movie = require('./html-fixture')(profile, require('./playback-fixture'));
   const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
   const app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: process.env.FLASHBORN_EXE ? [] : [root], env });
   const passed = [], pass = text => { passed.push(text); console.log('PASS ' + text); };
@@ -45,7 +45,7 @@ async function poll(fn, test, timeout = 25000) { const end = Date.now() + timeou
     }));
     for (const icon of palette) { assert.equal(icon.width, icon.expected); assert.equal(icon.filter, 'none'); assert.ok(icon.partial >= 8); assert.ok(icon.opaque > 0); assert.ok(icon.minimum >= 65, JSON.stringify(icon)); }
     pass('All five light-mode icons have antialiased edge coverage at the real display density and softened opaque gold shadows');
-    await ui.locator('.sidebar-bottom').screenshot({ path: path.join(output, 'light-mode-icons-1.8.2.png') });
+    await ui.locator('.sidebar-bottom').screenshot({ path: path.join(output, 'light-mode-icons-1.8.3.png') });
     fs.writeFileSync(path.join(output, process.env.FLASHBORN_EXE ? 'packaged-input-stability-results.json' : 'input-stability-results.json'), JSON.stringify({ passed, palette, completedAt: new Date().toISOString() }, null, 2));
   } finally { await app.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
