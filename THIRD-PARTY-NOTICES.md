@@ -15,22 +15,20 @@ Source: https://github.com/electron/electron
 
 ## Adobe Flash Player
 
-Flashborn 1.8.0 bundles the native Adobe PPAPI x64 player 34.0.0.376 from the
-community Clean Flash distribution, release v1.54. This distribution applies
-upstream FlashPatch compatibility patches. The binary is not the unmodified,
-Adobe-signed 32.0.0.363 player bundled in earlier Flashborn versions. Its original
-Authenticode signature is invalidated by the upstream patches; provenance is
-verified through pinned SHA-256 checksums, not a claim of a valid Adobe signature.
+Flashborn 1.8.4 restores the original, unmodified Adobe PPAPI x64 player
+32.0.0.363 from the installed Flash Browser 0.8.1. Windows verifies its original
+timestamped Adobe Inc. Authenticode signature as Valid. Packaging verifies both
+that signature and the pinned SHA-256 and fails for altered or unsigned players.
+
+Flashborn 1.8.0 through 1.8.3 used community-patched Clean Flash 34.0.0.376,
+whose Adobe signature reported HashMismatch. That binary is no longer bundled.
+The signature of the restored player does not sign Flashborn itself or its installer.
 
 The Adobe player remains proprietary, subject to its original license terms,
-and excluded from Flashborn's MIT source license and source archive. Flashborn
-application code does not modify the upstream player during packaging.
-
-Distribution: https://github.com/darktohka/clean-flash-builds/releases/tag/v1.54
-Upstream patch project: https://github.com/darktohka/FlashPatch
-Archive SHA-256: `19a8d1036110af024dc877ca96a9184835c3e944fb14ca8d509662f00bf1bd31`.
-Player SHA-256: `cb91e4589f0a854dd0f23a21d6feee623a857a1dee112b8cb5e5a7c9be0af6f2`.
-Build provenance is saved in `resources/native-flash/provenance.json`.
+and excluded from Flashborn's MIT source license and source archive.
+Player SHA-256: `4acafedca8bb62529527029aeb485318866e4fd71bf298e73f735bc75f6d720d`.
+Build provenance and signature verification are saved in
+`resources/native-flash/provenance.json`.
 
 The Flash browser host uses Electron 9.4.4 and Chromium 83, which no longer
 receive security updates. Native mode is intended for trusted legacy content.
@@ -39,7 +37,7 @@ Flash Browser runtime reference: https://github.com/radubirsan/FlashBrowser
 
 ## Koffi
 
-Native Windows window embedding uses Koffi 3.3.2, Copyright (C) 2026 Niels
+Native Windows window positioning uses Koffi 3.3.2, Copyright (C) 2026 Niels
 Martignène, MIT licensed. Its full license ships in the packaged dependency.
 Source: https://github.com/Koromix/koffi
 

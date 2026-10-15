@@ -21,11 +21,11 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     const ui = await app.firstWindow();
     const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
     const state = () => app.evaluate(() => global.__flashborn.getState());
-    await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 100, y: 80, width: 1100, height: 760 }); w.setAlwaysOnTop(true, 'pop-up-menu'); w.show(); w.focus(); });
+    await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 100, y: 80, width: 1100, height: 760 }); w.show(); w.focus(); });
     await app.evaluate(({}, file) => global.__flashborn.command('add-library-source', {kind:'html',value:file}), require('./html-fixture')(path.join(output, 'window-check-html')));
     const native = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.activeTab().native.call(data.action, data.args), { action, args });
     const script = code => app.evaluate(({}, code) => global.__flashborn.activeTab().native.evaluate(code), code);
-    await poll(() => script('document.getElementById("flash-movie")?.GetVariable("$version")'), v => v === 'WIN 34,0,0,376');
+    await poll(() => script('document.getElementById("flash-movie")?.GetVariable("$version")'), v => v === ('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')));
     await wait(300); await native('test-paints', { reset: true });
     const before = await app.evaluate(() => global.__flashborn.activeTab().native.inspect());
     const hostBefore = await app.evaluate(({ screen }) => ({ bounds: global.__flashborn.win.getBounds(), content: global.__flashborn.win.getContentBounds(), scale: screen.getDisplayMatching(global.__flashborn.win.getBounds()).scaleFactor }));
@@ -42,13 +42,13 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
       fs.writeFileSync(path.join(output, 'window-baseline.json'), JSON.stringify({ paints, before, after }, null, 2));
       return;
     }
-    assert.equal(paints.frame, 0, 'Moving the parent must not force the Flash child frame to repaint');
+    assert.equal(paints.frame, 0, 'Moving the browser must not force the Flash frame to repaint');
     assert.equal(paints.size, 0, 'Moving the parent must not resize the Flash viewport');
     assert.equal(after.visible, 1);
     assert.equal(after.rect[2] - after.rect[0], before.rect[2] - before.rect[0]);
     assert.equal(after.rect[3] - after.rect[1], before.rect[3] - before.rect[1]);
     assert.ok(Math.abs(after.rect[0] - before.rect[0] - 102 * hostBefore.scale) <= 1); assert.ok(Math.abs(after.rect[1] - before.rect[1] - 34 * hostBefore.scale) <= 1);
-    passed.push('Moving a loaded Flash window preserves its child surface with zero forced frame invalidations or resizes');
+    passed.push('Moving a loaded Flash window preserves its independent surface with zero forced frame invalidations or resizes');
     console.log('PASS ' + passed.at(-1));
     // Verify real geometry changes still reach Adobe's renderer.
     await native('test-paints', { reset: true });
@@ -65,11 +65,11 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     const measuredFlash = (await command('tab-memory', { id: flashId })).tabMemory;
     assert.ok(Number.isInteger(measuredFlash.megabytes) && measuredFlash.megabytes > 0, JSON.stringify(measuredFlash));
     const flashRow = ui.locator(`[data-reorder-id="${flashId}"]`); await ui.mouse.move(28,70); await flashRow.hover();
-    await poll(() => flashRow.getAttribute('aria-description'), v => /· \d+ MB$/.test(v));
+    await poll(() => flashRow.locator('.tab-memory').innerText(), v => /^\d+ MB$/.test(v));
     const sameRow = await flashRow.evaluate(el => { window.__memoryRow = el; return true; }); assert.equal(sameRow, true);
     await command('new-tab'); const homeId = (await state()).activeId;
     await ui.locator(`[data-reorder-id="${homeId}"]`).hover();
-    await poll(() => ui.locator(`[data-reorder-id="${homeId}"]`).getAttribute('aria-description'), v => /· \d+ MB$/.test(v));
+    await poll(() => ui.locator(`[data-reorder-id="${homeId}"]`).locator('.tab-memory').innerText(), v => /^\d+ MB$/.test(v));
     assert.equal((await command('tab-memory', { id: homeId })).tabMemory.shared, true);
     await command('navigate', { value: 'http://127.0.0.1:' + server.address().port });
     await poll(state, s => !s.tabs.find(t => t.id === homeId).loading);
@@ -80,16 +80,16 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     await command('select-tab', { id: flashId });
     await wait(2100);
     const inactiveRow = ui.locator(`[data-reorder-id="${homeId}"]`); await ui.mouse.move(28,70); await inactiveRow.hover();
-    await poll(() => inactiveRow.getAttribute('aria-description'), v => /· \d+ MB$/.test(v));
+    await poll(() => inactiveRow.locator('.tab-memory').innerText(), v => /^\d+ MB$/.test(v));
     assert.equal((await state()).activeId, flashId, 'Hover must not activate an inactive tab');
-    const memoryTitle = await inactiveRow.getAttribute('aria-description');
-    assert.ok(Number(memoryTitle.match(/· (\d+) MB/)[1]) >= initial.megabytes + 40);
+    const memoryTitle = await inactiveRow.locator('.tab-memory').innerText();
+    assert.ok(Number(memoryTitle.match(/(\d+) MB/)[1]) >= initial.megabytes + 40);
     passed.push('Tab hover reports real Flash runtime, shared new-tab, and inactive modern renderer memory; a touched 64 MB allocation increases the estimate without activating the tab'); console.log('PASS ' + passed.at(-1));
     if (process.env.FLASHBORN_KPF === '1') {
       await command('new-tab'); await command('navigate', { value: 'https://www.sloutchevsky.com/demos/kpf/main.htm?fullscreen=no' });
       await poll(() => app.evaluate(() => !!global.__flashborn.activeTab().native), Boolean, 60000);
       await poll(state, s => !s.tabs.find(t => t.id === s.activeId).loading && !s.tabs.find(t => t.id === s.activeId).error, 60000);
-      const versions = await poll(() => script(`(()=>{const result=[];function visit(w){try{for(const e of w.document.querySelectorAll('object,embed')){try{const v=e.GetVariable?.('$version');if(v)result.push(v);}catch{}}for(let i=0;i<w.frames.length;i++)visit(w.frames[i]);}catch{}}visit(window);return result;})()`), v => v.includes('WIN 34,0,0,376'), 60000);
+      const versions = await poll(() => script(`(()=>{const result=[];function visit(w){try{for(const e of w.document.querySelectorAll('object,embed')){try{const v=e.GetVariable?.('$version');if(v)result.push(v);}catch{}}for(let i=0;i<w.frames.length;i++)visit(w.frames[i]);}catch{}}visit(window);return result;})()`), v => v.includes(('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ','))), 60000);
       await wait(1000); await native('test-paints', { reset: true });
       getRect(hostHandle, physical);
       for (let i = 0; i < 35; i++) { position(hostHandle, 0, physical[0] + i * 2, physical[1] + i, 0, 0, 0x0015); await wait(18); }

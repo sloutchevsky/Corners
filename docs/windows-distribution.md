@@ -1,6 +1,6 @@
 # Windows distribution and SmartScreen
 
-Flashborn 1.8.3 remains unsigned. The screenshot reported by the user is the
+Flashborn 1.8.4 remains unsigned. The screenshot reported by the user is the
 SmartScreen **unrecognized app** warning. It does not name a malware detection.
 Removing the standalone player cannot guarantee that this warning disappears.
 
@@ -13,12 +13,17 @@ Checked with Windows `Get-AuthenticodeSignature` on October 15, 2026:
 | Flashborn installer | NotSigned |
 | Flashborn.exe | NotSigned |
 | FlashRuntime.exe (Electron 9.4.4 host) | NotSigned |
-| Clean Flash 34.0.0.376 PPAPI DLL | HashMismatch |
+| Original Adobe Flash 32.0.0.363 PPAPI DLL | Valid (Adobe Inc., timestamped) |
 
-The community Flash build applies upstream compatibility patches, invalidating
-the original Adobe signature. Flashborn does not strip, repair or claim that
-signature. Its archive and player bytes are pinned by SHA-256. Hash verification
-establishes the selected upstream bytes; it is not a malware scan.
+Version 1.8.0 introduced the patched Clean Flash 34 player. Its original Adobe
+signature was invalidated (HashMismatch), unlike the valid original player in
+1.7.3. This coincides with the reported start of the warning, but does not prove
+that this component caused SmartScreen's installer reputation decision.
+
+Version 1.8.4 removes that patched DLL and restores the unmodified, Adobe-signed
+32.0.0.363 player from Flash Browser. Packaging checks its pinned SHA-256 and
+requires a Valid Adobe signature. The verified Adobe signature applies only to
+the player; it does not sign Flashborn or guarantee installer reputation.
 
 The obsolete player/picker files and unused updater `elevate.exe` are excluded
 from this release. Flashborn has no analytics or automatic updater. Installer

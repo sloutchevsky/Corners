@@ -198,3 +198,8 @@ body[data-theme="light"] .flashcognito-home .flash-card-icon { background:#d4d9e
 body[data-theme="light"] .flashcognito-home .subtle-button { color:#5d6b81; }
 body[data-theme="light"] .flashcognito-home .subtle-button:hover { background:#d4d9e3; }
 body[data-theme="light"] .flashcognito-home .home-footnote { color:#717d90; }
+
+.tab-title { flex:1; min-width:0; }
+.tab-memory { display:none; flex:none; margin-left:auto; color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.tab.show-memory .tab-memory { display:block; }
+.collapsed .tab .tab-memory { display:none; }

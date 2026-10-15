@@ -30,7 +30,7 @@ async function run() {
   const key = keyCode => app.evaluate(({}, keyCode) => { const wc = global.__flashborn.activeTab().view.webContents; wc.focus(); wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers: ['control'] }); wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers: ['control'] }); }, keyCode);
   // Windows' display ICC profile changes captured RGB values; classify colors by dominance.
   const pixels = async () => app.evaluate(async () => { const image = await global.__flashborn.activeTab().view.webContents.capturePage(), data = image.toBitmap(); let red = 0; for (let i = 0; i < data.length; i += 4) if (data[i] < 100 && data[i + 1] < 100 && data[i + 2] > 150) red++; return red; });
-  const htmlReady = () => poll(() => script('({percent:document.getElementById("embedded")?.PercentLoaded?.(),version:document.getElementById("embedded")?.GetVariable?.("$version"),css:getComputedStyle(document.querySelector("h1")).color})'), value => value.percent === 100 && value.version === 'WIN 34,0,0,376' && value.css === 'rgb(30, 120, 210)', 60000);
+  const htmlReady = () => poll(() => script('({percent:document.getElementById("embedded")?.PercentLoaded?.(),version:document.getElementById("embedded")?.GetVariable?.("$version"),css:getComputedStyle(document.querySelector("h1")).color})'), value => value.percent === 100 && value.version === ('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')) && value.css === 'rgb(30, 120, 210)', 60000);
   try {
     let ui = await launch();
     await command('navigate', { value: base + '/zoom' }); await poll(state, s => !s.tabs.find(t => t.id === s.activeId).loading);

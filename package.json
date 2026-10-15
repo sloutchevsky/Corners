@@ -1,6 +1,6 @@
 {
   "name": "flashborn-browser",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "description": "A minimal dark Windows browser with native Adobe Flash playback",
   "main": "src/main.js",
   "author": {
@@ -30,7 +30,8 @@
     "test:summaries": "node scripts/summary-check.js",
     "prepare:icon": "node scripts/create-icon.js",
     "test:website": "node scripts/website-check.js",
-    "test:package": "node scripts/verify-package.js"
+    "test:package": "node scripts/verify-package.js",
+    "test:isolation": "node scripts/isolation-check.js"
   },
   "dependencies": {
     "koffi": "3.3.2"

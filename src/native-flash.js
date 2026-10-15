@@ -10,9 +10,7 @@ function winAPI() {
   if (windows) return windows;
   const user32 = require('koffi').load('user32.dll');
   windows = {
-    parent: user32.func('intptr_t __stdcall SetParent(intptr_t child, intptr_t parent)'),
     getStyle: user32.func('intptr_t __stdcall GetWindowLongPtrW(intptr_t hwnd, int index)'),
-    setStyle: user32.func('intptr_t __stdcall SetWindowLongPtrW(intptr_t hwnd, int index, intptr_t value)'),
     position: user32.func('int __stdcall SetWindowPos(intptr_t hwnd, intptr_t after, int x, int y, int width, int height, uint32_t flags)'),
     show: user32.func('int __stdcall ShowWindowAsync(intptr_t hwnd, int command)'),
     valid: user32.func('int __stdcall IsWindow(intptr_t hwnd)'),
@@ -24,12 +22,19 @@ function winAPI() {
     foreground: user32.func('intptr_t __stdcall GetForegroundWindow()'),
     child: user32.func('int __stdcall IsChild(intptr_t parent, intptr_t child)'),
     guiInfo: user32.func('int __stdcall GetGUIThreadInfo(uint32_t thread, void *info)'),
-    focus: user32.func('intptr_t __stdcall SetFocus(intptr_t hwnd)')
+    origin: user32.func('int __stdcall ClientToScreen(intptr_t hwnd, _Inout_ int32_t *point)'),
+    allowForeground: user32.func('int __stdcall AllowSetForegroundWindow(uint32_t pid)')
   };
   return windows;
 }
 const directory = name => app.isPackaged ? path.join(process.resourcesPath, name) : path.join(__dirname, '..', 'vendor', name);
 const nativeAvailable = () => fs.existsSync(path.join(directory('native-flash'), 'pepflashplayer64.dll')) && fs.existsSync(path.join(directory('native-runtime'), 'FlashRuntime.exe'));
+function isAbove(api, upper, lower) {
+  // Reading z-order never calls either window's message handler. Activation or
+  // moveTop can raise the shell without changing the foreground HWND.
+  for (let hwnd = upper, count = 0; hwnd && count < 512; count++, hwnd = api.sibling(hwnd, 2)) if (hwnd === lower) return true;
+  return false;
+}
 
 class NativeFlash {
   constructor(host, tabId, onEvent, options = {}) {
@@ -74,6 +79,7 @@ class NativeFlash {
     this.child.on('error', e => { this.stopped = true; this.rejectReady(e); });
     this.child.on('exit', (code, signal) => {
       this.stopped = true;
+      clearInterval(this.windowTimer);
       clearTimeout(this.readyTimer);
       this.hwnd = null;
       for (const { reject, timer } of this.pending.values()) { clearTimeout(timer); reject(new Error('Native Flash runtime exited.')); }
@@ -90,14 +96,11 @@ class NativeFlash {
       const api = winAPI(); const pid = [0]; api.owner(hwnd, pid);
       if (!api.valid(hwnd) || pid[0] !== this.child.pid) return this.rejectReady(new Error('Unexpected native Flash window owner.'));
       this.hwnd = hwnd;
-      const handle = this.host.getNativeWindowHandle();
-      const parent = handle.length === 8 ? Number(handle.readBigUInt64LE()) : handle.readUInt32LE();
-      api.show(hwnd, 0);
-      let style = Number(api.getStyle(hwnd, -16));
-      style = ((style & ~0x80000000 & ~0x00c00000 & ~0x00040000) | 0x40000000 | 0x04000000 | 0x02000000) >>> 0;
-      api.setStyle(hwnd, -16, style);
-      api.parent(hwnd, parent);
-      this.frameStylePending = true;
+      // Keep this an UNOWNED top-level window. Both SetParent and assigning an
+      // owner implicitly join GUI input queues across processes. A busy Flash
+      // thread would then block the modern address bar, menus and Reload too.
+      this.windowTimer = setInterval(() => this.syncWindow(), 60);
+      this.windowTimer.unref();
       clearTimeout(this.readyTimer);
       this.resolveReady(this);
       this.onEvent({ type: 'ready', electron: message.electron, chromium: message.chromium, flash: message.flash });
@@ -121,38 +124,59 @@ class NativeFlash {
     });
   }
   bounds(rect, visible) {
-    if (!this.hwnd || !winAPI().valid(this.hwnd)) return;
-    const factor = screen.getDisplayMatching(this.host.getBounds()).scaleFactor;
-    const pixels = [rect.x, rect.y, rect.width, rect.height].map(n => Math.round(n * factor));
-    if (this.frameStylePending || !this.lastBounds || pixels.some((n, i) => n !== this.lastBounds[i])) {
-      // Apply the changed WS_CHILD frame once. Repeating FRAMECHANGED or SHOW
-      // during a parent move invalidates/restores the legacy Chromium surface.
-      const flags = 0x0010 | 0x4000 | (this.frameStylePending ? 0x0020 : 0x0004);
-      winAPI().position(this.hwnd, 0, ...pixels, flags);
-      this.lastBounds = pixels; this.frameStylePending = false;
+    this.viewport = rect; this.wantedVisible = visible;
+    this.syncWindow();
+  }
+  hostHandle() {
+    const handle = this.host.getNativeWindowHandle();
+    return handle.length === 8 ? Number(handle.readBigUInt64LE()) : handle.readUInt32LE();
+  }
+  syncWindow() {
+    if (!this.hwnd || this.disposed || this.host.isDestroyed() || !this.viewport) return;
+    if (!this.wantedVisible && this.lastVisible === false) return;
+    const api = winAPI();
+    if (!api.valid(this.hwnd)) return;
+    const host = this.hostHandle(), foreground = api.foreground(), pid = [0];
+    if (foreground) api.owner(foreground, pid);
+    const ownGroup = pid[0] === process.pid || pid[0] === this.child.pid;
+    const visible = !!this.wantedVisible && this.host.isVisible() && !this.host.isMinimized() && (ownGroup || this.host.isAlwaysOnTop() || !foreground && this.lastVisible);
+    {
+      // ClientToScreen supplies physical coordinates, including negative monitor
+      // origins. Only the viewport dimensions/offsets need DIP conversion.
+      const origin = [0, 0]; api.origin(host, origin);
+      const factor = screen.getDisplayMatching(this.host.getBounds()).scaleFactor;
+      const r = this.viewport;
+      const pixels = [origin[0] + Math.round(r.x * factor), origin[1] + Math.round(r.y * factor), Math.round(r.width * factor), Math.round(r.height * factor)];
+      const changed = !this.lastBounds || pixels.some((n, i) => n !== this.lastBounds[i]);
+      const raise = visible && (!this.lastVisible || !isAbove(api, this.hwnd, host));
+      const topmost = this.host.isAlwaysOnTop(), zChanged = this.lastTopmost !== undefined && this.lastTopmost !== topmost;
+      if (changed || raise || zChanged) {
+        const popup = topmost && this.host.getChildWindows().find(w => !w.isDestroyed() && w.isVisible() && w.isAlwaysOnTop());
+        const after = popup ? Number(popup.getNativeWindowHandle().readBigUInt64LE()) : topmost ? -1 : zChanged ? -2 : 0;
+        // Asynchronous positioning never waits for the legacy message pump.
+        api.position(this.hwnd, after, ...pixels, 0x0010 | 0x4000 | (raise || zChanged ? 0 : 0x0004));
+        this.lastBounds = pixels;
+      }
+      this.lastTopmost = topmost;
     }
-    // Win32 visibility alone leaves Electron's compositor in its hidden state.
     if (this.lastVisible !== visible) {
       this.lastVisible = visible;
-      winAPI().show(this.hwnd, visible ? 8 : 0); // SW_SHOWNA preserves current bounds.
+      api.show(this.hwnd, visible ? 8 : 0);
       this.call('visibility', { value: visible }).catch(() => {});
     }
   }
   focus() {
     if (!this.hwnd || !this.lastVisible || this.disposed || this.stopped) return;
     if (this.host.getChildWindows().some(popup => !popup.isDestroyed() && popup.isVisible())) return;
-    const api = winAPI(), handle = this.host.getNativeWindowHandle();
-    const parent = handle.length === 8 ? Number(handle.readBigUInt64LE()) : handle.readUInt32LE();
-    // SetParent already joins these input queues. Explicit attach/detach resets
-    // Windows key/button state and can break a Flash drag or window activation.
-    if (api.foreground() !== parent) return;
+    const api = winAPI();
+    if (api.foreground() !== this.hostHandle()) return;
     const input = this.inputState();
     if (input?.capture || input?.moving) return;
     // A resize/tab restore must not pull focus out of the existing plugin or
     // RenderWidgetHost. Chromium can still report focused after such a pull.
     if (input?.focus && (input.focus === this.hwnd || api.child(this.hwnd, input.focus))) return;
-    api.focus(this.hwnd);
-    this.call('focus', { epoch: ++this.focusRevision }).catch(() => {});
+    api.allowForeground(this.child.pid);
+    this.call('focus', { epoch: ++this.focusRevision, before: Date.now() + 250 }).catch(() => {});
   }
   contentPointer() {
     // A real pointer event has already reached Flash. Invalidate any queued
@@ -166,33 +190,23 @@ class NativeFlash {
     return { focus: Number(info.readBigUInt64LE(16)), capture: Number(info.readBigUInt64LE(24)), moving: !!(info.readUInt32LE(4) & 2) };
   }
   focusHost() {
-    const revision = ++this.focusRevision;
-    const restore = () => {
-      if (this.disposed || revision !== this.focusRevision || this.host.isDestroyed()) return;
-      const api = winAPI(), handle = this.host.getNativeWindowHandle();
-      const parent = handle.length === 8 ? Number(handle.readBigUInt64LE()) : handle.readUInt32LE();
-      if (api.foreground() !== parent) return;
-      const info = Buffer.alloc(72); info.writeUInt32LE(72);
-      const known = api.guiInfo(api.owner(parent, [0]), info), focused = known ? Number(info.readBigUInt64LE(16)) : 0;
-      if (!known || !focused || focused === this.hwnd || this.hwnd && api.child(this.hwnd, focused)) {
-        api.focus(parent); this.host.webContents.focus();
-      } else if (focused === parent) this.host.webContents.focus();
-    };
-    restore();
-    // Wait past an already queued helper focus request, then return Windows
-    // input to the toolbar again if the user has not selected the page since.
-    if (!this.stopped && !this.disposed) this.call('focus-host', { epoch: revision }).then(restore).catch(() => {});
+    ++this.focusRevision;
+    if (this.disposed || this.host.isDestroyed()) return;
+    // Focus only our own process. Never wait for a legacy focus acknowledgement.
+    this.host.focus(); this.host.webContents.focus();
   }
   async screenshot() { if (process.env.FLASHBORN_TEST !== '1') throw new Error('Test-only capture'); return this.call('capture'); }
   inspect() {const api=winAPI();const rect=[0,0,0,0];api.rect(this.hwnd,rect);return {hwnd:this.hwnd,parent:api.getParent(this.hwnd),visible:api.visible(this.hwnd),rect,style:api.getStyle(this.hwnd,-16),previous:api.sibling(this.hwnd,3),next:api.sibling(this.hwnd,2),host:this.host.getNativeWindowHandle().readBigUInt64LE().toString()};}
   evaluate(code) { if (process.env.FLASHBORN_TEST !== '1') throw new Error('Evaluation is only available in test launches.'); return this.call('evaluate', { code }); }
-  dispose() {
+  dispose(force = false) {
     if (this.disposed) return;
     this.disposed = true;
     clearTimeout(this.readyTimer);
+    clearInterval(this.windowTimer);
     if (this.hwnd) winAPI().show(this.hwnd, 0);
     if (this.socket?.writable) this.socket.write(JSON.stringify({ action: 'close', args: {} }) + '\n');
     this.server?.close();
+    if (force && this.child?.exitCode === null) this.child.kill();
     const timer = setTimeout(() => { if (this.child?.exitCode === null) this.child.kill(); this.socket?.destroy(); }, 3000); timer.unref();
   }
 }

@@ -73,7 +73,7 @@ async function command(action, args) {
     case 'forward': if (wc.canGoForward()) wc.goForward(); break;
     case 'reload': wc.reload(); break;
     case 'stop': clearTimeout(settingsTimer); wc.stop(); break;
-    case 'focus': if (visible) wc.focus(); break;
+    case 'focus': if (visible && (args.before === undefined || Date.now() <= args.before)) { window.focus(); wc.focus(); } break;
     case 'focus-host': break;
     case 'visibility':
       visible = !!args.value;
@@ -121,6 +121,9 @@ async function command(action, args) {
     case 'test-renderer-crash':
       if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
       setTimeout(() => process.kill(wc.getOSProcessId(), 'SIGKILL'), 0); return;
+    case 'test-host-hang':
+      if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
+      setTimeout(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30000), 20); return;
     case 'test-key':
       if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
       wc.sendInputEvent({ type: 'keyDown', keyCode: args.key, modifiers: args.control ? ['control'] : [] });
@@ -147,7 +150,7 @@ app.whenReady().then(async () => {
     if (standalone) send({ type: 'error', message: 'Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.' });
   });
   runtimeSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'fullscreen'));
-  window = new BrowserWindow({ width: 1100, height: 700, frame: false, show: false, skipTaskbar: true, backgroundColor: '#191919',
+  window = new BrowserWindow({ width: 1100, height: 700, type: 'toolbar', frame: false, show: false, skipTaskbar: true, resizable: false, minimizable: false, maximizable: false, backgroundColor: '#191919',
     webPreferences: { session: runtimeSession, plugins: true, sandbox: true, nodeIntegration: false, contextIsolation: true, enableRemoteModule: false, webSecurity: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') } });
   Menu.setApplicationMenu(null);
   const wc = window.webContents;

@@ -1,6 +1,6 @@
 # Flashborn Browser version history
 
-This history covers releases from 1.0.0 to 1.8.3. Historical updates through 1.7.3 are assigned
+This history covers releases from 1.0.0 to 1.8.4. Historical updates through 1.7.3 are assigned
 to versions by comparing the archived source ZIPs, their READMEs and the recorded
 development requests. Dates are the retained installer build dates in New York
 time. Historical Git commits are imports of these snapshots, not a recovered
@@ -13,6 +13,7 @@ deferred; the production application still uses the simple lightning bolt.
 
 | Version | Build date | Main changes |
 | --- | --- | --- |
+| [1.8.4](#184-2026-10-15) | 2026-10-15 | Independent Flash input queues, immediate runtime recovery, restored Adobe-signed player and inline tab memory |
 | [1.8.3](#183-2026-10-15) | 2026-10-15 | Website-only Flash, removal of the standalone SWF player, fewer plugin/focus interventions and installer trust audit |
 | [1.8.2](#182-2026-10-15) | 2026-10-15 | Stable Flash mouse capture through fullscreen and resize, smoother light-mode icons |
 | [1.8.1](#181-2026-10-14) | 2026-10-14 | Smoother Flash, reliable address editing and restored tabs, compact hover bubbles and sidebar animation |
@@ -30,6 +31,18 @@ deferred; the production application still uses the simple lightning bolt.
 | [1.1.1](#111--2026-10-09) | 2026-10-09 | Blank Flash surface and legacy detection fixes |
 | [1.1.0](#110--2026-10-09) | 2026-10-09 | Original Adobe Flash and separate legacy runtime |
 | [1.0.0](#100--2026-10-08) | 2026-10-08 | Initial Windows browser with Ruffle |
+
+## 1.8.4 (2026-10-15)
+
+- Replace cross-process SetParent hosting with an unowned Flash viewport. Parent/owner relationships implicitly share Windows input queues, allowing a blocked legacy thread to stall the modern address bar, Reload and menus. Neither a parent nor owner is assigned in this release.
+- Align the viewport with physical client coordinates using asynchronous Windows positioning. Track browser movement, sidebar animation, resize, fullscreen, minimize, application switching and popup visibility without forcing Flash frame invalidations.
+- Handle browser and Flash focus inside their respective processes. Expire delayed focus requests so a recovered helper cannot execute an old request to take toolbar focus.
+- Make native Reload replace the full per-tab runtime immediately, including when its UI thread cannot process IPC. Restore the original website or HTML source, zoom and mute state.
+- Retain native edit and tab menu objects while Windows finishes their asynchronous close, avoiding a premature garbage-collection crash.
+- Remove all tab tooltip windows and their assets/IPC. Show a compact memory size before X only while hovering an expanded tab; truncate the title as needed. Hide it on rollout, collapse, drag, context menu and blur. Late measurements cannot redisplay it.
+- Restore the unmodified Adobe Flash 32.0.0.363 player used by Flash Browser and Flashborn 1.7.3. Remove the patched Clean Flash 34 DLL introduced in 1.8.0, which reported HashMismatch. Require both the pinned checksum and a Valid Adobe Inc. signature during packaging; retain provenance and the original timestamp.
+- The app and installer remain unsigned. Removing the invalidly signed component fixes that distribution regression, but cannot guarantee removal of SmartScreen's unrecognized-app warning. Windows protection settings are unchanged.
+- Add a deliberate 30-second legacy-host hang regression: Windows confirms the host is hung while address editing, edit menus and tab switching work; the real Reload button recreates the runtime and resumes frame callbacks. Update hover, movement, restart, drag and package checks for the new behavior.
 
 ## 1.8.3 (2026-10-15)
 

@@ -27,27 +27,24 @@ async function call(action, args = {}) {
 }
 function current() { return state?.tabs.find(t => t.id === state.activeId); }
 const memoryKey = tab => tab && JSON.stringify([tab.url, tab.kind, !!tab.native]);
-function tabTooltip(tab) {
-  const measured = tabMemory.get(tab.id);
-  return (tab.title || 'New tab').slice(0, 35) + ' · ' + (measured?.megabytes ?? '…') + ' MB';
-}
-function hideTabTooltip() {
+function hideTabMemory() {
+  hoveredTab?.classList.remove('show-memory');
   hoveredTab = null; tabHoverRevision++;
-  window.browser.call('tab-tooltip-hide').catch(() => {});
 }
-function showTabTooltip(row, tab) {
-  const rect = row.getBoundingClientRect();
-  row.setAttribute('aria-description', tabTooltip(tab));
-  window.browser.call('tab-tooltip', { id: tab.id, x: rect.right, y: rect.y + rect.height / 2, megabytes: tabMemory.get(tab.id)?.megabytes ?? null }).catch(() => {});
+function showTabMemory(row, tab) {
+  const mb = tabMemory.get(tab.id)?.megabytes;
+  const visible = !state.collapsed && hoveredTab === row && Number.isFinite(mb);
+  row.querySelector('.tab-memory').textContent = visible ? mb + ' MB' : '';
+  row.classList.toggle('show-memory', visible);
 }
 async function measureTab(event) {
   const row = event.target.closest('.tab');
-  if (!row || row.contains(event.relatedTarget) || dragging || hoveredTab === row) return;
+  if (!row || state.collapsed || row.contains(event.relatedTarget) || dragging || hoveredTab === row) return;
   const id = row.dataset.reorderId, tab = state?.tabs.find(t => t.id === id);
   if (!tab) return;
   hoveredTab = row;
   const revision = ++tabHoverRevision;
-  showTabTooltip(row, tab);
+  showTabMemory(row, tab);
   const cached = tabMemory.get(id);
   if (!cached || cached.page !== memoryKey(tab) || Date.now() - cached.measuredAt > 2000) {
     if (!memoryRequests.has(id)) {
@@ -56,25 +53,22 @@ async function measureTab(event) {
         const currentTab = state?.tabs.find(t => t.id === id);
         if (result.ok && result.state.tabMemory.id === id && memoryKey(currentTab) === page) {
           tabMemory.set(id, { ...result.state.tabMemory, page, measuredAt: Date.now() });
-          // Keep the accessible description useful even if the pointer left
-          // while measuring. A late measurement must never reopen the bubble.
-          document.querySelector(`.tab[data-reorder-id="${id}"]`)?.setAttribute('aria-description', tabTooltip(currentTab));
         }
       }).catch(() => {}).finally(() => memoryRequests.delete(id));
       memoryRequests.set(id, request);
     }
     await memoryRequests.get(id);
   }
-  if (revision === tabHoverRevision && hoveredTab === row && row.isConnected) showTabTooltip(row, tab);
+  if (revision === tabHoverRevision && hoveredTab === row && row.isConnected) showTabMemory(row, tab);
 }
 document.getElementById('tabs').addEventListener('pointerover', measureTab);
 document.getElementById('tabs').addEventListener('pointermove', measureTab);
 document.getElementById('tabs').addEventListener('pointerout', event => {
-  if (hoveredTab && !hoveredTab.contains(event.relatedTarget)) hideTabTooltip();
+  if (hoveredTab && !hoveredTab.contains(event.relatedTarget)) hideTabMemory();
 });
-document.getElementById('tabs').addEventListener('pointerleave', hideTabTooltip);
-document.getElementById('tabs').addEventListener('scroll', hideTabTooltip);
-window.addEventListener('blur', hideTabTooltip);
+document.getElementById('tabs').addEventListener('pointerleave', hideTabMemory);
+document.getElementById('tabs').addEventListener('scroll', hideTabMemory);
+window.addEventListener('blur', hideTabMemory);
 const loadingBolt = new GoldLightning(document.getElementById('loading-bolt'));
 const titleBolt = new GoldLightning(document.getElementById('title-bolt'));
 const navigationIcons = [...document.querySelectorAll('[data-nav-icon]')].map(canvas => new GoldNavigation(canvas));
@@ -157,6 +151,7 @@ function render(next) {
   state = next;
   for (const [id, measured] of tabMemory) if (measured.page !== memoryKey(state.tabs.find(t => t.id === id))) tabMemory.delete(id);
   document.body.classList.toggle('collapsed', state.collapsed);
+  if (state.collapsed) hideTabMemory();
   renderSidebar();
   document.body.classList.toggle('fullscreen', state.fullscreen);
   const theme = state.settings.theme || 'current';
@@ -179,9 +174,9 @@ function render(next) {
   $('#tab-count').title = `${state.tabs.length} open tabs`;
   const nextTabKey = JSON.stringify([state.tabs, state.activeId, state.panel]);
   if (!dragging && nextTabKey !== tabRenderKey) {
-    hideTabTooltip();
+    hideTabMemory();
     tabRenderKey = nextTabKey;
-    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.private ? 'private-tab' : ''} ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}" aria-description="${escape(tabTooltip(tab))}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}${tab.private ? ' (Flashcognito)' : ''}" aria-description="Drag to reorder, or press Alt and Up or Down. Right-click to duplicate or close."><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.private ? icon('lock') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span></button><button class="tab-close" data-close-tab="${tab.id}" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
+    $('#tabs').innerHTML = state.tabs.map(tab => `<div class="tab ${tab.private ? 'private-tab' : ''} ${tab.id === state.activeId && !state.panel ? 'active' : ''}" draggable="true" data-collection="tabs" data-reorder-id="${tab.id}"><button class="tab-select" data-tab="${tab.id}" aria-label="Switch to ${escape(tab.title)}${tab.private ? ' (Flashcognito)' : ''}" aria-description="Drag to reorder, or press Alt and Up or Down. Right-click to duplicate or close."><span class="tab-icon kind-${tab.kind}">${tab.loading ? '<span class="spinner"></span>' : tab.private ? icon('lock') : tab.kind === 'home' ? icon('globe') : escape(tab.title.charAt(0).toUpperCase())}</span><span class="tab-title">${escape(tab.title)}</span><span class="tab-memory" aria-hidden="true"></span></button><button class="tab-close" data-close-tab="${tab.id}" aria-label="Close ${escape(tab.title)}">${icon('close')}</button></div>`).join('');
   }
   document.querySelectorAll('[data-panel]').forEach(el => el.classList.toggle('active', el.dataset.panel === state.panel));
   $('#back').disabled = !t?.canBack;
@@ -295,7 +290,7 @@ function settings() {
   return `<section class="panel"><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Generate search summaries</h2><p>An overview of several search results. Turn off to show results without a summary.</p></div><label class="switch"><input id="pageSummaries" type="checkbox" ${s.pageSummaries?'checked':''} aria-label="Generate search summaries"><span></span></label></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open file · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
 }
 function about() {
-  return `<section class="panel about-panel"><canvas id="about-bolt" class="about-bolt" width="336" height="336" role="img" aria-label="Spinning gold lightning bolt"></canvas><div class="about-copy"><h1 class="brand-wordmark about-wordmark" role="img" aria-label="flashborn"></h1><div class="about-text"><p class="about-motto">A quieter kind of browsing. Original Adobe Flash playback.</p><p class="about-dedication">This browser is dedicated to the team at <em>Firstborn</em>, one of the first digital design groups to help shape UI design as we know it today. Back in the early 2000s, <em>Firstborn</em> mostly used Flash to create and share its work with the world. <strong>Flashborn</strong> was designed to preserve their legacy after browser support for Flash was discontinued in 2021. Please enjoy the browser and send your comments or support to&nbsp;<span class="about-email-wrap"><a class="about-email" data-contact-email href="mailto:sloutchevsky@gmail.com" aria-label="Copy email address">sloutchevsky@gmail.com</a><span class="email-copied hidden" role="status" aria-live="polite"></span></span>.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Modern browser</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash player</dt><dd>Adobe Flash ${escape(state.flashVersion)} · PPAPI</dd><dt>Flash runtime</dt><dd>Electron ${escape(state.flashRuntime)} · separate process</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Native Flash</dt><dd>${state.flashReady ? 'Bundled and ready' : 'Runtime missing. Reinstall Flashborn.'}</dd></dl><p class="about-note">Flash playback uses the native Adobe player from the Clean Flash distribution. Its required legacy Chromium runtime no longer receives security updates. Use Flash mode for trusted legacy content. Ordinary pages use the current browser engine; Flash pages use the legacy runtime. The lightning button switches a website between modes.</p><a class="about-copyright" data-browser-url href="https://www.sloutchevsky.com/">© 2026 Vas Sloutchevsky</a><details class="about-license"><summary>MIT open source license</summary><p>Flashborn’s application source is free to use, copy, modify, merge, publish, distribute, sublicense, and sell under the MIT License. Third-party components, including Adobe Flash Player, retain their own licenses.</p><p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p><p>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p><p>THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p></details></div></div></section>`;
+  return `<section class="panel about-panel"><canvas id="about-bolt" class="about-bolt" width="336" height="336" role="img" aria-label="Spinning gold lightning bolt"></canvas><div class="about-copy"><h1 class="brand-wordmark about-wordmark" role="img" aria-label="flashborn"></h1><div class="about-text"><p class="about-motto">A quieter kind of browsing. Original Adobe Flash playback.</p><p class="about-dedication">This browser is dedicated to the team at <em>Firstborn</em>, one of the first digital design groups to help shape UI design as we know it today. Back in the early 2000s, <em>Firstborn</em> mostly used Flash to create and share its work with the world. <strong>Flashborn</strong> was designed to preserve their legacy after browser support for Flash was discontinued in 2021. Please enjoy the browser and send your comments or support to&nbsp;<span class="about-email-wrap"><a class="about-email" data-contact-email href="mailto:sloutchevsky@gmail.com" aria-label="Copy email address">sloutchevsky@gmail.com</a><span class="email-copied hidden" role="status" aria-live="polite"></span></span>.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Modern browser</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash player</dt><dd>Adobe Flash ${escape(state.flashVersion)} · PPAPI</dd><dt>Flash runtime</dt><dd>Electron ${escape(state.flashRuntime)} · separate process</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Native Flash</dt><dd>${state.flashReady ? 'Bundled and ready' : 'Runtime missing. Reinstall Flashborn.'}</dd></dl><p class="about-note">Flash playback uses the original, unmodified Adobe player from Flash Browser. Its required legacy Chromium runtime no longer receives security updates. Use Flash mode for trusted legacy content. Ordinary pages use the current browser engine; Flash pages use the legacy runtime. The lightning button switches a website between modes.</p><a class="about-copyright" data-browser-url href="https://www.sloutchevsky.com/">© 2026 Vas Sloutchevsky</a><details class="about-license"><summary>MIT open source license</summary><p>Flashborn’s application source is free to use, copy, modify, merge, publish, distribute, sublicense, and sell under the MIT License. Third-party components, including Adobe Flash Player, retain their own licenses.</p><p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p><p>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p><p>THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p></details></div></div></section>`;
 }
 document.addEventListener('click', async e => {
   const contact = e.target.closest('[data-contact-email]');
@@ -331,7 +326,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('contextmenu', event => {
   const tab = event.target.closest('[data-collection="tabs"]');
   if (!tab) return;
-  hideTabTooltip();
+  hideTabMemory();
   event.preventDefault();
   call('tab-menu', { id: tab.dataset.reorderId, x: event.clientX, y: event.clientY });
 });
@@ -339,7 +334,7 @@ function clearDropIndicators() { document.querySelectorAll('.drop-before,.drop-a
 function finishDragging() { dragging = null; clearDropIndicators(); document.querySelectorAll('.dragging').forEach(row => row.classList.remove('dragging')); }
 document.addEventListener('dragstart', event => {
   const row = event.target.closest('[data-reorder-id]'); if (!row) return;
-  hideTabTooltip();
+  hideTabMemory();
   dragging = { collection: row.dataset.collection, id: row.dataset.reorderId };
   event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragging.id);
   row.classList.add('dragging');

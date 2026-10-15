@@ -87,7 +87,7 @@ async function run() {
     assert.equal((await state()).tabs.length, beforeDrop);
     const flashHTML = require('./html-fixture')(path.join(fixture,'Flash-page'));
     await command('add-library-source', {kind:'html',value:flashHTML});
-    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 34,0,0,376');
+    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v===('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')));
     pass('Raw SWF drops are rejected; a local HTML page can still load its embedded Adobe Flash movie');
     await command('panel',{name:'library'});
     await ui.locator('[data-open-library="html"]').click();
@@ -97,7 +97,7 @@ async function run() {
     await ui.locator('#library-open-address').press('ArrowDown');
     await poll(()=>ui.locator('#library-open-address').inputValue(),value=>value===flashHTML);
     await ui.locator('#library-open-address').press('Enter');
-    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v==='WIN 34,0,0,376');
+    await poll(()=>script('document.getElementById("flash-movie")?.GetVariable("$version")'),v=>v===('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')));
     pass('Flash library predictions complete saved HTML sources and open them with Adobe playback');
     await ui.locator('.sidebar-wordmark').click();
     await ui.locator('.about-copyright').click();

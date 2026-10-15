@@ -29,7 +29,6 @@ const UI_URL = 'flashborn://ui/index.html';
 const MENU_URL = 'flashborn://ui/menu.html';
 const ZOOM_URL = 'flashborn://ui/zoom.html';
 const SUGGEST_URL = 'flashborn://ui/suggestions.html';
-const TOOLTIP_URL = 'flashborn://ui/tab-tooltip.html';
 const MAX_PDF_SIZE = 256 * 1024 * 1024;
 const mimeTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.swf': 'application/x-shockwave-flash', '.json': 'application/json', '.mp3': 'audio/mpeg', '.xml': 'text/xml', '.txt': 'text/plain' };
 let win, store, browsingSession, activeId, panel = null, collapsed = false, closing = false;
@@ -46,11 +45,16 @@ let predictionAbort;
 const searchPredictions = new SearchPredictions((url, options) => net.fetch(url, options));
 let tabMenu;
 let privateSession;
-let layoutScale;
 let sidebarWidth = 248;
 let focusArea = 'chrome';
 let focusIntentAt = 0, contentFocusTimer;
-let tooltipWindow, tooltipData = null, tooltipRevision = 0;
+const closingMenus = new Set();
+function retainClosingMenu(menu) {
+  // Chromium can still be unwinding its native popup loop when this callback
+  // fires. Keep the wrapper alive beyond the callback before allowing GC.
+  closingMenus.add(menu);
+  setTimeout(() => closingMenus.delete(menu), 1000).unref();
+}
 const SUMMARY_MODE = 'search';
 const privateDownloads = [];
 
@@ -82,7 +86,7 @@ function publicTab(t) {
     canBack: wc?.navigationHistory.canGoBack() || false, canForward: wc?.navigationHistory.canGoForward() || false, zoom: Math.round((wc?.getZoomFactor() || 1) * 100) };
 }
 function getState() {
-  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, tabTooltip: tooltipData, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
+  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
     history: activeTab()?.private ? [] : store.data.history, library: flashPages(), downloads: tabDownloads(activeTab()), settings: store.data.settings,
     flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: flashRuntime.version, flashRuntime: '9.4.4' };
 }
@@ -96,7 +100,6 @@ function sendState(immediate = false) {
     if (menuWindow && !menuWindow.isDestroyed()) menuWindow.webContents.send('browser:state', state);
     if (zoomWindow && !zoomWindow.isDestroyed()) zoomWindow.webContents.send('browser:state', state);
     if (suggestionWindow && !suggestionWindow.isDestroyed()) suggestionWindow.webContents.send('browser:state', state);
-    if (tooltipWindow && !tooltipWindow.isDestroyed()) tooltipWindow.webContents.send('browser:state', state);
   } else if (!stateTimer) {
     stateTimer = setTimeout(() => { stateTimer = null; sendState(true); }, 40);
   }
@@ -111,7 +114,6 @@ function persistTabs() {
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [width, height] = win.getContentSize();
-  layoutScale = screen.getDisplayMatching(win.getBounds()).scaleFactor;
   for (const t of tabs) {
     const full = win.isFullScreen();
     const left = full ? 0 : sidebarWidth;
@@ -159,7 +161,10 @@ function scheduleSummary(t, delay = 180) {
 function selectTab(id) {
   const t = tabs.find(t => t.id === id);
   if (!t) return;
-  closeTabTooltip();
+  // A keyboard tab switch can originate in the independent Flash window.
+  // Activate our shell before hiding that window so Windows does not choose
+  // an unrelated application as the next foreground window.
+  if (win.isVisible() && !win.isMinimized()) win.focus();
   closeZoomPopup();
   closeSuggestions();
   activeId = id;
@@ -199,10 +204,10 @@ async function resumeTab(t) {
   return t.restoring;
 }
 function closeTab(id) {
-  closeTabTooltip();
   const index = tabs.findIndex(t => t.id === id);
   if (index < 0) return;
   const t = tabs[index];
+  if (t.native && t.id === activeId && win.isVisible() && !win.isMinimized()) win.focus();
   for (const [token, document] of documents) if (document.tabId === id) documents.delete(token);
   clearTimeout(t.flashDetectionTimer);
   clearSummary(t);
@@ -508,16 +513,18 @@ function showTabMenu(args) {
   ]);
   const [width, height] = win.getContentSize();
   menu.popup({ window: win, x: Math.max(0, Math.min(width - 1, Math.round(args.x) || 0)), y: Math.max(0, Math.min(height - 1, Math.round(args.y) || 0)),
-    callback: () => { if (tabMenu === menu) tabMenu = null; } });
+    callback: () => { retainClosingMenu(menu); if (tabMenu === menu) tabMenu = null; } });
 }
 function reload(t = activeTab()) {
   if (!t) return;
   if (t.restoreEntry) { t.error = null; resumeTab(t).catch(e => showError(t, e.message)); return; }
-  if (t.native && (t.recreateNative || t.native.stopped || t.native.child && (t.native.child.exitCode !== null || t.native.child.signalCode !== null))) {
-    const entry = sessionEntry({ ...t, private: false }); t.native.dispose(); t.native = null; t.recreateNative = false;
+  if (t.native) {
+    // Reload must work even when the legacy UI thread cannot process IPC.
+    // Recreate the complete tab runtime, retaining URL, zoom and mute state.
+    if (t.id === activeId && win.isVisible() && !win.isMinimized()) win.focus();
+    const entry = sessionEntry({ ...t, private: false }); t.native.dispose(true); t.native = null; t.recreateNative = false;
     t.restoreEntry = entry; t.error = null; resumeTab(t).catch(e => showError(t, e.message)); return;
   }
-  if (t.native) { t.error = null; t.loading = true; layout(); sendState(true); t.native.call('reload').then(() => { if (t.id === activeId && focusArea === 'content') t.native?.focus(); }).catch(e => { t.recreateNative = true; showError(t, e.message); }); return; }
   if (!live(t)) return;
   t.error = null;
   layout();
@@ -759,35 +766,6 @@ function restoreContentFocus() {
     if (!closing && focusArea === 'content' && !panel && !t?.error && !menuWindow && !suggestionWindow) t?.native?.focus();
   }, 120);
 }
-function closeTabTooltip() {
-  tooltipRevision++; tooltipData = null;
-  if (tooltipWindow && !tooltipWindow.isDestroyed()) tooltipWindow.hide();
-}
-async function showTabTooltip(args) {
-  const t = tabs.find(tab => tab.id === args.id);
-  if (!t || !win?.isVisible() || win.isMinimized() || !Number.isFinite(args.x) || !Number.isFinite(args.y)) return;
-  const revision = ++tooltipRevision;
-  tooltipData = { id: t.id, title: (t.title || 'New tab').slice(0, 60), megabytes: Number.isFinite(args.megabytes) && args.megabytes >= 0 ? Math.round(args.megabytes) : null };
-  if (!tooltipWindow || tooltipWindow.isDestroyed()) {
-    const popup = tooltipWindow = new BrowserWindow({ width: 240, height: 30, parent: win, frame: false, show: false, skipTaskbar: true,
-      resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, focusable: false,
-      backgroundColor: store.data.settings.theme === 'light' ? '#f0f0f0' : '#282828',
-      webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
-    popup.setAlwaysOnTop(true, 'pop-up-menu'); popup.setIgnoreMouseEvents(true); popup.setMenu(null);
-    popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    popup.webContents.on('will-navigate', event => event.preventDefault());
-    popup.on('closed', () => { if (tooltipWindow === popup) tooltipWindow = null; });
-    popup.tooltipReady = popup.loadURL(TOOLTIP_URL);
-  }
-  const popup = tooltipWindow;
-  await popup.tooltipReady;
-  if (revision !== tooltipRevision || popup.isDestroyed() || !tooltipData || closing) return;
-  const bounds = win.getContentBounds(), work = screen.getDisplayMatching(bounds).workArea;
-  const x = Math.max(work.x, Math.min(work.x + work.width - 240, bounds.x + args.x + 8));
-  const y = Math.max(work.y, Math.min(work.y + work.height - 30, bounds.y + args.y - 15));
-  popup.setPosition(Math.round(x), Math.round(y));
-  popup.webContents.send('browser:state', getState()); popup.showInactive();
-}
 function closeZoomPopup() {
   clearTimeout(zoomTimer);
   const popup = zoomWindow; zoomWindow = null;
@@ -823,7 +801,7 @@ function showEditMenu(wc, params) {
   ];
   const menu = editMenu = Menu.buildFromTemplate(actions);
   // Keep the native menu alive until Windows has finished its close callback.
-  menu.popup({ window: win, callback: () => { if (editMenu === menu) editMenu = null; } });
+  menu.popup({ window: win, callback: () => { retainClosingMenu(menu); if (editMenu === menu) editMenu = null; } });
 }
 
 function closeBrowserMenu(restoreFocus = false) {
@@ -846,7 +824,7 @@ async function showBrowserMenu() {
     skipTaskbar: true, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true,
     backgroundColor: store.data.settings.theme === 'light' ? '#f0f0f0' : '#282828',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, spellcheck: false, backgroundThrottling: false } });
-  // A separate owned window stays above the native Adobe Flash child HWND.
+  // A separate owned window stays above the independent Adobe Flash viewport.
   popup.setAlwaysOnTop(true, 'pop-up-menu');
   popup.setMenu(null);
   popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -869,8 +847,6 @@ async function command(action, args = {}) {
       break;
     }
     case 'summary-dismiss': if (summaryFor(t)) { t.summaryDismissedURL = t.url; clearSummary(t); } break;
-    case 'tab-tooltip': await showTabTooltip(args); return {};
-    case 'tab-tooltip-hide': closeTabTooltip(); return {};
     case 'tab-memory': {
       const tab = tabs.find(item => item.id === args.id);
       if (!tab) throw new Error('This tab is closed.');
@@ -899,7 +875,7 @@ async function command(action, args = {}) {
       break;
     }
     case 'native-mode': if (t && isWebURL(t.url)) { if (t.native) { t.native.dispose(); t.native = null; t.forceModern = true; await navigate(t, t.url); } else { t.forceModern = false; await activateNative(t, t.url); } } break;
-    case 'navigate': closeTabTooltip(); closeSuggestions(); closeZoomPopup(); focusArea = 'content'; panel = null; await navigate(t, args.value); break;
+    case 'navigate': closeSuggestions(); closeZoomPopup(); focusArea = 'content'; panel = null; await navigate(t, args.value); break;
     case 'contact-email': clipboard.writeText('sloutchevsky@gmail.com'); break;
     case 'suggest': await showSuggestions(args); break;
     case 'suggest-close': closeSuggestions(); break;
@@ -931,14 +907,13 @@ async function command(action, args = {}) {
     case 'reload': reload(); break;
     case 'stop': if (t?.native) await t.native.call('stop'); else wc?.stop(); break;
     case 'home': panel = null; await navigate(t, ''); break;
-    case 'collapse': closeTabTooltip(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); collapsed = !collapsed; break;
+    case 'collapse': closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); collapsed = !collapsed; break;
     case 'sidebar-width': {
       if (!Number.isFinite(args.width) || args.width < 68 || args.width > 248) throw new Error('Invalid sidebar width.');
       sidebarWidth = Math.round(args.width); layout();
       return { sidebarWidth };
     }
     case 'panel':
-      closeTabTooltip();
       closeZoomPopup(); closeSuggestions();
       panel = ['bookmarks', 'history', 'downloads', 'library', 'settings', 'about'].includes(args.name) ? args.name : null;
       if (panel === 'downloads') {
@@ -1031,28 +1006,24 @@ async function boot() {
   win.webContents.setZoomMode('manual');
   win.webContents.on('zoom-changed', (_event, direction) => wheelZoom(activeTab(), direction === 'in' ? 1 : -1, 'browser'));
   win.webContents.on('context-menu', (_event, params) => showEditMenu(win.webContents, params));
-  for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeTabTooltip(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); layout(); sendState(true); });
+  for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); layout(); sendState(true); });
   for (const event of ['resize', 'resized', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore']) win.on(event, restoreContentFocus);
   for (const event of ['enter-full-screen', 'leave-full-screen']) win.on(event, () => { for (const t of tabs) if (t.native) t.native.call('host-fullscreen', { value: win.isFullScreen() && t.id === activeId }).then(layout).catch(() => {}); });
   win.on('move', () => {
-    closeTabTooltip();
     if (menuWindow) closeBrowserMenu(); closeZoomPopup(); closeSuggestions();
-    // Windows moves child HWNDs with their parent. Only a monitor DPI change
-    // requires recalculating the Flash viewport's physical pixel bounds.
-    if (screen.getDisplayMatching(win.getBounds()).scaleFactor !== layoutScale) layout();
+    layout();
   });
-  win.on('minimize', () => { closeTabTooltip(); closeZoomPopup(); closeSuggestions(); layout(); });
+  win.on('minimize', () => { closeZoomPopup(); closeSuggestions(); layout(); });
   win.on('restore', layout);
   // Windows restores the last input target on activation. Transfer focus on an
   // explicit tab/page/toolbar action; a parent focus event can itself result
   // from that transfer and must not start another cross-process handoff.
-  win.on('blur', closeTabTooltip);
   win.on('close', event => {
     if (!closing && downloadItems.size) {
       const response = dialog.showMessageBoxSync(win, { type: 'question', message: 'Downloads are still running.', detail: 'Closing Flashborn will cancel them.', buttons: ['Keep browsing', 'Close browser'], defaultId: 0, cancelId: 0 });
       if (response === 0) { event.preventDefault(); return; }
     }
-    closeTabTooltip(); if (tooltipWindow && !tooltipWindow.isDestroyed()) tooltipWindow.close(); closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); persistTabs(); closing = true;
+    closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); persistTabs(); closing = true;
     for (const t of tabs) { if (t.native) t.native.dispose(); if (live(t)) t.view.webContents.close(); }
   });
   win.on('closed', () => { win = null; });
@@ -1060,12 +1031,10 @@ async function boot() {
     const fromMenu = event.sender === menuWindow?.webContents && event.senderFrame?.url === MENU_URL;
     const fromZoom = event.sender === zoomWindow?.webContents && event.senderFrame?.url === ZOOM_URL;
     const fromSuggestions = event.sender === suggestionWindow?.webContents && event.senderFrame?.url === SUGGEST_URL;
-    const fromTooltip = event.sender === tooltipWindow?.webContents && event.senderFrame?.url === TOOLTIP_URL;
-    if (!fromMenu && !fromZoom && !fromSuggestions && !fromTooltip && (event.sender !== win?.webContents || event.senderFrame?.url !== UI_URL)) throw new Error('Untrusted command source.');
+    if (!fromMenu && !fromZoom && !fromSuggestions && (event.sender !== win?.webContents || event.senderFrame?.url !== UI_URL)) throw new Error('Untrusted command source.');
     if (typeof action !== 'string' || !args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid browser command.');
     if (fromZoom && !['state', 'zoom', 'zoom-hold', 'zoom-release'].includes(action)) throw new Error('Unsupported zoom command.');
     if (fromSuggestions && !['state', 'suggest-open'].includes(action)) throw new Error('Unsupported address suggestion command.');
-    if (fromTooltip && action !== 'state') throw new Error('Unsupported tab tooltip command.');
     if (fromMenu && !['state', 'menu-close', 'new-tab', 'new-flashcognito', 'open-file', 'native-mode', 'panel', 'menu-find', 'print', 'zoom', 'mute', 'flash-quality', 'fullscreen'].includes(action)) throw new Error('Unsupported menu command.');
     if (fromMenu && !['state', 'zoom', 'flash-quality', 'mute', 'menu-close'].includes(action)) closeBrowserMenu(true);
     try { return { ok: true, state: await command(action, args) }; }
@@ -1107,7 +1076,7 @@ async function boot() {
   if (file) await openLocal(file);
   if (testMode) {
     // Accessible only from main-process Playwright evaluation in a test launch.
-    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get focusArea() { return focusArea; }, get tooltipWindow() { return tooltipWindow; }, get privateSession() { return privateSession; }, get tabMenu() { return tabMenu; }, get menuWindow() { return menuWindow; }, get zoomWindow() { return zoomWindow; }, get editMenu() { return editMenu; }, get suggestionWindow() { return suggestionWindow; } };
+    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get focusArea() { return focusArea; }, get privateSession() { return privateSession; }, get tabMenu() { return tabMenu; }, get menuWindow() { return menuWindow; }, get zoomWindow() { return zoomWindow; }, get editMenu() { return editMenu; }, get suggestionWindow() { return suggestionWindow; } };
   }
 }
 if (gotLock) app.whenReady().then(boot).catch(error => { console.error(error); dialog.showErrorBox('Flashborn could not start', error.stack || error.message); app.quit(); });

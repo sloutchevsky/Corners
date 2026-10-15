@@ -14,7 +14,7 @@ function visit(directory) {
 visit('src');
 assert.equal(JSON.parse(asar.extractFile(archive, 'package.json')).version, version);
 const packaged = new Set(asar.listPackage(archive).map(name => name.replaceAll('\\', '/')));
-for (const file of ['screen-color-picker.js', 'ui/color.html', 'ui/color.js', 'ui/color.css', 'ui/screen-color.html', 'ui/screen-color.js', 'ui/screen-color.css', 'legacy/player.html', 'legacy/player.js', 'legacy/player.css', 'legacy/bolt.png']) {
+for (const file of ['ui/tab-tooltip.html', 'ui/tab-tooltip.js', 'ui/tab-tooltip.css', 'screen-color-picker.js', 'ui/color.html', 'ui/color.js', 'ui/color.css', 'ui/screen-color.html', 'ui/screen-color.js', 'ui/screen-color.css', 'legacy/player.html', 'legacy/player.js', 'legacy/player.css', 'legacy/bolt.png']) {
   assert.ok(!packaged.has('/src/' + file), 'Obsolete asset in app.asar: ' + file);
 }
 const helper = path.join(payload, 'resources', 'native-runtime', 'resources', 'app');

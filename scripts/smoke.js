@@ -255,7 +255,7 @@ async function run() {
 
     const firstHTML = require('./html-fixture')(path.join(output,'smoke-html-first'));
     await command('add-library-source', {kind:'html',value:firstHTML});
-    await poll(() => pageScript('document.getElementById("flash-movie")?.GetVariable("$version")'), value => value === 'WIN 34,0,0,376');
+    await poll(() => pageScript('document.getElementById("flash-movie")?.GetVariable("$version")'), value => value === ('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')));
     assert.equal(await pageScript('typeof require'),'undefined');
     assert.equal(await pageScript('typeof process'),'undefined');
     const initialFrame=await pageScript('document.getElementById("flash-movie").CurrentFrame()');
@@ -267,12 +267,12 @@ async function run() {
     const flashId=(await state()).activeId;
     await wheel();
     await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.zoom===110);
-    assert.ok(await app.evaluate(()=>global.__flashborn.zoomWindow.isAlwaysOnTop()));
+    await poll(() => app.evaluate(() => global.__flashborn.zoomWindow?.isVisible() && global.__flashborn.zoomWindow.isAlwaysOnTop()), Boolean);
     await command('zoom',{direction:0});
     results.push('Ctrl+wheel also zooms genuine Flash content and its zoom popup stays above the native player');
     const secondMovie=require('./html-fixture')(path.join(output,'smoke-html-second'));
     await app.evaluate(async({},filename)=>global.__flashborn.command("add-library-source",{kind:"html",value:filename}),secondMovie);
-    await poll(()=>pageScript('document.getElementById("flash-movie")?.GetVariable("$version")'),value=>value==='WIN 34,0,0,376',60000);
+    await poll(()=>pageScript('document.getElementById("flash-movie")?.GetVariable("$version")'),value=>value===('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')),60000);
     const secondFlashId=(await state()).activeId;
     await command('panel',{name:'library'});
     const library=(await state()).library;
@@ -284,6 +284,8 @@ async function run() {
     results.push('Flash library reorders by dragging and persists the selected order without changing files');
     await new Promise(r=>setTimeout(r,400));
     let visible=await captureVisible(app);
+    fs.writeFileSync(path.join(output,'stacking-smoke-diagnostic.png'),Buffer.from(visible.png,'base64'));
+    if (visible.creamPixels <= 1000) console.log('STACKING', await app.evaluate(({}, mod) => {const b=global.__flashborn,n=b.activeTab().native,k=process.mainModule.require(mod).load('user32.dll'),f=k.func('intptr_t __stdcall GetForegroundWindow()'),st=k.func('intptr_t __stdcall GetWindowLongPtrW(intptr_t,int)');return {tab:b.getState().tabs.find(t=>t.id===b.getState().activeId),panel:b.getState().panel,viewport:n.viewport,wanted:n.wantedVisible,last:n.lastVisible,fg:f(),top:n.lastTopmost,style:st(n.hwnd,-20),native:n.inspect()};},path.join(root,'node_modules','koffi')));
     assert.ok(visible.creamPixels>1000,'Flash square must be visible on the physical display, not just an offscreen render');
     fs.writeFileSync(path.join(output,'visible-flash.png'),Buffer.from(visible.png,'base64'));
     await command('new-tab');await new Promise(r=>setTimeout(r,400));
@@ -332,7 +334,7 @@ async function run() {
     await command('navigate', { value: base + '/embed' });
     await poll(state,s=>s.tabs.find(t=>t.id===s.activeId)?.native);
     await poll(() => pageScript('document.querySelector("object")?.PercentLoaded?.()'), s => s===100, 60000);
-    assert.equal(await pageScript('document.querySelector("object").GetVariable("$version")'),'WIN 34,0,0,376');
+    assert.equal(await pageScript('document.querySelector("object").GetVariable("$version")'),('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')));
     await saveView('embedded-flash.png');
     results.push('Embedded Flash website automatically loads the native Adobe plugin under a website CSP');
     await command('native-mode');

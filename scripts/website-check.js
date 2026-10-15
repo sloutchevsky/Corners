@@ -28,7 +28,7 @@ async function poll(fn, check, timeout = 30000) {
     const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
     const native = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.activeTab().native.call(data.action, data.args), { action, args });
     await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 80, y: 80, width: 1280, height: 820 }); w.show(); w.focus(); });
-    await poll(() => native('evaluate', { code: 'document.querySelector("embed")?.GetVariable("$version")' }), value => value === 'WIN 34,0,0,376');
+    await poll(() => native('evaluate', { code: 'document.querySelector("embed")?.GetVariable("$version")' }), value => value === ('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')));
     const initial = await state(), htmlId = initial.activeId;
     assert.equal(initial.tabs.length, 2);
     assert.equal(initial.tabs.find(tab => tab.id === htmlId).kind, 'local');

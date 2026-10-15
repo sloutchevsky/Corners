@@ -14,24 +14,15 @@ async function main() {
   let bytes;
   try { bytes = await fs.readFile(bundled); } catch {}
   if (!bytes || digest(bytes) !== player.sha256) {
-    const cache = path.join(ROOT, '.cache', 'flash-update');
-    const archive = path.join(cache, path.basename(new URL(player.archiveURL).pathname));
-    await fs.mkdir(cache, { recursive: true });
-    let archiveBytes;
-    try { archiveBytes = await fs.readFile(archive); } catch {
-      const response = await fetch(player.archiveURL, { signal: AbortSignal.timeout(120000) });
-      if (!response.ok) throw new Error('Could not download the pinned Flash distribution: HTTP ' + response.status);
-      archiveBytes = Buffer.from(await response.arrayBuffer());
-      if (archiveBytes.length > 64 * 1024 * 1024) throw new Error('Unexpected Flash archive size.');
-      if (digest(archiveBytes) !== player.archiveSHA256) throw new Error('Flash distribution archive checksum mismatch.');
-      await fs.writeFile(archive, archiveBytes);
-    }
-    if (digest(archiveBytes) !== player.archiveSHA256) throw new Error('Flash distribution archive checksum mismatch.');
-    execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', archive, '-C', cache, player.archivePath, 'README.txt'], { windowsHide: true });
-    bytes = await fs.readFile(path.join(cache, player.archivePath));
-    if (digest(bytes) !== player.sha256) throw new Error('Extracted Flash player checksum mismatch.');
+    bytes = await fs.readFile(path.join(SOURCE, 'resources', 'app', 'flashver', 'pepflashplayer64.dll'));
+    if (digest(bytes) !== player.sha256) throw new Error('Original Adobe Flash player checksum mismatch.');
     await fs.mkdir(flash, { recursive: true }); await fs.writeFile(bundled, bytes);
   }
+  // Reject patched or damaged players; preserve Adobe's timestamped signature.
+  const signature = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    "$s=Get-AuthenticodeSignature -LiteralPath $env:FLASHBORN_VERIFY_PLAYER; @{status=$s.Status.ToString();signer=$s.SignerCertificate.Subject} | ConvertTo-Json -Compress"],
+    { windowsHide: true, encoding: 'utf8', env: { ...process.env, PSModulePath: path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'Modules'), FLASHBORN_VERIFY_PLAYER: bundled } }));
+  if (signature.status !== 'Valid' || !/O=Adobe Inc\./.test(signature.signer)) throw new Error('The bundled Flash player must have a valid Adobe signature.');
   const helper = path.join(runtime, 'resources', 'app');
   // Explicitly remove obsolete generated assets so upgrades cannot package the old player.
   for (const name of ['player.html', 'player.js', 'player.css', 'bolt.png']) await fs.rm(path.join(helper, name), { force: true });
@@ -45,7 +36,7 @@ async function main() {
     }
     await fs.mkdir(path.join(runtime, 'resources'), { recursive: true });
   }
-  await fs.writeFile(path.join(flash, 'provenance.json'), JSON.stringify({ ...player, runtime: (await fs.readFile(path.join(runtime, 'version'), 'utf8')).trim(), copiedAt: new Date().toISOString(), use: 'Native Adobe player from the Clean Flash distribution. Upstream patches change the Adobe signature; the archive and DLL are pinned by SHA-256. Adobe binaries retain their proprietary license.' }, null, 2));
+  await fs.writeFile(path.join(flash, 'provenance.json'), JSON.stringify({ ...player, runtime: (await fs.readFile(path.join(runtime, 'version'), 'utf8')).trim(), copiedAt: new Date().toISOString(), verifiedSignature: signature, use: 'Unmodified native Adobe player from the installed Flash Browser. Its original Adobe signature and timestamp are preserved. Adobe binaries retain their proprietary license.' }, null, 2));
   console.log('Native Adobe Flash ' + player.version + ' (' + player.distribution + ') and compatible runtime are bundled.');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

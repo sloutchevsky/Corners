@@ -1,15 +1,15 @@
 # Flashborn Browser
 
 A minimal dark Windows browser with current Chromium for ordinary pages and
-native Adobe Flash Player 34.0.0.376 from the Clean Flash distribution for Flash content.
+the original, Adobe-signed Flash Player 32.0.0.363 for Flash content.
 
-**Current version: 1.8.3 · Windows 10/11 · x64 · MIT application source**
+**Current version: 1.8.4 · Windows 10/11 · x64 · MIT application source**
 
-[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.3/Flashborn-Setup-1.8.3-x64.exe)
+[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.4/Flashborn-Setup-1.8.4-x64.exe)
 · [Releases and update notes](https://github.com/sloutchevsky/Flashborn-Browser/releases)
-· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.3/Flashborn-Source-1.8.3-GitHub.zip)
+· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.4/Flashborn-Source-1.8.4-GitHub.zip)
 
-See [the complete version history](CHANGELOG.md) for all 17 releases, from the
+See [the complete version history](CHANGELOG.md) for all 18 releases, from the
 initial Ruffle build to native Adobe playback and the current browser.
 
 ## Preview
@@ -32,13 +32,13 @@ These earlier screenshots include standalone SWF controls removed in 1.8.3.
 
 ## Install
 
-Download and run `Flashborn-Setup-1.8.3-x64.exe` on Windows 10 or 11 x64. When
+Download and run `Flashborn-Setup-1.8.4-x64.exe` on Windows 10 or 11 x64. When
 building locally, the same file is produced in `release/`. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
 
-Version 1.8.3 focuses on Flash embedded in websites and local HTML pages.
+Since version 1.8.3, Flashborn focuses on Flash embedded in websites and local HTML pages.
 The standalone SWF player, color picker/eyedropper, direct SWF open controls,
 SWF badge and file association have been removed. Existing standalone SWF tabs
 are skipped on restore; their files and old library records are retained on disk.
@@ -46,11 +46,13 @@ Website and HTML library entries, PDFs, images and video remain supported.
 
 The default Flash path no longer polls loading or calls movie APIs automatically.
 Quality overrides use one call per instance without rewriting embed attributes.
-Theme changes do not touch the Flash page. Focus restoration leaves an already
-focused Flash child alone. The legacy renderer uses normal process priority,
-matching the installed Flash Browser; hidden tabs still throttle timers.
-These changes target possible causes of stalls. They do not establish that every
-intermittent Freedom and Partners freeze is resolved.
+Theme changes do not touch the Flash page. Flash runs in an unowned window with
+its own Windows input queue, so a stalled legacy host cannot lock the modern
+address bar, tab controls or context menus. Reload replaces the entire Flash tab
+runtime, preserving its source, zoom and mute settings. The legacy renderer uses
+normal process priority, matching Flash Browser; hidden tabs still throttle timers.
+A deliberate 30-second host hang is covered by the isolation regression check.
+This does not establish that every legacy movie or site is free of internal stalls.
 
 This build is unsigned; Windows can show an unknown publisher
 or SmartScreen prompt. Uninstall through Windows Settings → Apps.
@@ -109,10 +111,11 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
 - Drag tabs, bookmarks, downloads and Flash library entries to reorder them. With an item
   focused, Alt+Up/Down also moves it. Bookmark, download and library order is saved.
 - When the sidebar collapses, its tabs heading shows only the number of open tabs.
-- Hover a tab for **Memory: XX MB**. Normal pages report their renderer's private
-  memory; Flash tabs include their dedicated runtime and player processes. Shared
-  renderers are identified in the tooltip. Estimates refresh on hover and stay
-  local; measuring an inactive tab does not select it.
+- Hover an expanded tab to show its memory size immediately before Close. The
+  title truncates as needed; memory disappears on rollout. Collapsed tabs show
+  neither memory nor a popup. Normal pages report renderer private memory; Flash
+  tabs include their dedicated runtime and player processes. Estimates stay local;
+  measuring an inactive tab does not select it.
 - A completed download shows **NEW** beside Downloads until that panel is opened.
   It remains visible when collapsed and across restart; private badges stay in
   their temporary session. Canceled downloads do not trigger it.
@@ -148,9 +151,8 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   sidebar labels use a muted beige; light-mode icons are darker with less shine.
   Flashcognito uses the normal new-tab layout and fonts, cooler greys, a silver
   bolt, and 50% page opacity. The top-left wordmark and browser menu open About.
-- Moving the window preserves the native Flash child surface. Frame styles are
-  applied once, and geometry/visibility change only when needed; crossing to a
-  monitor with a different display scale recalculates the viewport.
+- Moving or resizing the browser aligns the independent Flash viewport using
+  asynchronous Windows positioning, without joining its input queue to the UI.
 - Flash library offers **Add a Flash page**. Enter a website URL or an absolute
   local HTML path, or choose **Browse**. Local HTML companion assets stay scoped
   to the selected folder. The main address bar also detects embedded Flash.
@@ -164,19 +166,20 @@ Missing game servers, external assets and site dependencies can still prevent pl
 
 ## Compatibility and security
 
-The bundled Clean Flash 34.0.0.376 DLL has SHA-256:
+The bundled original Adobe Flash 32.0.0.363 DLL has SHA-256:
 
-`cb91e4589f0a854dd0f23a21d6feee623a857a1dee112b8cb5e5a7c9be0af6f2`
+`4acafedca8bb62529527029aeb485318866e4fd71bf298e73f735bc75f6d720d`
 
-Upstream compatibility patches invalidate its original Adobe signature.
-Flashborn copies that pinned distribution unchanged; a matching checksum verifies
-provenance, not malware safety or a valid Adobe signature. The app, installer and
-legacy host are unsigned. See [third-party notices](THIRD-PARTY-NOTICES.md).
+Its original timestamped Adobe signature verifies as Valid. This replaces the
+community-patched player introduced in 1.8.0, whose signature was invalidated.
+The app, installer and legacy host remain unsigned. A valid player signature
+cannot establish installer reputation or guarantee the absence of SmartScreen.
+See [third-party notices](THIRD-PARTY-NOTICES.md).
 
-Adobe Flash support was removed from Electron 12. Flashborn therefore embeds a
-separate Electron 9.4.4 / Chromium 83 process for each native Flash tab, while
-ordinary browsing and the application UI use Electron 44.7.0. This is the real
-PPAPI player from the community Clean Flash distribution, not an emulator. The pinned upstream build includes compatibility patches; it is not the unmodified Adobe 32 binary used in earlier Flashborn releases.
+Flashborn uses a separate Electron 9.4.4 / Chromium 83 process per native Flash
+tab. Ordinary browsing and the application UI use Electron 44.7.0. The native
+window has no cross-process parent or owner, keeping its input queue independent.
+This is the real PPAPI player, not an emulator.
 
 **The legacy Chromium engine used for Flash no longer receives security updates.**
 Use native mode for trusted legacy content. Process separation is not a VM or a
@@ -229,8 +232,8 @@ when the original font is installed.
 Requirements: Windows x64, Node.js 22.12+ (24 recommended), npm and the existing
 Flash Browser installation at `C:\Program Files (x86)\FlashBrowser`. Override
 its directory with `FLASHBORN_FLASH_BROWSER` if necessary. The preparation script
-downloads the pinned Clean Flash distribution, verifies its archive and player
-checksums, copies the compatible runtime and replaces its application code with
+copies the original player, verifies its pinned checksum and valid Adobe
+signature, copies the compatible runtime and replaces its application code with
 Flashborn's helper. It leaves the installed browser
 untouched. Native binaries are excluded from the source archive.
 
@@ -252,12 +255,13 @@ npm run test:window
 npm run test:playback
 npm run test:toolbar
 npm run test:input-stability
+npm run test:isolation
 npm run test:summaries
 npm run dist
 npm run test:package
 ```
 
-The build produces `release/Flashborn-Setup-1.8.3-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.8.4-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 
@@ -271,7 +275,7 @@ Third-party binaries retain their respective licenses; the Adobe binary is not M
 | Logo outline generation | PowerShell and Windows font APIs |
 | Windows installer customization | NSIS |
 | Modern browser | Electron 44.7.0 / Chromium 152.0.7977.130 |
-| Native Flash process | Electron 9.4.4 / Chromium 83 / Clean Flash 34.0.0.376 PPAPI |
+| Native Flash process | Electron 9.4.4 / Chromium 83 / Adobe Flash 32.0.0.363 PPAPI |
 | Windows native integration | Koffi 3.3.2 / Win32 APIs |
 | Packaging and browser checks | electron-builder 26.15.3 / Playwright 1.56.1 |
 
@@ -316,11 +320,16 @@ callbacks. They cover settled playback without recurring settings calls, older
 tab interaction, source/zoom/mute restoration, lazy startup and recovery from
 terminated helpers or crashed renderers. The toolbar checks cover address and
 Find focus while Flash reloads, keyboard shortcuts from the legacy renderer,
-returning to the movie, compact hover dismissal and synchronized sidebar motion.
+returning to the movie, inline memory dismissal and synchronized sidebar motion.
 
 The sidebar checks measure gear centering across rotation angles, completion
 after hover-out, collapsed counts, both themes, menu grouping, and real download
 completion badges, including restart, acknowledgment, cancellation and privacy.
+
+The isolation check deliberately blocks the legacy host for 30 seconds and waits
+for Windows to report it as hung. It verifies that address editing, context menus
+and tab switching remain responsive, then uses the real Reload button to replace
+the runtime and restore the source, zoom and mute state.
 
 The window checks count native frame/resize messages during physical moves,
 verify real viewport resizing, and exercise hover memory for normal, inactive,

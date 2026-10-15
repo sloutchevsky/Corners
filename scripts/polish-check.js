@@ -15,7 +15,7 @@ async function run() {
   const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
   const state = () => app.evaluate(() => global.__flashborn.getState());
   const script = code => app.evaluate(({}, code) => global.__flashborn.activeTab().native.evaluate(code), code);
-  const ready = () => poll(() => script('document.getElementById("flash-movie")?.GetVariable("$version")'), value => value === 'WIN 34,0,0,376', 60000);
+  const ready = () => poll(() => script('document.getElementById("flash-movie")?.GetVariable("$version")'), value => value === ('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')), 60000);
   const quality = () => script('document.getElementById("flash-movie").TGetProperty("/",19)');
   try {
     let ui = await launch();
