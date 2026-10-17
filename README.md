@@ -3,16 +3,39 @@
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original, Adobe-signed Flash Player 32.0.0.363 for Flash content.
 
-**Current version: 1.8.5 · Windows 10/11 · x64 · MIT application source**
+**Current version: 1.9.0 · Windows 10/11 · x64 · MIT application source**
 
-[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.5/Flashborn-Setup-1.8.5-x64.exe)
+[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.9.0/Flashborn-Setup-1.9.0-x64.exe)
 · [Releases and update notes](https://github.com/sloutchevsky/Flashborn-Browser/releases)
-· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.8.5/Flashborn-Source-1.8.5-GitHub.zip)
+· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.9.0/Flashborn-Source-1.9.0-GitHub.zip)
 
-See [the complete version history](CHANGELOG.md) for all 19 releases, from the
+See [the complete version history](CHANGELOG.md) for all 27 releases, from the
 initial Ruffle build to native Adobe playback and the current browser.
 
+## Extensions, Flash and sRGB out of the box
+
+- **Extensions:** manage compatible unpacked Chrome extensions, their options
+  and popups. Electron supports a subset of Chrome's extension APIs.
+- **Official AdBlock:** bundled and enabled by default in ordinary modern tabs,
+  with its original filters and site controls. Private tabs and Flash use
+  separate engines/sessions.
+- **Original Adobe Flash:** bundled playback for trusted legacy websites,
+  with a per-website Flash toggle and a built-in runtime card in Extensions.
+- **sRGB:** both browsing engines explicitly start in sRGB, with no user flag
+  changes needed in Flashborn. Browser theme changes leave website colors alone.
+- **Privacy:** choose history, cookies/site data and cached images/files under
+  Settings, then use one Delete data button. Ordinary clipboard copying no longer
+  opens Gmail's repeated write-permission dialog.
+
+See [what changed in 1.9.0](docs/release-notes-1.9.0.md).
+
 ## Preview
+
+| Extensions · dark theme | Extensions · light theme |
+| --- | --- |
+| ![Flash and official AdBlock in Extensions](previews/screenshots/v1.9.0/extensions-dark.png) | ![Built-in Flash and AdBlock in light mode](previews/screenshots/v1.9.0/extensions-light.png) |
+
+[Preview the combined Privacy controls](previews/screenshots/v1.9.0/privacy-light.png).
 
 Version 1.8.0 restores automatic playback of the Embody website:
 
@@ -32,7 +55,7 @@ These earlier screenshots include standalone SWF controls removed in 1.8.3.
 
 ## Install
 
-Download and run `Flashborn-Setup-1.8.5-x64.exe` on Windows 10 or 11 x64. When
+Download and run `Flashborn-Setup-1.9.0-x64.exe` on Windows 10 or 11 x64. When
 building locally, the same file is produced in `release/`. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
@@ -202,13 +225,17 @@ site permissions; native pages are allowed fullscreen only.
 History, bookmarks, settings and library entries stay under
 `%APPDATA%/flashborn-browser`. Uninstall keeps user data.
 There is no analytics service or automatic updater. This custom browser does
-not provide Chrome account sync, general extension installation or DRM video.
+not provide Chrome account sync, Chrome Web Store installation or DRM video.
+Compatible unpacked Chrome extensions can be managed from the three-dot menu.
 
 The application source is MIT licensed, copyright © 2026 Vas Sloutchevsky.
 The spaced logo uses outlines from the user-installed
 HelveticaNeueLT Com 53 Extended font, so the installer does not require or
 redistribute that font. Regenerate those outlines with `scripts/create-brand.ps1`
-when the original font is installed.
+when the original font is installed. Page headings use the bundled
+Flashborn 75 Bold font, derived from Helvetica Neue LT Com 75 Bold, with
+-20 tracking. Its outlines, hinting and kerning are retained. This third-party
+font is excluded from the application MIT license; see THIRD-PARTY-NOTICES.md.
 
 ## Keyboard shortcuts
 
@@ -266,7 +293,7 @@ npm run dist
 npm run test:package
 ```
 
-The build produces `release/Flashborn-Setup-1.8.5-x64.exe`. Run `npm start` for
+The build produces `release/Flashborn-Setup-1.9.0-x64.exe`. Run `npm start` for
 development. `npm run dist:portable` produces a portable Windows executable.
 Third-party binaries retain their respective licenses; the Adobe binary is not MIT.
 

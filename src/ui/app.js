@@ -1,6 +1,6 @@
 'use strict';
 let state, viewKey = '', filter = '', toastTimer;
-let aboutBolt, homeBolt, lastTheme, themeTurns = 0;
+let aboutBolt, homeBolt;
 let dragging = null;
 const predictiveFields = new Map();
 let activePrediction = null;
@@ -14,8 +14,47 @@ const revealDuration = 190;
 let sidebarFrame = 0, sidebarWidth = 248, lastCollapsed;
 const libraryOpenKind = 'html';
 const $ = selector => document.querySelector(selector);
+const sidebarToggle = $('[data-action="collapse"]');
+let sidebarHovered = false, sidebarPreviewLatched = false;
+function renderSidebarIcon() {
+  const collapsed = !!state?.collapsed;
+  const preview = sidebarHovered && !sidebarPreviewLatched;
+  sidebarToggle.dataset.divider = (preview ? !collapsed : collapsed) ? 'left' : 'right';
+  sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
+}
+sidebarToggle.addEventListener('pointerenter', () => {
+  sidebarHovered = true; sidebarPreviewLatched = false; renderSidebarIcon();
+});
+sidebarToggle.addEventListener('pointerleave', () => {
+  sidebarHovered = false; sidebarPreviewLatched = false; renderSidebarIcon();
+});
+sidebarToggle.addEventListener('pointercancel', () => {
+  sidebarHovered = false; sidebarPreviewLatched = false; renderSidebarIcon();
+});
+sidebarToggle.addEventListener('click', () => { sidebarPreviewLatched = true; });
+const themeToggle = $('#theme-button');
+let themeHovered = false, themePreviewLatched = false;
+function renderThemeIcon() {
+  const light = state?.settings.theme === 'light';
+  const preview = themeHovered && !themePreviewLatched;
+  $('#theme-icon').style.transform = `rotate(${(preview ? !light : light) ? 180 : 0}deg)`;
+  themeToggle.setAttribute('aria-pressed', String(light));
+}
+themeToggle.addEventListener('pointerenter', () => {
+  themeHovered = true; themePreviewLatched = false; renderThemeIcon();
+});
+themeToggle.addEventListener('pointerleave', () => {
+  themeHovered = false; themePreviewLatched = false; renderThemeIcon();
+});
+themeToggle.addEventListener('pointercancel', () => {
+  themeHovered = false; themePreviewLatched = false; renderThemeIcon();
+});
+themeToggle.addEventListener('click', () => { themePreviewLatched = true; });
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+function headline(text, tag = 'h1') {
+  return `<${tag} class="page-headline">${escape(text)}</${tag}>`;
+}
 const date = value => value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
 const size = bytes => !bytes ? '0 B' : bytes < 1024 * 1024 ? (bytes / 1024).toFixed(1) + ' KB' : (bytes / 1024 / 1024).toFixed(1) + ' MB';
 function toast(message) { $('#toast').textContent = message; $('#toast').classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.add('hidden'), 5000); }
@@ -134,6 +173,7 @@ function renderSidebar() {
   const apply = width => {
     sidebarWidth = Math.round(width);
     document.body.style.setProperty('--sidebar-width', sidebarWidth + 'px');
+    document.body.style.setProperty('--sidebar-reveal', Math.max(0, Math.min(1, (width - 100) / 148)));
     window.browser.call('sidebar-width', { width: sidebarWidth }).catch(() => {});
   };
   if (initial || matchMedia('(prefers-reduced-motion:reduce)').matches) { document.body.classList.remove('sidebar-animating'); apply(target); return; }
@@ -151,6 +191,7 @@ function render(next) {
   state = next;
   for (const [id, measured] of tabMemory) if (measured.page !== memoryKey(state.tabs.find(t => t.id === id))) tabMemory.delete(id);
   document.body.classList.toggle('collapsed', state.collapsed);
+  renderSidebarIcon();
   if (state.collapsed) hideTabMemory();
   renderSidebar();
   document.body.classList.toggle('fullscreen', state.fullscreen);
@@ -158,14 +199,15 @@ function render(next) {
   document.body.dataset.theme = theme;
   [loadingBolt, titleBolt, homeBolt, aboutBolt].filter(Boolean).forEach(bolt => bolt.setTheme(theme));
   navigationIcons.forEach(item => item.setTheme(theme));
-  if (lastTheme && lastTheme !== theme) { themeTurns++; $('#theme-icon').style.transform = `rotate(${themeTurns * 180}deg)`; }
-  lastTheme = theme;
+  renderThemeIcon();
   $('#theme-button').title = `Theme: ${theme === 'current' ? 'dark grey' : theme === 'light' ? 'light grey' : 'dark'} — click to change`;
   $('#theme-button').setAttribute('aria-label', $('#theme-button').title);
   const t = current();
   renderSummary();
   document.body.classList.toggle('flashcognito', !!t?.private);
+  navigationIcons.filter(item => ['history', 'downloads'].includes(item.kind)).forEach(item => item.setMetal(t?.private ? 'silver' : 'gold'));
   loadingBolt.setMetal(t?.private ? 'silver' : 'gold');
+  loadingBolt.setOutlined(!t?.native);
   titleBolt.setMetal(t?.private ? 'silver' : 'gold');
   $('#private-badge').classList.toggle('hidden', !t?.private);
   loadingBolt.setLoading(!!t?.loading, t?.id);
@@ -192,6 +234,8 @@ function render(next) {
   $('#native-mode').disabled = !t?.url?.startsWith('http');
   $('#native-mode').classList.toggle('native-active', !!t?.native);
   $('#native-mode').setAttribute('aria-pressed', String(!!t?.native));
+  $('#native-mode').title = t?.native ? 'Flash toggle: on (click to turn off)' : 'Flash toggle: off (click to turn on)';
+  $('#native-mode').setAttribute('aria-label', t?.native ? 'Toggle Flash mode off' : 'Toggle Flash mode on');
   $('#menu-button').setAttribute('aria-expanded', String(state.menuOpen));
   for (const [id, controller] of predictiveFields) controller.input.setAttribute('aria-expanded', String(state.suggestions?.field === id));
   const downloads = state.downloads.filter(d => d.state === 'progressing').length;
@@ -199,16 +243,16 @@ function render(next) {
   const newDownloads = state.downloads.some(d => d.state === 'completed' && d.isNew);
   $('#download-new').classList.toggle('hidden', !newDownloads);
   $('.sidebar [data-panel="downloads"]').setAttribute('aria-label', newDownloads ? 'Downloads — new completed downloads' : 'Downloads');
-  $('#page-status').textContent = state.panel ? ({ library: 'Your Flash collection', bookmarks: 'Saved for later', history: 'Recently visited', downloads: 'Your downloads', settings: 'Settings', about: 'Flashborn ' + state.version }[state.panel]) : t?.loading ? 'Loading…' : t?.kind === 'home' ? 'Make yourself at home.' : t?.url || '';
+  $('#page-status').textContent = state.panel ? ({ library: 'Your Flash collection', bookmarks: 'Saved for later', history: 'Recently visited', downloads: 'Your downloads', extensions: 'Extensions', settings: 'Settings', about: 'Flashborn ' + state.version }[state.panel]) : t?.loading ? 'Loading…' : t?.kind === 'home' ? 'Make yourself at home.' : t?.url || '';
   $('#status-right').textContent = t?.private ? 'Flashcognito · temporary session' : t?.audible ? (t.muted ? 'Audio muted' : 'Audio playing') : t?.native ? 'Native Adobe Flash' : 'Chromium · Adobe Flash';
-  const key = state.panel ? state.panel + (t?.private ? ':private' : '') : (t?.error ? 'error:' + t.id + t.error : t?.kind === 'home' ? t.private ? 'private-home' : 'home' : 'web');
+  const key = state.panel ? state.panel + (state.panelSection ? ':' + state.panelSection : '') + (t?.private ? ':private' : '') : (t?.error ? 'error:' + t.id + t.error : t?.kind === 'home' ? t.private ? 'private-home' : 'home' : 'web');
   if (key !== viewKey) { filter = ''; viewKey = key; renderContent(); }
   else if (state.panel && !['settings', 'about'].includes(state.panel)) renderList();
   else if (key === 'home' || key === 'private-home') renderQuickLinks();
 }
 function home() {
   const privateMode = !!current()?.private;
-  return `<section class="home${privateMode ? ' flashcognito-home' : ''}"><h1>${privateMode ? 'A little more private.' : 'Where would you like to go?'}</h1><p class="home-description">${privateMode ? 'A fresh session. No saved browsing trail.' : 'A fresh start. An old favorite. Something unexpected.'}</p><form id="home-search" class="search-box">${icon('search')}<input id="home-input" aria-label="${privateMode ? 'Search the web privately' : 'Search the web'}" placeholder="Search the web or paste a link" spellcheck="false" autocomplete="off"><button class="search-submit" title="Go" aria-label="Go">${icon('arrow')}</button></form><div id="quick-links" class="quick-links"></div><div class="home-divider"></div><div class="home-bottom"><button class="flash-library-link" data-panel="library"><span class="flash-card-icon"><canvas id="home-bolt" width="128" height="128" role="img" aria-label="${privateMode ? 'Silver' : 'Gold'} lightning bolt"></canvas></span><span class="flash-copy"><span class="flash-card-title">${privateMode ? 'Old favorites are still welcome.' : 'Some things never get old.'}</span><span class="flash-card-description">${privateMode ? 'Open your Flash library.' : 'Your favorite Flash websites, ready to explore again.'}</span></span></button></div><div class="home-footnote">${icon('lock')}${privateMode ? 'Bookmarks and downloaded files you keep remain on your device.<br>Flashcognito doesn’t hide your activity from websites or your network.' : 'Your history and bookmarks stay on this device.'}</div></section>`;
+  return `<section class="home${privateMode ? ' flashcognito-home' : ''}">${headline(privateMode ? 'A little more private.' : 'Where would you like to go?')}<p class="home-description">${privateMode ? 'A fresh session. No saved browsing trail.' : 'A fresh start. An old favorite. Something unexpected.'}</p><form id="home-search" class="search-box">${icon('search')}<input id="home-input" aria-label="${privateMode ? 'Search the web privately' : 'Search the web'}" placeholder="Search the web or paste a link" spellcheck="false" autocomplete="off"><button class="search-submit" title="Go" aria-label="Go">${icon('arrow')}</button></form><div id="quick-links" class="quick-links"></div><div class="home-divider"></div><div class="home-bottom"><button class="flash-library-link" data-panel="library"><span class="flash-card-icon"><canvas id="home-bolt" width="128" height="128" role="img" aria-label="${privateMode ? 'Silver' : 'Gold'} lightning bolt"></canvas></span><span class="flash-copy"><span class="flash-card-title">${privateMode ? 'Old favorites are still welcome.' : 'Some things never get old.'}</span><span class="flash-card-description">${privateMode ? 'Open your Flash library.' : 'Your favorite Flash websites, ready to explore again.'}</span></span></button></div><div class="home-footnote">${icon('lock')}${privateMode ? 'Bookmarks and downloaded files you keep remain on your device.<br>Flashcognito doesn’t hide your activity from websites or your network.' : 'Your history and bookmarks stay on this device.'}</div></section>`;
 }
 function renderQuickLinks() {
   const target = $('#quick-links'); if (!target) return;
@@ -216,7 +260,8 @@ function renderQuickLinks() {
   target.innerHTML = (state.bookmarks.length ? state.bookmarks.slice(0, 5) : defaults).map(b => `<button class="quick-link" data-url="${escape(b.url)}">${icon(state.bookmarks.length ? 'star' : 'globe')}${escape(b.title.slice(0, 24))}</button>`).join('');
 }
 function panelHeader(name, description, actions) {
-  return `<section class="panel"><h1>${name}</h1><p class="description">${description}</p>${actions ? '<div class="panel-actions">' + actions + '</div>' : ''}<div id="item-list" class="item-list"></div></section>`;
+  const subdued = current()?.private && ['history', 'downloads'].includes(state.panel);
+  return `<section class="panel${subdued ? ' flashcognito-panel' : ''}">${headline(name)}<p class="description">${description}</p>${actions ? '<div class="panel-actions">' + actions + '</div>' : ''}<div id="item-list" class="item-list"></div></section>`;
 }
 function renderContent() {
   listRenderKey = '';
@@ -230,11 +275,13 @@ function renderContent() {
   else if (state.panel === 'bookmarks') html = panelHeader('Bookmarks', 'Good places, saved for later. Press Ctrl+D on any page to bookmark it.', '<input class="filter-input" id="filter" placeholder="Find a bookmark" aria-label="Filter bookmarks">');
   else if (state.panel === 'history') html = panelHeader('History', t?.private ? 'Flashcognito doesn’t save your browsing history.' : 'Pick up where you left off.', t?.private ? '' : '<input class="filter-input" id="filter" placeholder="Search history" aria-label="Filter history"><button class="secondary-button danger-button" id="clear-history">Clear history</button>');
   else if (state.panel === 'downloads') html = panelHeader('Downloads', t?.private ? 'Downloads from this Flashcognito session. Saved files remain after these tabs close.' : 'Everything you have saved from the web.', '<span></span><button class="secondary-button" data-action="download-clear">Clear finished</button>');
+  else if (state.panel === 'extensions') html = panelHeader('Extensions', 'A little extra, when you need it.', '<p class="extensions-support">Compatible Chrome extensions run in regular modern tabs. Extensions are off in Flashcognito and the separate Flash engine. Load an unpacked extension folder to add your own; Chrome Web Store installation and some Chrome APIs are not supported.</p><button class="secondary-button" data-action="extension-install">'+icon('plus')+'Load unpacked…</button>');
   else if (state.panel === 'settings') html = settings();
   else if (state.panel === 'about') html = about();
-  else if (t?.error) html = `<section class="error-page">${icon('globe')}<h1>This page couldn’t open.</h1><p>${escape(t.error)}</p><button class="primary-button" data-action="reload">${icon('reload')}Try again</button><code>${escape(t.url)}</code></section>`;
+  else if (t?.error) html = `<section class="error-page">${icon('globe')}${headline('This page couldn’t open.')}<p>${escape(t.error)}</p><button class="primary-button" data-action="reload">${icon('reload')}Try again</button><code>${escape(t.url)}</code></section>`;
   else if (t?.kind === 'home') html = home();
   $('#content').innerHTML = html;
+  if (state.panel === 'settings' && state.panelSection === 'privacy') $('#privacy')?.scrollIntoView({ block: 'start' });
   if ($('#about-bolt')) aboutBolt = new GoldLightning($('#about-bolt'), { continuous: true });
   if ($('#home-bolt')) homeBolt = new GoldLightning($('#home-bolt'), { metal: t?.private ? 'silver' : 'gold' });
   renderQuickLinks(); renderList();
@@ -251,16 +298,31 @@ function renderContent() {
   if ($('#search-engine')) $('#search-engine').addEventListener('change', e => call('settings', { searchEngine: e.target.value }));
   for (const setting of ['restoreTabs', 'pageSummaries', 'flashEnabled']) if ($(`#${setting}`)) $(`#${setting}`).addEventListener('change', e => { call('settings', { [setting]: e.target.checked }); if (setting === 'flashEnabled') toast('Reload open websites to apply the Flash setting.'); });
   if ($('#clear-history')) $('#clear-history').addEventListener('click', () => confirmAction('clear-history', 'Click again to clear history'));
-  if ($('#clear-data')) $('#clear-data').addEventListener('click', () => confirmAction('clear-data', 'Click again to clear cookies and cached files. Websites will sign you out.'));
+  const deletionForm = $('#delete-data-form');
+  if (deletionForm) {
+    const button = $('#delete-data');
+    deletionForm.addEventListener('change', () => { button.disabled = !deletionForm.querySelector('input:checked:not(:disabled)'); });
+    deletionForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const choices = Object.fromEntries(['history', 'cookies', 'cache'].map(name => [name, deletionForm.elements[name].checked && !deletionForm.elements[name].disabled]));
+      if (!Object.values(choices).some(Boolean)) return;
+      button.disabled = true; button.textContent = 'Deleting…';
+      const result = await call('delete-browsing-data', choices);
+      if (result) $('#delete-data-status').textContent = 'Selected browsing data deleted.';
+      button.disabled = false; button.textContent = 'Delete data';
+    });
+  }
 }
 const confirmations = new Map();
-function confirmAction(action, message) {
-  if ((confirmations.get(action) || 0) > Date.now()) { confirmations.delete(action); call(action).then(() => toast('Cleared.')); }
-  else { confirmations.set(action, Date.now() + 6000); toast(message); }
+function confirmAction(action, message, args = {}) {
+  const key = action + JSON.stringify(args);
+  if ((confirmations.get(key) || 0) > Date.now()) { confirmations.delete(key); call(action, args); }
+  else { confirmations.set(key, Date.now() + 6000); toast(message); }
 }
-function empty(name, title, description, button = '') { return `<div class="empty">${icon(name)}<h2>${title}</h2><p>${description}</p>${button}</div>`; }
+function empty(name, title, description, button = '') { return `<div class="empty">${icon(name)}${title ? headline(title, 'h2') : ''}<p>${description}</p>${button}</div>`; }
 function renderList() {
   if (dragging) return;
+  if (state.panel === 'extensions') { renderExtensions(); return; }
   const container = $('#item-list'); if (!container) return;
   const p = state.panel; const collection = p === 'library' ? state.library : state[p] || [];
     const items = collection.filter(e => !filter || `${e.title || e.filename || ''} ${e.url || e.path || ''}`.toLowerCase().includes(filter));
@@ -268,7 +330,7 @@ function renderList() {
   if (nextListKey === listRenderKey) return;
   listRenderKey = nextListKey;
   if (!items.length) {
-    container.innerHTML = filter ? empty('search', 'Nothing here yet.', 'Try a different search.') : ({ library: empty('flash', 'Your favorites live here.', 'Add a website URL or a local HTML page containing Flash.', `<button class="primary-button" data-open-library="html">${icon('plus')}Add a Flash page</button>`), bookmarks: empty('star', 'A place for good finds.', 'Bookmark a page with the star in the address bar.'), history: empty('history', 'A clean slate.', current()?.private ? 'Visits in Flashcognito aren’t recorded.' : 'The websites you visit will appear here.'), downloads: empty('download', 'All caught up.', 'Downloads from websites will appear here.') }[p] || '');
+    container.innerHTML = filter ? empty('search', 'Nothing here yet.', 'Try a different search.') : ({ library: empty('flash', 'Your favorites live here.', 'Add a website URL or a local HTML page containing Flash.', `<button class="primary-button" data-open-library="html">${icon('plus')}Add a Flash page</button>`), bookmarks: empty('star', 'A place for good finds.', 'Bookmark a page with the star in the address bar.'), history: empty('history', '', current()?.private ? 'Visits in Flashcognito aren’t recorded.' : 'The websites you visit will appear here.'), downloads: empty('download', '', 'Downloads from websites will appear here.') }[p] || '');
     return;
   }
   container.innerHTML = items.map(item => {
@@ -285,9 +347,15 @@ function renderList() {
     return `<article class="list-item" ${reorder ? `draggable="true" data-collection="${p}" data-reorder-id="${item.id}"` : ''}>${reorder ? `<button class="reorder-handle" title="Drag to reorder (Alt+↑ / Alt+↓)" aria-label="Reorder ${escape(title)}">${icon('grip')}</button>` : ''}${thumbnail}<div class="item-copy"><button class="item-title" ${open}>${escape(title)}</button><p class="item-detail" title="${escape(item.path || item.url || '')}">${escape(detail)}</p>${p === 'downloads' && item.state === 'progressing' ? `<div class="progress"><span style="--progress:${item.total ? Math.min(100, Math.round(item.received / item.total * 100)) : 15}%"></span></div>` : ''}</div><div class="item-actions">${actions}</div></article>`;
   }).join('');
 }
+function renderExtensions() {
+  const container = $('#item-list'); if (!container) return;
+  const privateMode = !!current()?.private;
+  const key = JSON.stringify([state.extensions, privateMode]); if (key === listRenderKey) return; listRenderKey = key;
+  container.innerHTML = `<article class="extension-card flash-runtime-card"><div class="extension-heading"><span class="item-icon">${icon('flash')}</span><div class="item-copy"><h2>Adobe Flash Player</h2><p>${escape(state.flashVersion)} · Built in</p></div><label class="switch"><input type="checkbox" checked disabled aria-label="Adobe Flash Player is built in"><span></span></label></div><p class="extension-description">Original Adobe Flash playback in a separate browser engine. Use the lightning button to switch a website into Flash mode.</p><p class="extension-status">${state.flashReady ? 'Bundled and ready' : 'Runtime missing. Reinstall Flashborn.'}</p></article>` + state.extensions.map(item => `<article class="extension-card" data-extension="${escape(item.key)}"><div class="extension-heading"><span class="item-icon">${icon('extension')}</span><div class="item-copy"><h2>${escape(item.name)}</h2><p>${escape(item.version)}${item.bundled ? ' · Bundled · Adblock, Inc.' : ''}</p></div><label class="switch"><input type="checkbox" data-extension-toggle="${escape(item.key)}" ${item.enabled ? 'checked' : ''} aria-label="Enable ${escape(item.name)}"><span></span></label></div><p class="extension-description">${item.bundled ? 'The official AdBlock extension, with its original scripts, filters, options and site controls.' : escape(item.description)}</p><p class="extension-status${item.error ? ' extension-error' : ''}" role="status">${item.error ? escape(item.error) : !item.enabled ? 'Off' : privateMode ? 'Off in Flashcognito · enabled in regular tabs' : item.loaded ? 'Enabled in regular modern tabs' : 'Not loaded'}</p><div class="extension-actions">${item.popup ? `<button class="secondary-button" data-extension-page="${escape(item.key)}" data-extension-kind="popup" ${privateMode ? 'disabled' : ''}>${item.bundled ? 'Open AdBlock' : 'Open'}</button>` : ''}${item.options ? `<button class="secondary-button" data-extension-page="${escape(item.key)}" data-extension-kind="options">Options</button>` : ''}<button class="secondary-button" data-extension-reload="${escape(item.key)}">Reload</button>${item.bundled ? '' : `<button class="secondary-button" data-extension-remove="${escape(item.key)}">Remove</button>`}</div>${item.permissions?.length ? `<details class="extension-permissions"><summary>Permissions</summary><p>${item.permissions.map(escape).join('<br>')}</p></details>` : ''}</article>`).join('');
+}
 function settings() {
   const s = state.settings;
-  return `<section class="panel"><h1>Settings</h1><p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Generate search summaries</h2><p>An overview of several search results. Turn off to show results without a summary.</p></div><label class="switch"><input id="pageSummaries" type="checkbox" ${s.pageSummaries?'checked':''} aria-label="Generate search summaries"><span></span></label></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading">Privacy</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Cookies and cached files</h2><p>Clear site data and sign out of websites.<br>Your bookmarks and Flash library are kept.</p></div><button id="clear-data" class="secondary-button danger-button">Clear site data</button></div><div class="setting-row"><div class="setting-copy"><h2>Browsing history</h2><p>Keep your saved favorites. Clear your recent visits.</p></div><button id="clear-history" class="secondary-button danger-button">Clear history</button></div></div><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open file · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
+  return `<section class="panel">${headline('Settings')}<p class="description">Just the essentials. Settle in.</p><div class="setting-heading">Browsing</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Search engine</h2><p>Used when you type a search in the address bar.</p></div><select id="search-engine" aria-label="Search engine">${[['duckduckgo','DuckDuckGo'],['google','Google'],['bing','Bing']].map(([id,label])=>`<option value="${id}" ${s.searchEngine===id?'selected':''}>${label}</option>`).join('')}</select></div><div class="setting-row"><div class="setting-copy"><h2>Generate search summaries</h2><p>An overview of several search results. Turn off to show results without a summary.</p></div><label class="switch"><input id="pageSummaries" type="checkbox" ${s.pageSummaries?'checked':''} aria-label="Generate search summaries"><span></span></label></div><div class="setting-row"><div class="setting-copy"><h2>Restore tabs on startup</h2><p>Reopen your previous websites when you return.</p></div><label class="switch"><input id="restoreTabs" type="checkbox" ${s.restoreTabs?'checked':''} aria-label="Restore tabs on startup"><span></span></label></div></div><div class="setting-heading">Flash</div><div class="settings-group"><div class="setting-row"><div class="setting-copy"><h2>Automatically use native Flash on websites</h2><p>Open detected Flash pages with the bundled Adobe player.<br>Use the lightning button for sites that hide Flash behind plugin detection.</p></div><label class="switch"><input id="flashEnabled" type="checkbox" ${s.flashEnabled?'checked':''} aria-label="Play embedded Flash"><span></span></label></div></div><div class="setting-heading" id="privacy">Privacy</div><form id="delete-data-form" class="settings-group"><div class="privacy-options"><label class="privacy-option"><input type="checkbox" name="history" ${current()?.private ? 'disabled' : 'checked'}>Delete browsing history</label><label class="privacy-option"><input type="checkbox" name="cookies" checked>Cookies and other site data</label><label class="privacy-option"><input type="checkbox" name="cache" checked>Cached images and files</label><p class="privacy-help">${current()?.private ? 'Delete data from this Flashcognito session. Saved browsing history is kept.' : 'Choose what to delete from all time. Deleting cookies signs you out of websites.'}<br>Bookmarks, your Flash library and downloaded files are kept.</p></div><div class="privacy-footer"><button id="delete-data" type="submit" class="secondary-button danger-button">Delete data</button><span id="delete-data-status" role="status" aria-live="polite"></span></div></form><p class="about-note">Ctrl+L address · Ctrl+T new tab · Ctrl+W close tab · Ctrl+Shift+T reopen tab<br>Ctrl+O open file · Ctrl+F find · Ctrl+D bookmark · F11 full screen</p></section>`;
 }
 function about() {
   return `<section class="panel about-panel"><canvas id="about-bolt" class="about-bolt" width="336" height="336" role="img" aria-label="Spinning gold lightning bolt"></canvas><div class="about-copy"><h1 class="brand-wordmark about-wordmark" role="img" aria-label="flashborn"></h1><div class="about-text"><p class="about-motto">A quieter kind of browsing. Original Adobe Flash playback.</p><p class="about-dedication">This browser is dedicated to the team at <em>Firstborn</em>, one of the first digital design groups to help shape UI design as we know it today. Back in the early 2000s, <em>Firstborn</em> mostly used Flash to create and share its work with the world. <strong>Flashborn</strong> was designed to preserve their legacy after browser support for Flash was discontinued in 2021. Please enjoy the browser and send your comments or support to&nbsp;<span class="about-email-wrap"><a class="about-email" data-contact-email href="mailto:sloutchevsky@gmail.com" aria-label="Copy email address">sloutchevsky@gmail.com</a><span class="email-copied hidden" role="status" aria-live="polite"></span></span>.</p><dl class="about-detail"><dt>Version</dt><dd>${escape(state.version)}</dd><dt>Modern browser</dt><dd>Chromium ${escape(state.chromium)}</dd><dt>Flash player</dt><dd>Adobe Flash ${escape(state.flashVersion)} · PPAPI</dd><dt>Flash runtime</dt><dd>Electron ${escape(state.flashRuntime)} · separate process</dd><dt>Platform</dt><dd>Windows · 64-bit</dd><dt>Native Flash</dt><dd>${state.flashReady ? 'Bundled and ready' : 'Runtime missing. Reinstall Flashborn.'}</dd></dl><p class="about-note">Flash playback uses the original, unmodified Adobe player from Flash Browser. Its required legacy Chromium runtime no longer receives security updates. Use Flash mode for trusted legacy content. Ordinary pages use the current browser engine; Flash pages use the legacy runtime. The lightning button switches a website between modes.</p><a class="about-copyright" data-browser-url href="https://www.sloutchevsky.com/">© 2026 Vas Sloutchevsky</a><details class="about-license"><summary>MIT open source license</summary><p>Flashborn’s application source is free to use, copy, modify, merge, publish, distribute, sublicense, and sell under the MIT License. Third-party components, including Adobe Flash Player, retain their own licenses.</p><p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p><p>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p><p>THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p></details></div></div></section>`;
@@ -308,6 +376,9 @@ document.addEventListener('click', async e => {
   const button = e.target.closest('button'); if (!button || button.disabled) return;
   const d = button.dataset;
   if (d.action) await call(d.action);
+  else if (d.extensionPage) await call('extension-page', { key: d.extensionPage, kind: d.extensionKind });
+  else if (d.extensionReload) await call('extension-reload', { key: d.extensionReload });
+  else if (d.extensionRemove) confirmAction('extension-remove', 'Click Remove again to remove this extension.', { key: d.extensionRemove });
   else if (d.openLibrary) { $('#library-open-form').classList.remove('hidden'); $('#library-open-label').textContent = 'Open a website or HTML file'; $('#library-open-address').placeholder = 'https://example.com/ or a local HTML file path'; $('#library-open-address').focus(); }
   else if (d.panel) await call('panel', { name: d.panel });
   else if (d.tab) await call('select-tab', { id: d.tab });
@@ -322,6 +393,9 @@ document.addEventListener('click', async e => {
   else if (d.downloadReveal) await call('download-reveal', { id: d.downloadReveal });
   else if (d.downloadCancel) await call('download-cancel', { id: d.downloadCancel });
   else if (d.zoom) await call('zoom', { direction: Number(d.zoom) });
+});
+document.addEventListener('change', event => {
+  if (event.target.matches('[data-extension-toggle]')) call('extension-toggle', { key: event.target.dataset.extensionToggle });
 });
 document.addEventListener('contextmenu', event => {
   const tab = event.target.closest('[data-collection="tabs"]');

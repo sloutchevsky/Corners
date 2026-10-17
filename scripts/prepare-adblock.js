@@ -1,0 +1,11 @@
+'use strict';
+const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
+const { verifyCRX } = require('../src/extension-package');
+const id = 'gighmmpiobklfepjocnamgkkbiglidom';
+const source = process.argv[2];
+if (!source) throw new Error('Provide the official AdBlock CRX3 package downloaded from Chrome Web Store.');
+const buffer = fs.readFileSync(source); verifyCRX(buffer, id);
+const directory = path.resolve(__dirname, '../src/extensions'); fs.mkdirSync(directory, { recursive: true });
+fs.writeFileSync(path.join(directory, 'adblock.crx'), buffer);
+fs.writeFileSync(path.join(directory, 'adblock.json'), JSON.stringify({ id, version: '6.49.0', sha256: crypto.createHash('sha256').update(buffer).digest('hex'), source: 'https://chromewebstore.google.com/detail/adblock/gighmmpiobklfepjocnamgkkbiglidom', downloadedAt: new Date().toISOString(), signature: 'CRX3 publisher proof verified', adaptation: 'manifest.key is restored from the signed publisher proof when unpacking; all scripts and filters are unchanged' }, null, 2) + '\n');
+console.log('Verified and bundled official AdBlock: ' + buffer.length + ' bytes.');

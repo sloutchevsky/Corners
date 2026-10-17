@@ -6,6 +6,7 @@ const readline = require('readline');
 const nodeNet = require('net');
 const { isFlashFallbackURL, legacyFlashTarget } = require('./compat');
 const { nextZoom } = require('./zoom');
+const { clearSessionData } = require('./browsing-data');
 const { settingsScript } = require('./flash-settings');
 const flashRuntime = require('./runtime.json');
 app.setPath('userData', process.env.FLASHBORN_NATIVE_PROFILE);
@@ -95,7 +96,8 @@ async function command(action, args) {
     case 'quality': quality = ['low', 'medium', 'high'].includes(args.quality) ? args.quality : 'high'; qualityOverride = !args.initial || quality !== 'high'; await applySettings(); break;
     case 'print': wc.print(); break;
     case 'find': if (args.text) wc.findInPage(args.text, { forward: args.forward !== false, findNext: !args.next }); else wc.stopFindInPage('clearSelection'); break;
-    case 'clear-data': await runtimeSession.clearStorageData(); await runtimeSession.clearCache(); break;
+    case 'clear-data': await clearSessionData(runtimeSession, { cookies: true, cache: true }); break;
+    case 'delete-browsing-data': await clearSessionData(runtimeSession, args); break;
     case 'capture': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); return (await wc.capturePage()).toPNG().toString('base64');
     case 'memory': {
       // Each Flash tab has its own complete runtime, including the PPAPI player.
@@ -151,7 +153,7 @@ app.whenReady().then(async () => {
     if (standalone) send({ type: 'error', message: 'Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.' });
   });
   runtimeSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'fullscreen'));
-  window = new BrowserWindow({ width: 1100, height: 700, type: 'toolbar', frame: false, show: false, skipTaskbar: true, resizable: false, minimizable: false, maximizable: false, backgroundColor: '#191919',
+  window = new BrowserWindow({ width: 1100, height: 700, type: 'toolbar', frame: false, show: false, skipTaskbar: true, resizable: false, minimizable: false, maximizable: false, backgroundColor: '#ffffff',
     webPreferences: { session: runtimeSession, plugins: true, sandbox: true, nodeIntegration: false, contextIsolation: true, enableRemoteModule: false, webSecurity: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') } });
   Menu.setApplicationMenu(null);
   const wc = window.webContents;

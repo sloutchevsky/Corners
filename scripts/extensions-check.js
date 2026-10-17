@@ -1,0 +1,130 @@
+'use strict';
+const { _electron: electron } = require('playwright');
+const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
+const assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '..'), output = path.join(root, 'test-output');
+async function poll(fn, predicate, timeout = 60000) {
+  const end = Date.now() + timeout; let value;
+  do { value = await fn(); if (predicate(value)) return value; await new Promise(r => setTimeout(r, 150)); } while (Date.now() < end);
+  throw new Error('Timed out: ' + JSON.stringify(value));
+}
+async function run() {
+  fs.mkdirSync(output, { recursive: true });
+  const profile = process.env.FLASHBORN_CHECK_PROFILE || path.join(output, 'extensions-profile-' + Date.now()), fixture = path.join(output, 'extensions-fixture-' + Date.now());
+  fs.mkdirSync(fixture, { recursive: true });
+  fs.writeFileSync(path.join(fixture, 'manifest.json'), JSON.stringify({ manifest_version: 3, name: 'Flashborn extension fixture', version: '1.0', permissions: ['storage'], content_scripts: [{ matches: ['http://*.flashborn.test/*'], js: ['content.js'] }], options_ui: { page: 'options.html', open_in_tab: true } }));
+  fs.writeFileSync(path.join(fixture, 'content.js'), 'document.documentElement.dataset.extensionFixture="active";chrome.storage.local.get("runs",s=>chrome.storage.local.set({runs:(s.runs||0)+1}));');
+  fs.writeFileSync(path.join(fixture, 'options.html'), '<!doctype html><title>Fixture options</title><h1>Extension options</h1><script src="options.js"></script>');
+  fs.writeFileSync(path.join(fixture, 'options.js'), 'chrome.storage.local.set({savedByOptions:true});');
+  let adRequests = 0;
+  const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/pagead/')) { adRequests++; res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end('window.fixtureAdRan=true;'); return; }
+    res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><title>AdBlock fixture</title><style>html{background:#f5efdc}body{margin:30px;color:#151515}#upload{height:300px}</style><h1>Ordinary page content</h1><div id="upload">Attach a file</div><div id="ad-slot"></div><script>window.addEventListener("dragover",e=>e.preventDefault());window.addEventListener("drop",e=>{e.preventDefault();document.documentElement.dataset.attached=e.dataTransfer.files[0].name;});</script>');
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port, base = `http://page.flashborn.test:${port}`;
+  const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
+  let app; const results = [], pass = text => { results.push(text); console.log('PASS ' + text); };
+  const launch = async () => {
+    app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: [...(process.env.FLASHBORN_EXE ? [] : [root]), '--host-resolver-rules=MAP *.flashborn.test 127.0.0.1,MAP pagead2.googlesyndication.com 127.0.0.1'], env, timeout: 90000 });
+    app.process().stderr.on('data', data => fs.appendFileSync(path.join(output, 'extensions-check.log'), data));
+    await poll(() => app.evaluate(() => !!global.__flashborn), Boolean, 120000);
+    await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x:80,y:80,width:1280,height:850 }); w.show(); w.focus(); });
+    return app.firstWindow();
+  };
+  const state = () => app.evaluate(() => global.__flashborn.getState());
+  const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
+  const script = code => app.evaluate(({}, code) => global.__flashborn.activeTab().view.webContents.executeJavaScript(code), code);
+  const fetchAd = () => script(`new Promise(resolve=>{const script=document.createElement('script');script.src='http://pagead2.googlesyndication.com:${port}/pagead/js/adsbygoogle.js?'+Math.random();script.onload=()=>resolve('loaded');script.onerror=()=>resolve('blocked');document.body.append(script);})`);
+  try {
+    let ui = await launch();
+    let bundled = (await state()).extensions.find(item => item.bundled);
+    if (!bundled.enabled) { await command('extension-toggle', {key:bundled.key}); bundled=(await state()).extensions.find(item=>item.bundled); }
+    assert.equal(bundled.id, 'gighmmpiobklfepjocnamgkkbiglidom'); assert.equal(bundled.version, '6.49.0'); assert.equal(bundled.loaded, true, bundled.error);
+    pass('The signed official AdBlock package is unpacked and loaded with its original publisher ID');
+    await ui.locator('#menu-button').click();
+    const menu = await poll(() => app.windows().find(page => page.url() === 'flashborn://ui/menu.html'), Boolean);
+    await menu.locator('[data-panel="extensions"]').click();
+    await ui.locator('.extension-card[data-extension]').waitFor();
+    assert.match(await ui.locator('.extension-card[data-extension]').innerText(), /AdBlock/);
+    await command('navigate', { value: base });
+    await command('extension-page', { key: bundled.key, kind: 'options' });
+    const options = await poll(() => app.windows().find(page => page.url().endsWith('/options.html') && page.url().includes(bundled.id)), Boolean);
+    const enabled = await poll(() => options.evaluate(() => chrome.declarativeNetRequest.getEnabledRulesets()), rules => rules.includes('8C13E995-8F06-4927-BEA7-6C845FB7EEBF'));
+    assert.ok(enabled.length > 0);
+    await options.waitForTimeout(1000);
+    // AdBlock opens its own welcome page on its first installation, as it does
+    // in Chrome. Return to the fixture after initial extension setup.
+    await command('navigate', { value: base });
+    await options.close();
+    await command('extension-page', {key:bundled.key,kind:'popup'});
+    const initialPopup = await poll(() => app.windows().find(page=>page.url().endsWith('/adblock-button-popup.html')),Boolean);
+    const initialResume = initialPopup.locator('[data-action="resumeThisPage"] button:visible,#btn_unpause_once:visible,#btn_unpause_all:visible').first();
+    if (await initialResume.count()) await initialResume.click();
+    if (!initialPopup.isClosed()) await initialPopup.close();
+    assert.equal(await fetchAd(), 'blocked'); assert.equal(adRequests, 0);
+    assert.equal(await script('getComputedStyle(document.documentElement).backgroundColor'), 'rgb(245, 239, 220)');
+    pass('Official native AdBlock rules block an advertising script while authored page colors remain intact');
+    await command('extension-page', { key: bundled.key, kind: 'popup' });
+    const popup = await poll(() => app.windows().find(page => page.url().endsWith('/adblock-button-popup.html')), Boolean);
+    await popup.locator('[data-action="pauseOnDomain"] button').waitFor({state:'visible'});
+    await popup.screenshot({ path: path.join(output, 'adblock-popup.png') });
+    await popup.locator('[data-action="pauseOnDomain"] button').click();
+    await poll(()=>popup.isClosed(),Boolean);
+    await command('navigate',{value:base});
+    assert.equal(await fetchAd(), 'loaded');
+    await command('extension-page', {key:bundled.key,kind:'popup'});
+    const resume = await poll(() => app.windows().find(page=>page.url().endsWith('/adblock-button-popup.html')),Boolean);
+    await resume.locator('[data-action="resumeThisPage"] button:visible,#btn_unpause_once:visible,#btn_unpause_all:visible').first().click();
+    await poll(()=>resume.isClosed(),Boolean);
+    await ui.waitForTimeout(200); await command('navigate',{value:base});
+    assert.equal(await fetchAd(),'blocked');
+    pass('Official Pause on this site and Resume controls change real request filtering');
+    pass('Official AdBlock popup and options open in separate windows that retain the website as the active tab');
+    await command('extension-toggle', { key: bundled.key });
+    await ui.waitForTimeout(200); await command('navigate', {value:base});
+    const beforeDisabled=adRequests;
+    assert.equal(await fetchAd(), 'loaded'); assert.equal(adRequests, beforeDisabled+1);
+    await command('extension-toggle', { key: bundled.key });
+    await ui.waitForTimeout(200); await command('navigate', {value:base});
+    const beforeEnabled=adRequests;
+    assert.equal(await fetchAd(), 'blocked'); assert.equal(adRequests, beforeEnabled);
+    pass('Disabling AdBlock permits the same request; enabling it restores real filtering');
+    const beforeUpload=(await state()).tabs.length;
+    await app.evaluate(async({},file)=>{const wc=global.__flashborn.activeTab().view.webContents;if(!wc.debugger.isAttached())wc.debugger.attach('1.3');for(const type of ['dragEnter','dragOver','drop'])await wc.debugger.sendCommand('Input.dispatchDragEvent',{type,x:100,y:100,data:{items:[],files:[file],dragOperationsMask:1}});},path.join(fixture,'options.html'));
+    await poll(()=>script('document.documentElement.dataset.attached'),name=>name==='options.html');
+    assert.equal((await state()).tabs.length,beforeUpload);
+    pass('Website attachment drops still work while official AdBlock is enabled');
+    const key = await app.evaluate(({}, fixture) => global.__flashborn.extensions.install(fixture), fixture);
+    await command('reload'); await poll(() => script('document.documentElement.dataset.extensionFixture'), value => value === 'active');
+    assert.equal(await script('typeof window.__flashbornExtension'), 'undefined');
+    await command('new-flashcognito'); await command('navigate', { value: base });
+    assert.equal(await script('document.documentElement.dataset.extensionFixture'), undefined);
+    assert.equal(await script('typeof window.__flashbornExtension'), 'undefined');
+    pass('Installed extension content scripts run in regular tabs; Flashcognito and website JavaScript cannot access the extension bridge');
+    await command('new-tab'); await command('select-tab', { id: (await state()).tabs.find(t => !t.private).id });
+    await command('navigate', { value: base });
+    await command('panel', { name: 'extensions' });
+    await ui.screenshot({ path: path.join(output, 'extensions-panel.png') });
+    await command('extension-toggle', { key });
+    await app.close(); app = null;
+    ui = await launch();
+    const restored = (await state()).extensions.find(item => item.key === key);
+    assert.equal(restored.enabled, false); assert.equal(restored.loaded, false);
+    await command('extension-toggle', { key }); await command('navigate', { value: base });
+    await poll(() => script('document.documentElement.dataset.extensionFixture'), value => value === 'active');
+    await command('extension-page', { key, kind: 'options' });
+    const ownOptions = await poll(() => app.windows().find(page => page.url().endsWith('/options.html') && !page.url().includes(bundled.id)), Boolean);
+    await ownOptions.locator('h1').waitFor();
+    assert.equal((await ownOptions.evaluate(()=>chrome.storage.local.get('savedByOptions'))).savedByOptions,true);
+    await command('delete-browsing-data', { cookies:true });
+    assert.equal((await ownOptions.evaluate(()=>chrome.storage.local.get('savedByOptions'))).savedByOptions,true);
+    pass('Deleting website cookies and data preserves installed extension preferences');
+    await ownOptions.close();
+    await command('extension-remove', { key });
+    assert.ok(!(await state()).extensions.some(item => item.key === key)); assert.equal((await state()).extensions.filter(item => item.bundled).length, 1);
+    pass('Extension enablement survives restart; re-enable, options and removal work without removing bundled AdBlock');
+    fs.writeFileSync(path.join(output, process.env.FLASHBORN_EXE ? 'packaged-extensions-results.json' : 'extensions-results.json'), JSON.stringify({ passed: results }, null, 2));
+  } finally { if (app) await app.close(); server.close(); }
+}
+run().catch(error => { console.error(error); process.exitCode = 1; });

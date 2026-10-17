@@ -20,7 +20,6 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
     <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 4v5h5M3.8 9a8.5 8.5 0 1 1 .5 7M12 7v5l3 2"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="M9.5 3h5l.6 2.6 2.1 1.2 2.6-.8 2.5 4.3-2 1.8v2.4l2 1.8-2.5 4.3-2.6-.8-2.1 1.2-.6 2.6h-5l-.6-2.6-2.1-1.2-2.6.8L1.8 16l2-1.8v-2.4l-2-1.8L4.3 5.7l2.6.8L9 5.3z" transform="translate(0 -1) scale(1 .95)"/><circle cx="12" cy="12" r="3"/></symbol>
-    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V4h7l2 3h9v13H3z"/></symbol>
     <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-8h6v8"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
@@ -32,6 +31,7 @@
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8z"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+    <symbol id="i-extension" viewBox="0 0 24 24"><path d="M9 4H4v5a3 3 0 1 1 0 6v5h5a3 3 0 1 0 6 0h5v-5a3 3 0 1 0 0-6V4h-5a3 3 0 1 0-6 0Z"/></symbol>
     <symbol id="i-grip" viewBox="0 0 24 24"><path d="M8 6h.01M16 6h.01M8 12h.01M16 12h.01M8 18h.01M16 18h.01" stroke-width="3"/></symbol>
     <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" stroke="none"/></symbol>
   </defs></svg>
@@ -45,7 +45,7 @@
     </div>
   </header>
   <aside class="sidebar">
-    <div class="sidebar-top"><button class="icon-button" data-action="collapse" title="Toggle sidebar" aria-label="Toggle sidebar"><svg class="icon"><use href="#i-sidebar"/></svg></button><button class="sidebar-wordmark brand-wordmark" data-panel="about" title="About" aria-label="flashborn — About"></button></div>
+    <div class="sidebar-top"><button class="icon-button sidebar-toggle" data-action="collapse" data-divider="right" title="Toggle sidebar" aria-label="Toggle sidebar" aria-expanded="true"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path class="sidebar-divider" d="M15 4v16"/></svg></button><button class="sidebar-wordmark brand-wordmark" data-panel="about" title="About" aria-label="flashborn — About"></button></div>
     <button class="new-tab nav-button" data-action="new-tab" title="New tab (Ctrl+T)"><svg class="icon"><use href="#i-plus"/></svg><span>New tab</span><kbd>Ctrl T</kbd></button>
     <div class="tabs-label"><span>Your tabs</span><span id="tab-count"></span></div>
     <div id="tabs" class="tabs" aria-label="Open tabs"></div>
@@ -66,7 +66,7 @@
     </div>
     <form id="address-form" class="address"><svg id="address-icon" class="icon"><use href="#i-search"/></svg><input id="address" spellcheck="false" autocomplete="off" aria-label="Search or enter address" placeholder="Search or enter an address"><button id="address-go" type="submit" class="icon-button" title="Go to address" aria-label="Go to address"><svg class="icon"><use href="#i-forward"/></svg></button><button id="bookmark" type="button" class="icon-button" data-action="bookmark" title="Bookmark this page (Ctrl+D)" aria-label="Bookmark this page"><svg class="icon"><use href="#i-star"/></svg></button></form>
     <span id="private-badge" class="private-badge hidden" title="Flashcognito: this tab uses a temporary session"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>Flashcognito</span>
-    <button id="native-mode" type="button" class="icon-button native-bolt-button" data-action="native-mode" title="Switch this page to native Adobe Flash" aria-label="Toggle native Adobe Flash mode"><canvas id="loading-bolt" class="loading-bolt" width="96" height="96" aria-hidden="true"></canvas></button>
+    <button id="native-mode" type="button" class="icon-button native-bolt-button" data-action="native-mode" title="Flash toggle" aria-label="Toggle Flash mode"><canvas id="loading-bolt" class="loading-bolt" width="96" height="96" aria-hidden="true"></canvas></button>
     <button id="theme-button" class="icon-button" data-action="theme" title="Change theme" aria-label="Change theme"><svg id="theme-icon" class="icon"><use href="#i-theme"/></svg></button>
     <button id="menu-button" class="icon-button" title="Browser menu" aria-label="Browser menu"><svg class="icon"><use href="#i-more"/></svg></button>
     <form id="find-form" class="find hidden"><input id="find-input" placeholder="Find in page" aria-label="Find in page"><small id="find-count"></small><button type="button" id="find-prev" aria-label="Previous match">↑</button><button type="submit" aria-label="Next match">↓</button><button type="button" id="find-close" aria-label="Close find">×</button></form>

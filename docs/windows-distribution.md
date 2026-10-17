@@ -4,6 +4,19 @@ Flashborn 1.8.5 remains unsigned. The screenshot reported by the user is the
 SmartScreen **unrecognized app** warning. It does not name a malware detection.
 Removing the standalone player cannot guarantee that this warning disappears.
 
+Version 1.8.6 also remains unsigned. The October 16 recheck confirms that the
+retained v1.7.3 installer has SHA-256
+`8da216476ce1fd3fadf94b4767e4081686a29630f423afe29f83da7f78a64420`,
+exactly matching the digest returned by GitHub for its v1.7.3 release asset.
+Publishing did not alter that installer's bytes. The NSIS configuration and
+welcome-page include are unchanged between tags v1.7.3 and v1.8.0.
+
+For an unsigned public download, the supported path is for the exact file hash
+to acquire positive reputation over time. Microsoft documents no manual
+consumer SmartScreen reputation-review mechanism. A malware false-positive
+submission is a different process and is not a guaranteed reputation reset.
+No new installer is described as warning-free based only on a local launch.
+
 ## Signature audit
 
 Checked with Windows `Get-AuthenticodeSignature` on October 15, 2026:
@@ -64,6 +77,9 @@ Store certification requirements.
 
 There is no signing certificate or signing-service account configured for this
 project. `npm run dist:signed` requires signing and fails when it is unavailable.
+The Microsoft registration and Azure build route are prepared in
+[microsoft-signing.md](microsoft-signing.md); `npm run dist:azure` also verifies
+the app, Flash runtime executable, and installer signatures after building.
 Configure legitimate credentials outside the repository, then verify the final
 installer and installed executable signatures. Do not alter signed files after
 signing. Third-party binaries require their own provenance/licensing review.

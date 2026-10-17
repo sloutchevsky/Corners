@@ -1,6 +1,6 @@
 {
   "name": "flashborn-browser",
-  "version": "1.8.5",
+  "version": "1.9.0",
   "description": "A minimal dark Windows browser with native Adobe Flash playback",
   "main": "src/main.js",
   "author": {
@@ -15,6 +15,7 @@
     "test:smoke": "node scripts/smoke.js",
     "dist": "npm run prepare:icon && npm run prepare:assets && electron-builder --win nsis --x64",
     "dist:signed": "npm run prepare:icon && npm run prepare:assets && electron-builder --win nsis --x64 --config.forceCodeSigning=true",
+    "dist:azure": "node -e \"require('./electron-builder.azure.cjs')\" && npm run prepare:icon && npm run prepare:assets && electron-builder --config electron-builder.azure.cjs --win nsis --x64 --publish never && node scripts/verify-windows-signatures.js",
     "dist:portable": "npm run prepare:icon && npm run prepare:assets && electron-builder --win portable --x64",
     "test:files": "node scripts/file-ui-check.js",
     "test:refinements": "node scripts/refinements-check.js",
@@ -32,10 +33,18 @@
     "test:website": "node scripts/website-check.js",
     "test:package": "node scripts/verify-package.js",
     "test:isolation": "node scripts/isolation-check.js",
-    "test:theme-color": "node scripts/theme-color-check.js"
+    "test:theme-color": "node scripts/theme-color-check.js",
+    "test:page-colors": "node scripts/page-colors-check.js",
+    "test:uploads": "node scripts/upload-drop-check.js",
+    "test:extensions": "node scripts/extensions-check.js",
+    "test:ui-stability": "node scripts/ui-stability-check.js",
+    "test:chrome-polish": "node scripts/chrome-polish-check.js",
+    "test:link-order": "node scripts/link-order-check.js",
+    "test:flash-visibility": "node scripts/flash-visibility-check.js"
   },
   "dependencies": {
-    "koffi": "3.3.2"
+    "koffi": "3.3.2",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "electron": "44.7.0",

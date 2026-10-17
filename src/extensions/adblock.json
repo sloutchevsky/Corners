@@ -1,0 +1,9 @@
+{
+  "id": "gighmmpiobklfepjocnamgkkbiglidom",
+  "version": "6.49.0",
+  "sha256": "d39ac37db7a4cc7c5f16a53f45c95317c613c3579d6d17b2301e80f43a628a9c",
+  "source": "https://chromewebstore.google.com/detail/adblock/gighmmpiobklfepjocnamgkkbiglidom",
+  "downloadedAt": "2026-10-16T12:41:54.970Z",
+  "signature": "CRX3 publisher proof verified",
+  "adaptation": "manifest.key is restored from the signed publisher proof when unpacking; all scripts and filters are unchanged"
+}

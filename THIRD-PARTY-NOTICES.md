@@ -35,10 +35,42 @@ receive security updates. Native mode is intended for trusted legacy content.
 
 Flash Browser runtime reference: https://github.com/radubirsan/FlashBrowser
 
+## Headline font and brand artwork
+
+Page headings use the bundled Flashborn 75 Bold font, a locally renamed copy
+derived from Helvetica Neue LT Com 75 Bold by Linotype Design Studio / Linotype
+GmbH, with original outline data also credited to Adobe Systems Incorporated.
+The original glyphs, hinting, spacing and kerning are preserved. The font is
+proprietary and excluded from the application's MIT license. Renaming and
+removing descriptive font metadata do not change its underlying licensing.
+Original font license reference: http://www.linotype.com/license
+
+The extended brand wordmark remains fixed artwork typeset from HelveticaNeueLT
+Com 53 Extended. That original typeface software is not bundled.
+
 ## Koffi
 
 Native Windows window positioning uses Koffi 3.3.2, Copyright (C) 2026 Niels
 Martignène, MIT licensed. Its full license ships in the packaged dependency.
 Source: https://github.com/Koromix/koffi
+
+## AdBlock
+
+The official AdBlock 6.49.0 Chrome extension is bundled as a separate extension,
+copyright Adblock, Inc. and contributors, GNU GPL version 3. Its full `COPYING`
+and `LICENSE-THIRD-PARTY` notices are retained inside the original CRX3 package
+and in the extracted extension. Source and build instructions:
+https://gitlab.com/eyeo/browser-extensions-and-premium/extensions/extensions/-/tree/adblock-6.49.0
+Corresponding source archive (also supplied as `AdBlock-Source-6.49.0.zip`
+alongside the local installer):
+https://gitlab.com/eyeo/browser-extensions-and-premium/extensions/extensions/-/archive/adblock-6.49.0/extensions-adblock-6.49.0.zip
+Official distribution: https://chromewebstore.google.com/detail/adblock/gighmmpiobklfepjocnamgkkbiglidom
+Package provenance, adaptations and compatibility limits: `src/extensions/NOTICE.md`.
+
+## yauzl and pend
+
+Extension package extraction uses yauzl 3.4.0 and its pend dependency under the
+MIT License. Their complete licenses ship in the packaged dependencies.
+Source: https://github.com/thejoshwolfe/yauzl
 
 Flashborn is not affiliated with Adobe, Flash Browser, OpenAI, Google or Electron.

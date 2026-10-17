@@ -37,7 +37,7 @@
   class GoldNavigation {
     constructor(canvas) {
       this.canvas = canvas; this.kind = canvas.dataset.navIcon;
-      this.surface = document.createElement('canvas'); this.theme = document.body?.dataset.theme || 'current';
+      this.surface = document.createElement('canvas'); this.theme = document.body?.dataset.theme || 'current'; this.metal = 'gold';
       this.button = canvas.closest('button'); this.frame = 0; this.start = 0; this.progress = 0;
       this.hovered = false; this.focused = false; this.elapsed = 0; this.finishAt = null;
       this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
@@ -63,6 +63,11 @@
     setTheme(theme) {
       if (theme === this.theme) return;
       this.theme = theme; this.bolt?.setTheme(theme); this.draw(this.progress);
+    }
+    setMetal(metal) {
+      metal = metal === 'silver' ? 'silver' : 'gold';
+      if (metal === this.metal) return;
+      this.metal = metal; this.draw(this.progress);
     }
     finishGear() {
       if (this.kind === 'settings' && !this.hovered && !this.focused && this.frame) this.finishAt = Math.max(1, Math.ceil(this.elapsed - .000001));
@@ -97,11 +102,12 @@
         // This studio gradient is in screen/world coordinates. Paths move through it;
         // the gradient never rotates, translates, or changes with animation time.
         const light = ctx.createLinearGradient(1, 1, 24, 25);
-        light.addColorStop(0, lightMode ? '#a08c64' : '#94621b'); light.addColorStop(.38, lightMode ? '#b49a64' : '#d6aa4e');
-        light.addColorStop(.53, lightMode ? '#cbb987' : '#f5e1a2'); light.addColorStop(.7, lightMode ? '#b09969' : '#c29435'); light.addColorStop(1, lightMode ? '#a08c64' : '#916020');
+        const silver = this.metal === 'silver';
+        const colors = silver ? (lightMode ? ['#808894','#939ca8','#b0b8c3','#929ba8','#808894'] : ['#7b8492','#aab5c5','#dce3ed','#a6b3c4','#747e8e']) : (lightMode ? ['#a08c64','#b49a64','#cbb987','#b09969','#a08c64'] : ['#94621b','#d6aa4e','#f5e1a2','#c29435','#916020']);
+        [0,.38,.53,.7,1].forEach((stop, i) => light.addColorStop(stop, colors[i]));
         const stroke = path => {
           ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-          ctx.strokeStyle = lightMode ? '#958260' : '#79551e'; ctx.lineWidth = 2.25; ctx.stroke(path);
+          ctx.strokeStyle = silver ? (lightMode ? '#7c8592' : '#697587') : lightMode ? '#958260' : '#79551e'; ctx.lineWidth = 2.25; ctx.stroke(path);
           ctx.strokeStyle = light; ctx.lineWidth = 1.65; ctx.stroke(path);
         };
         if (this.kind === 'bookmarks') {
@@ -131,6 +137,7 @@
         output.drawImage(surface, 0, 0, target, target);
       }
       canvas.dataset.progress = progress.toFixed(4);
+      canvas.dataset.metal = this.metal;
       canvas.dataset.lights = 'fixed';
       if (!this.frame) canvas.dataset.motion = this.reduced.matches ? 'reduced' : 'idle';
     }

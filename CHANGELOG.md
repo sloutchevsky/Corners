@@ -1,6 +1,6 @@
 # Flashborn Browser version history
 
-This history covers releases from 1.0.0 to 1.8.5. Historical updates through 1.7.3 are assigned
+This history covers releases from 1.0.0 to 1.9.0. Historical updates through 1.7.3 are assigned
 to versions by comparing the archived source ZIPs, their READMEs and the recorded
 development requests. Dates are the retained installer build dates in New York
 time. Historical Git commits are imports of these snapshots, not a recovered
@@ -13,6 +13,14 @@ deferred; the production application still uses the simple lightning bolt.
 
 | Version | Build date | Main changes |
 | --- | --- | --- |
+| [1.9.0](#190-2026-10-17) | 2026-10-17 | Bundled headline font, quieter clipboard copying, built-in Flash card and selective browsing-data deletion |
+| [1.8.12](#1812-2026-10-16) | 2026-10-16 | Theme hover preview and simpler empty History/Downloads pages |
+| [1.8.11](#1811-2026-10-16) | 2026-10-16 | Hovering sidebar divider and Helvetica Neue Bold page headlines |
+| [1.8.10](#1810-2026-10-16) | 2026-10-16 | Visible background Flash, adjacent linked tabs and no close-button flash during expansion |
+| [1.8.9](#189-2026-10-16) | 2026-10-16 | Subtle light-mode scrollbars, explicit new private-tab label and outlined Flash-off bolt |
+| [1.8.8](#188-2026-10-16) | 2026-10-16 | Remember site permissions, protect title-bar dragging, smooth sidebar expansion and subdue private History/Downloads |
+| [1.8.7](#187-2026-10-16) | 2026-10-16 | Website attachment drops, extension management, official AdBlock and silver private-session icons |
+| [1.8.6](#186-2026-10-16) | 2026-10-16 | Preserve website backgrounds independently of browser themes |
 | [1.8.5](#185-2026-10-15) | 2026-10-15 | Visible Flash through theme/toolbar clicks, sRGB startup for both engines, and download-origin audit |
 | [1.8.4](#184-2026-10-15) | 2026-10-15 | Independent Flash input queues, immediate runtime recovery, restored Adobe-signed player and inline tab memory |
 | [1.8.3](#183-2026-10-15) | 2026-10-15 | Website-only Flash, removal of the standalone SWF player, fewer plugin/focus interventions and installer trust audit |
@@ -32,6 +40,108 @@ deferred; the production application still uses the simple lightning bolt.
 | [1.1.1](#111--2026-10-09) | 2026-10-09 | Blank Flash surface and legacy detection fixes |
 | [1.1.0](#110--2026-10-09) | 2026-10-09 | Original Adobe Flash and separate legacy runtime |
 | [1.0.0](#100--2026-10-08) | 2026-10-08 | Initial Windows browser with Ruffle |
+
+## 1.9.0 (2026-10-17)
+
+- Publish the accumulated 1.8.6–1.8.12 changes, including extension architecture,
+  the official bundled AdBlock extension, improved private sessions, attachment
+  drops, sidebar animations and Flash visibility. Retain native Adobe playback
+  and explicit sRGB defaults in both engines.
+- Replace fixed SVG headline artwork with bundled Flashborn 75 Bold text across
+  all former title-artwork pages, preserving -20 tracking, original glyphs,
+  hinting and 1,247 kerning pairs.
+- Allow ordinary clipboard writes from the active page without repeated modal
+  permission prompts. Keep clipboard reading separately permissioned and honor
+  explicit write blocks and inactive/cross-origin boundaries.
+- Add a built-in Adobe Flash Player card to Extensions with a checked, disabled
+  grey switch. Website Flash mode remains controlled by the toolbar bolt.
+- Add Delete browsing data... to the three-dot menu. Combine Privacy into three
+  independently selectable categories and one Delete data button, with matching
+  behavior in both engines and private-session isolation.
+- Inset the search-engine dropdown arrow. Preserve the installer configuration,
+  NSIS include, packaging workflow and website-authored page colors.
+
+## 1.8.12 (2026-10-16)
+
+- Remove the "A clean slate" and "All caught up" empty-state headings and their
+  title artwork from History and Downloads in regular and Flashcognito sessions.
+- Preview the theme icon's half turn on hover without changing the theme.
+  Leaving reverses the preview; clicking changes the theme and retains the
+  selected orientation, matching the sidebar toggle's interaction. Keep the
+  icon fixed in place and honor reduced-motion preferences.
+- Preserve the installer configuration and website styling.
+
+## 1.8.11 (2026-10-16)
+
+- Keep the sidebar control to the left of the wordmark with its outer icon and
+  button fixed in place. Animate only the inner divider between mirrored right
+  and left positions on hover; clicking retains the selected sidebar state.
+- Bundle fixed title artwork from Helvetica Neue LT Com 75 Bold with -20 tracking
+  for new-tab, Flashcognito and built-in page headlines, so installed fonts cannot
+  change their appearance on other machines. Match the reference's
+  42.15-pixel headline size on larger new-tab pages and retain smaller panel
+  headings. The brand wordmark keeps its original extended face.
+- Preserve the installer configuration and website styling.
+
+## 1.8.10 (2026-10-16)
+
+- Hide tab close buttons throughout sidebar animation, without briefly exposing
+  every tab's X during expansion. Restore normal hover/active visibility when
+  the transition finishes.
+- Keep the active Flash page visible and playing when another application takes
+  focus. Demote its independent surface into the ordinary window stack directly
+  above the browser shell, allowing other applications to overlap it normally.
+  Minimize, tab changes and internal panels still hide the viewport when needed.
+- Clicking a background Flash surface raises the browser without transferring
+  focus or capture away from the plugin's mouse-down.
+- Place new tabs opened by modern or native Flash links immediately below the
+  actual source tab. Include scripted popups, context-menu links and private
+  sessions, preserving other tab order and session isolation.
+- Preserve the installer configuration and website-authored page colors.
+
+## 1.8.9 (2026-10-16)
+
+- Use subtle grey thin scrollbars for the tab stack and scrollable browser UI
+  text boxes in light mode.
+- Rename the three-dot menu command to **New Flashcognito tab**.
+- Show the toolbar's spinning bolt filled in native Flash mode and outlined in
+  modern mode. Keep the same fixed lighting, two-second loading animation,
+  complete-turn stop and silver private-session material. Identify the button
+  explicitly as the Flash toggle in its tooltip, with its current on/off state.
+- Hide horizontal overflow in the tab stack throughout sidebar expansion,
+  preserving vertical scrolling and fixed icon alignment.
+- Preserve the installer configuration and website-authored page colors.
+
+## 1.8.8 (2026-10-16)
+
+- Suppress cross-origin embedded notification prompts such as Meet in Gmail;
+  remember regular site choices across restarts and coalesce duplicate requests.
+  Private choices remain temporary, and clearing site data resets permissions.
+- Prevent new permission dialogs and delayed Flash focus transfers during
+  native title-bar dragging. Close transient browser popups before dragging and
+  avoid resetting embedded page bounds/visibility on each window move.
+- Smooth sidebar expansion with stable text geometry and gradual label reveal.
+- Subdue Flashcognito History and Downloads labels and pages in both themes.
+- Measure the 1.8.7 installer increase: 76.43 MB from bundled AdBlock and about
+  0.35 MB from extension support plus other small code changes. See the
+  [size audit](docs/release-notes-1.8.8.md).
+- Preserve the working installer configuration and website-authored page colors.
+
+## 1.8.7 (2026-10-16)
+
+- Let websites handle file drops before the browser's local-file fallback, including document and window drop handlers. Preserve native file-input and editable-field drops. Gmail can receive the attachment and finish its drag-overlay cleanup instead of losing the drop to a new browser tab.
+- Add Extensions to the three-dot menu and support compatible unpacked Chrome extensions with persistent installation, enable/disable, reload, options, popup and removal controls. Keep extensions out of Flashcognito and the separate legacy runtime.
+- Bundle the official AdBlock 6.49.0 Chrome Web Store package. Verify its publisher proof and pinned digest; restore its publisher key when unpacking. Leave its scripts and filter data unchanged. Supply browser tab/navigation/menu APIs and connect Chromium's native DNR matching to Electron's requests, including document allowlists for the official pause/resume controls. Chrome extension support remains partial; specialized rules, counters and cloud sync are not advertised as Chrome-equivalent.
+- Turn History and Downloads silver in Flashcognito while retaining the shared gold icons and their fixed-light animations elsewhere.
+- Preserve the complete 1.8.6 installer build configuration and NSIS include. Retain the website-background fix and sRGB behavior.
+- Add real file-drop, upload-overlay, ad blocking, allowlisting, extension restart/removal and private-isolation regression checks.
+
+## 1.8.6 (2026-10-16)
+
+- Restore the normal white backing for transparent website canvases. A hard-coded dark backing made pages with transparent HTML/body backgrounds appear dark even when the site was designed for a white canvas.
+- Apply the neutral backing to both the modern browser view and the legacy Flash host. Keep browser-theme changes confined to Flashborn's interface; preserve author backgrounds, site-declared color schemes, and page state without injecting website CSS or reloading pages.
+- Add a pixel-based regression check covering transparent, explicitly colored, dark, and site-declared dark-scheme pages in modern, legacy, and private tabs across both themes. The transparent-page case fails against the previous modern backing and passes with the fix.
+- Reaudit the unsigned installer warning. The retained v1.7.3 installer has the exact SHA-256 published by GitHub, and the NSIS configuration did not change between v1.7.3 and v1.8.0. Older local copies lack Internet-origin metadata; the inspected v1.8.0 GitHub download has ZoneId=3. This release does not claim to eliminate SmartScreen's reputation warning. No signing, Windows protection changes, or download-marker changes are used.
 
 ## 1.8.5 (2026-10-15)
 

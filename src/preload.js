@@ -8,7 +8,12 @@ contextBridge.exposeInMainWorld('browser', {
   onFind: callback => { ipcRenderer.on('browser:find', (_event, result) => callback(result)); },
   onNotice: callback => { ipcRenderer.on('browser:notice', (_event, message) => callback(message)); }
 });
-const focusChrome = () => ipcRenderer.send('browser:chrome-focus', Date.now());
+const focusChrome = event => {
+  // A draggable caption belongs to Windows, not the chrome input surface.
+  // Calling focus() after its mouse-down can release native move capture.
+  if (event.target?.closest?.('.titlebar') && !event.target.closest('.window-controls')) return;
+  ipcRenderer.send('browser:chrome-focus', Date.now());
+};
 window.addEventListener('pointerdown', focusChrome, true);
 window.addEventListener('focusin', focusChrome, true);
 window.addEventListener('wheel', event => {

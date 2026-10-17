@@ -11,6 +11,7 @@ async function poll(fn, check, timeout = 20000) {
 }
 (async () => {
   const profile = path.join(output, 'theme-color-' + Date.now()); fs.mkdirSync(profile, { recursive: true });
+  fs.writeFileSync(path.join(profile,'browser.json'),JSON.stringify({settings:{adBlockEnabled:false}}));
   const file = require('./html-fixture')(profile, require('./playback-fixture'));
   const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
   const app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: process.env.FLASHBORN_EXE ? [] : [root], env });

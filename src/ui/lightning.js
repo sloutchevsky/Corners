@@ -35,13 +35,26 @@
     });
     return mesh;
   }
+  function buildOutlineMesh(depth) {
+    const half = depth / 2, inner = insetPolygon(OUTLINE, 4.6), mesh = [];
+    OUTLINE.forEach((point, i) => {
+      const j = (i + 1) % OUTLINE.length, next = OUTLINE[j];
+      const front = [pointAt(point, half), pointAt(next, half), pointAt(inner[j], half), pointAt(inner[i], half)];
+      mesh.push(front, front.map(p => [p[0], p[1], -half]).reverse());
+      mesh.push([pointAt(point, -half), pointAt(next, -half), pointAt(next, half), pointAt(point, half)]);
+      mesh.push([pointAt(inner[j], -half), pointAt(inner[i], -half), pointAt(inner[i], half), pointAt(inner[j], half)]);
+    });
+    return mesh;
+  }
   class GoldLightning {
-    constructor(canvas, { continuous = false, thickness = 14, period = 2000, metal = 'gold' } = {}) {
+    constructor(canvas, { continuous = false, thickness = 14, period = 2000, metal = 'gold', outlined = false } = {}) {
       this.canvas = canvas;
       this.surface = document.createElement('canvas');
       this.theme = document.body?.dataset.theme || 'current';
       this.metal = metal;
       this.mesh = buildMesh(thickness);
+      this.outlineMesh = buildOutlineMesh(thickness);
+      this.outlined = outlined;
       this.period = period;
       this.continuous = continuous;
       this.loading = continuous;
@@ -65,6 +78,11 @@
     setMetal(metal) {
       if (this.metal === metal) return;
       this.metal = metal === 'silver' ? 'silver' : 'gold';
+      this.draw(this.reducedMotion.matches ? 0 : this.angle);
+    }
+    setOutlined(outlined) {
+      if (this.outlined === !!outlined) return;
+      this.outlined = !!outlined;
       this.draw(this.reducedMotion.matches ? 0 : this.angle);
     }
     setTheme(theme) {
@@ -107,7 +125,7 @@
       const surface = this.surface, size = Math.min(1024, target * 4), scale = size * 0.00665;
       if (surface.width !== size || surface.height !== size) surface.width = surface.height = size;
       const ctx = surface.getContext('2d'), lightMode = this.theme === 'light' && this.metal !== 'silver';
-      const faces = this.mesh.map(points => {
+      const faces = (this.outlined ? this.outlineMesh : this.mesh).map(points => {
         points = points.map(point => rotate(point, angle));
         const normal = normalize(cross(subtract(points[1], points[0]), subtract(points[2], points[0])));
         return { points, normal, z: points.reduce((sum, point) => sum + point[2], 0) / points.length };
@@ -140,6 +158,7 @@
       output.drawImage(surface, 0, 0, target, target);
       canvas.dataset.angle = angle.toFixed(4);
       canvas.dataset.metal = this.metal;
+      canvas.dataset.variant = this.outlined ? 'outline' : 'filled';
       canvas.dataset.motion = this.reducedMotion.matches ? 'reduced' : this.loading ? 'spinning' : this.target !== null ? 'finishing' : 'idle';
     }
     dispose() {

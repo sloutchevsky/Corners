@@ -22,7 +22,7 @@ document.addEventListener('click', event => {
   const data = button.dataset;
   if (data.zoom) call('zoom', { direction: Number(data.zoom) });
   else if (data.quality) call('flash-quality', { quality: data.quality });
-  else if (data.panel) call('panel', { name: data.panel });
+  else if (data.panel) call('panel', { name: data.panel, section: data.section });
   else if (data.action) call(data.action);
 });
 document.addEventListener('keydown', event => {

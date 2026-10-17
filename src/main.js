@@ -10,6 +10,10 @@ const { contentType, supportedLocalFile } = require('./files');
 const { canPredict, suggestions, SearchPredictions } = require('./search-suggestions');
 const { searchPage, readPageScript, makeSummary } = require('./page-summary');
 const { Store } = require('./store');
+const { SitePermissions } = require('./site-permissions');
+const { deletionChoices, clearSessionData } = require('./legacy/browsing-data');
+const { Extensions, readManifest } = require('./extensions');
+const { ExtensionBridge } = require('./extension-bridge');
 const { sessionEntry, savedEntry } = require('./tab-session');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
 const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
@@ -17,6 +21,7 @@ const { nextZoom } = require('./legacy/zoom');
 const flashRuntime = require('./legacy/runtime.json');
 
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
+app.enableSandbox();
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashborn', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const testMode = process.env.FLASHBORN_TEST === '1';
 if (testMode) process.on('uncaughtException', error => { console.error('TEST MAIN EXCEPTION', error.stack || error); app.exit(1); });
@@ -33,9 +38,11 @@ const SUGGEST_URL = 'flashborn://ui/suggestions.html';
 const MAX_PDF_SIZE = 256 * 1024 * 1024;
 const mimeTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.swf': 'application/x-shockwave-flash', '.json': 'application/json', '.mp3': 'audio/mpeg', '.xml': 'text/xml', '.txt': 'text/plain' };
 let win, store, browsingSession, activeId, panel = null, collapsed = false, closing = false;
+let panelSection = null;
 const tabs = [];
 const downloadItems = new Map();
-const permissions = new Map();
+const sitePermissions = new WeakMap();
+let windowMoving = false;
 const closedTabs = [];
 const documents = new Map();
 let stateTimer, menuWindow, menuOpen = false, zoomWindow, zoomTimer, editMenu;
@@ -46,6 +53,8 @@ let predictionAbort;
 const searchPredictions = new SearchPredictions((url, options) => net.fetch(url, options));
 let tabMenu;
 let privateSession;
+let extensions, extensionBridge;
+const extensionWindows = new Map();
 let sidebarWidth = 248;
 let focusArea = 'chrome';
 let focusIntentAt = 0, contentFocusTimer;
@@ -87,9 +96,9 @@ function publicTab(t) {
     canBack: wc?.navigationHistory.canGoBack() || false, canForward: wc?.navigationHistory.canGoForward() || false, zoom: Math.round((wc?.getZoomFactor() || 1) * 100) };
 }
 function getState() {
-  return { tabs: tabs.map(publicTab), activeId, panel, collapsed, menuOpen, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
+  return { tabs: tabs.map(publicTab), activeId, panel, panelSection, collapsed, menuOpen, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
     history: activeTab()?.private ? [] : store.data.history, library: flashPages(), downloads: tabDownloads(activeTab()), settings: store.data.settings,
-    flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: flashRuntime.version, flashRuntime: '9.4.4' };
+    extensions: extensions?.state() || [], flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: flashRuntime.version, flashRuntime: '9.4.4' };
 }
 function sendState(immediate = false) {
   if (closing) return;
@@ -177,6 +186,7 @@ function selectTab(id) {
   if (t.native && !t.error) t.native.focus();
   else if (live(t) && !t.error) t.view.webContents.focus();
   else win.webContents.focus();
+  extensionBridge?.selected(t);
   persistTabs();
   sendState(true);
 }
@@ -236,7 +246,10 @@ function wireContents(t) {
   wc.setZoomMode('isolated');
   wc.on('zoom-changed', (_event, direction) => wheelZoom(t, direction === 'in' ? 1 : -1, 'browser'));
   wc.setWindowOpenHandler(({ url }) => {
-    if (isWebURL(url)) createTab(url, false, t.private);
+    if (isWebURL(url)) {
+      const opened = createTab(url, false, t.private, t.id);
+      if (!t.private && live(opened)) extensionBridge?.emit('webNavigation.onCreatedNavigationTarget', [{ sourceTabId: wc.id, sourceFrameId: 0, tabId: opened.view.webContents.id, url, timeStamp: Date.now() }]);
+    }
     return { action: 'deny' };
   });
   wc.on('will-attach-webview', event => event.preventDefault());
@@ -271,9 +284,9 @@ function wireContents(t) {
     t.loading = true; sendState(true);
   });
   wc.on('did-stop-loading', () => { t.loading = false; sendState(); });
-  wc.on('page-title-updated', (_event, title) => { if (['web', 'local'].includes(t.kind)) t.title = title.slice(0, 200); sendState(); });
+  wc.on('page-title-updated', (_event, title) => { if (['web', 'local', 'extension'].includes(t.kind)) t.title = title.slice(0, 200); sendState(); });
   const navigated = () => {
-    if (['web', 'pdf', 'local'].includes(t.kind)) {
+    if (['web', 'pdf', 'local', 'extension'].includes(t.kind)) {
       const url = wc.getURL();
       if (isWebURL(url)) { t.kind = 'web'; t.url = url; t.title = wc.getTitle() || new URL(url).hostname; t.error = null; }
       persistTabs();
@@ -308,11 +321,13 @@ function wireContents(t) {
   wc.on('context-menu', (_event, params) => {
     const items = [];
     if (params.isEditable) items.push({ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' });
-    else if (params.selectionText) items.push({ role: 'copy' }, { label: 'Search selection', click: () => createTab((require('./core').SEARCH_ENGINES[store.data.settings.searchEngine] || require('./core').SEARCH_ENGINES.duckduckgo) + encodeURIComponent(params.selectionText.slice(0, 2000)), false, t.private) });
-    if (isWebURL(params.linkURL)) items.push({ label: 'Open link in new tab', click: () => createTab(params.linkURL, false, t.private) }, { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) });
+    else if (params.selectionText) items.push({ role: 'copy' }, { label: 'Search selection', click: () => createTab((require('./core').SEARCH_ENGINES[store.data.settings.searchEngine] || require('./core').SEARCH_ENGINES.duckduckgo) + encodeURIComponent(params.selectionText.slice(0, 2000)), false, t.private, t.id) });
+    if (isWebURL(params.linkURL)) items.push({ label: 'Open link in new tab', click: () => createTab(params.linkURL, false, t.private, t.id) }, { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) });
     if (isWebURL(params.srcURL)) items.push({ label: 'Save image / media as…', click: () => wc.downloadURL(params.srcURL) });
     if (items.length) items.push({ type: 'separator' });
     items.push({ label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() }, { label: 'Reload', click: () => reload(t) }, { label: 'Print…', click: () => wc.print() });
+    const extensionItems = extensionBridge?.contextMenu(t, params) || [];
+    if (extensionItems.length) items.push({ type: 'separator' }, ...extensionItems);
     Menu.buildFromTemplate(items).popup({ window: win });
   });
 }
@@ -344,13 +359,17 @@ function wirePDFZoom(t) {
 function ensureView(t) {
   if (live(t)) return;
   t.view = new WebContentsView({ webPreferences: { session: t.private ? getPrivateSession() : browsingSession, preload: path.join(__dirname, 'content-preload.js'), plugins: true, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, spellcheck: true, navigateOnDragDrop: false, backgroundThrottling: !testMode } });
-  t.view.setBackgroundColor('#212121');
+  // Transparent website canvases use the normal browser default, independently
+  // of Flashborn's chrome. The site's own CSS paints over this backing.
+  t.view.setBackgroundColor('#ffffff');
   win.contentView.addChildView(t.view);
   wireContents(t);
+  extensionBridge?.addTab(t);
   layout();
 }
 function showError(t, message) { if (closing || !tabs.includes(t)) return; if (t.blockedFlashURL === t.url) message = 'Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.'; t.error = message; t.loading = false; layout(); sendState(true); }
 async function navigate(t, value) {
+  if (/^(?:chrome|flashborn):\/\/extensions\/?$/i.test(String(value).trim())) { panel = 'extensions'; layout(); focusChrome(); sendState(true); return; }
   const target = resolveInput(value, store.data.settings.searchEngine);
   t.restoreEntry = null;
   t.blockedFlashURL = null;
@@ -368,10 +387,12 @@ async function navigate(t, value) {
   ensureView(t); layout(); sendState(true);
   try { await t.view.webContents.loadURL(target.url); } catch (e) { if (e.code !== 'ERR_ABORTED') showError(t, e.message); }
 }
-function createTab(value = '', background = false, privateMode = !!activeTab()?.private) {
+function createTab(value = '', background = false, privateMode = !!activeTab()?.private, openerId = null) {
   if (tabs.length >= 50) { dialog.showMessageBox(win, { type: 'info', message: 'Close a tab before opening another.', detail: 'Flashborn supports up to 50 open tabs.' }); return; }
   const t = { id: crypto.randomUUID(), private: !!privateMode, kind: 'home', url: '', title: privateMode ? 'Flashcognito tab' : 'New tab', loading: false, error: null, view: null };
-  tabs.push(t);
+  const openerIndex = tabs.findIndex(tab => tab.id === openerId);
+  if (openerIndex >= 0) tabs.splice(openerIndex + 1, 0, t);
+  else tabs.push(t);
   if (!background) selectTab(t.id);
   if (value) navigate(t, value).catch(e => showError(t, e.message));
   sendState(true);
@@ -457,7 +478,7 @@ async function ensureNative(t) {
         persistTabs();
       }
       sendState(started);
-    } else if (message.type === 'new-tab') { const created = createTab('', false, t.private); if (created) activateNative(created, message.url).catch(e => showError(created, e.message)); }
+    } else if (message.type === 'new-tab') { const created = createTab('', false, t.private, t.id); if (created) activateNative(created, message.url).catch(e => showError(created, e.message)); }
     else if (message.type === 'open-pdf' && isWebURL(message.url)) { navigate(t, message.url).catch(e => showError(t, e.message)); }
     else if (message.type === 'zoom-wheel') wheelZoom(t, message.direction === 'in' ? 1 : -1, message.source || 'browser');
     else if (message.type === 'drop-files') openDroppedFiles(message.paths).catch(e => win?.webContents.send('browser:notice', e.message));
@@ -660,27 +681,25 @@ async function positionSuggestions() {
 }
 
 function configureSession(targetSession = browsingSession, privateMode = false) {
-  const permissionMap = privateMode ? new Map() : permissions;
   const ua = targetSession.getUserAgent().replace(/\sElectron\/\S+/, '').replace(/\sFlashborn\/\S+/, '');
   targetSession.setUserAgent(ua);
-  targetSession.setPermissionCheckHandler((_wc, permission, origin) => {
-    if (permission === 'fullscreen') return true;
-    return permissionMap.get(`${origin}|${permission}`) === true;
+  const permissions = new SitePermissions({
+    saved: privateMode ? [] : store.data.sitePermissions,
+    save: entries => { if (!privateMode) { store.data.sitePermissions = entries; store.save(); } },
+    canPrompt: wc => !windowMoving && !!win && !win.isDestroyed() && win.isFocused() && !win.isMinimized() && !panel && activeTab()?.view?.webContents === wc,
+    prompt: async (origin, name) => (await dialog.showMessageBox(win, { type:'question', title:'Site permission', message:`${origin} wants access to ${name}.`, buttons:['Block','Allow'], defaultId:0, cancelId:0 })).response === 1
   });
-  targetSession.setPermissionRequestHandler(async (wc, permission, callback, details) => {
-    if (permission === 'fullscreen') return callback(true);
-    const allowed = ['media', 'geolocation', 'notifications', 'clipboard-read', 'clipboard-sanitized-write'];
-    if (!allowed.includes(permission)) return callback(false);
-    const origin = details.requestingUrl || wc?.getURL() || '';
-    let host; try { host = new URL(origin).origin; } catch { return callback(false); }
-    const key = `${host}|${permission}`;
-    if (permissionMap.has(key)) return callback(permissionMap.get(key));
-    const names = { media: 'your camera or microphone', geolocation: 'your location', notifications: 'notifications', 'clipboard-read': 'your clipboard', 'clipboard-sanitized-write': 'copy text to your clipboard' };
-    const result = await dialog.showMessageBox(win, { type: 'question', title: 'Site permission', message: `${host} wants access to ${names[permission]}.`, buttons: ['Block', 'Allow'], defaultId: 0, cancelId: 0 });
-    permissionMap.set(key, result.response === 1);
-    callback(result.response === 1);
+  permissions.install(targetSession); sitePermissions.set(targetSession, permissions);
+  targetSession.webRequest.onBeforeRequest((details, callback) => {
+    if (details.url.startsWith('file:')) { callback({cancel:true}); return; }
+    if (privateMode || !extensions?.filtering.hosts.size || details.webContentsId === undefined || details.webContentsId < 0) { callback({}); return; }
+    // Never hold a network request indefinitely for an extension process.
+    let settled = false;
+    const finish = result => { if (!settled) { settled = true; clearTimeout(timer); callback(result); } };
+    const timer = setTimeout(() => finish({}), 1500);
+    const tab = tabs.find(tab => live(tab) && tab.view.webContents.id === details.webContentsId);
+    extensions.filtering.beforeRequest({...details, pageURL:tab?.url}).then(finish, () => finish({}));
   });
-  targetSession.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (_details, callback) => callback({ cancel: true }));
   targetSession.webRequest.onHeadersReceived((details, callback) => {
     const header = Object.entries(details.responseHeaders || {}).find(([key]) => key.toLowerCase() === 'content-type')?.[1]?.[0] || '';
     if (details.resourceType === 'mainFrame' && /application\/(x-shockwave-flash|futuresplash|vnd.adobe.flash.movie)/i.test(header)) {
@@ -757,6 +776,7 @@ function focusChrome(at = Date.now()) {
   focusIntentAt = at;
   focusArea = 'chrome';
   if (!win || win.isDestroyed()) return;
+  if (windowMoving) return;
   if (activeTab()?.native) activeTab().native.focusHost();
   else win.webContents.focus();
 }
@@ -764,7 +784,7 @@ function restoreContentFocus() {
   clearTimeout(contentFocusTimer);
   contentFocusTimer = setTimeout(() => {
     const t = activeTab();
-    if (!closing && focusArea === 'content' && !panel && !t?.error && !menuWindow && !suggestionWindow) t?.native?.focus();
+    if (!closing && !windowMoving && focusArea === 'content' && !panel && !t?.error && !menuWindow && !suggestionWindow) t?.native?.focus();
   }, 120);
 }
 function closeZoomPopup() {
@@ -818,7 +838,7 @@ async function showBrowserMenu() {
   if (menuWindow && !menuWindow.isDestroyed()) { closeBrowserMenu(true); return; }
   const bounds = win.getContentBounds();
   const work = screen.getDisplayMatching(bounds).workArea;
-  const width = 320, height = Math.min(579, work.height - 20);
+  const width = 320, height = Math.min(612, work.height - 20);
   const x = Math.max(work.x, Math.min(work.x + work.width - width, bounds.x + bounds.width - width - 12));
   const y = Math.max(work.y, Math.min(work.y + work.height - height, bounds.y + 92));
   const popup = menuWindow = new BrowserWindow({ x, y, width, height, parent: win, frame: false, show: false,
@@ -835,6 +855,20 @@ async function showBrowserMenu() {
   menuOpen = true; sendState(true);
   await popup.loadURL(MENU_URL);
   if (menuWindow === popup && !popup.isDestroyed()) { popup.show(); popup.focus(); sendState(true); }
+}
+async function showExtensionPage(key, kind) {
+  const url = extensions.page(key, kind), identity = key + ':' + kind;
+  const previous = extensionWindows.get(identity);
+  if (previous && !previous.isDestroyed()) { previous.show(); previous.focus(); return; }
+  const popup = new BrowserWindow({ parent: win, width: kind === 'popup' ? 400 : 1040, height: kind === 'popup' ? 710 : 800, minWidth: 330, minHeight: 350,
+    title: extensions.state().find(item => item.key === key)?.name || 'Extension', autoHideMenuBar: true, backgroundColor: '#ffffff', show: false,
+    webPreferences: { session: browsingSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
+  extensionWindows.set(identity, popup); popup.setMenu(null);
+  popup.on('closed', () => extensionWindows.delete(identity));
+  popup.webContents.setWindowOpenHandler(({ url }) => { if (isWebURL(url)) createTab(url, false, false); return { action: 'deny' }; });
+  popup.webContents.on('will-navigate', (event, nextURL) => { const destination = event.url || nextURL, origin = 'chrome-extension://' + new URL(url).hostname + '/'; if (!destination.startsWith(origin)) { event.preventDefault(); if (isWebURL(destination)) createTab(destination, false, false); } });
+  try { await popup.loadURL(url); popup.show(); }
+  catch (error) { popup.close(); throw error; }
 }
 
 async function command(action, args = {}) {
@@ -916,13 +950,30 @@ async function command(action, args = {}) {
     }
     case 'panel':
       closeZoomPopup(); closeSuggestions();
-      panel = ['bookmarks', 'history', 'downloads', 'library', 'settings', 'about'].includes(args.name) ? args.name : null;
+      panel = ['bookmarks', 'history', 'downloads', 'library', 'extensions', 'settings', 'about'].includes(args.name) ? args.name : null;
+      panelSection = panel === 'settings' && args.section === 'privacy' ? 'privacy' : null;
       if (panel === 'downloads') {
         const unseen = tabDownloads(t).filter(entry => entry.isNew);
         for (const entry of unseen) entry.isNew = false;
         if (unseen.length && !t?.private) store.save();
       }
       layout(); if (panel) focusChrome(); break;
+    case 'extension-install': {
+      const result = await dialog.showOpenDialog(win, { title: 'Load unpacked Chrome extension', properties: ['openDirectory'] });
+      if (result.canceled || !result.filePaths[0]) break;
+      const { name, manifest } = await readManifest(result.filePaths[0]);
+      const permissions = [...(manifest.permissions || []), ...(manifest.host_permissions || [])].filter(value => typeof value === 'string');
+      const accepted = await dialog.showMessageBox(win, { type: 'question', title: 'Add extension', message: `Add ${name}?`, detail: `Requested permissions:\n${permissions.join('\n') || 'None listed'}\n\nOnly add extensions you trust. Some Chrome APIs are unavailable in Flashborn.`, buttons: ['Cancel', 'Add extension'], defaultId: 0, cancelId: 0 });
+      if (accepted.response === 1) await extensions.install(result.filePaths[0]);
+      break;
+    }
+    case 'extension-toggle': case 'extension-reload': case 'extension-remove':
+      for (const [identity, popup] of extensionWindows) if (identity.startsWith(args.key + ':') && !popup.isDestroyed()) popup.close();
+      await extensions.change(args.key, action.replace('extension-', '')); break;
+    case 'extension-page': {
+      if (!['options', 'popup'].includes(args.kind)) throw new Error('Invalid extension page.');
+      await showExtensionPage(args.key, args.kind); break;
+    }
     case 'open-file': {
       const result = await dialog.showOpenDialog(win, { title: 'Open file', filters: [{ name: 'Browser files', extensions: ['html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico', 'mp4', 'm4v', 'webm', 'ogv', 'mov'] }, { name: 'PDF documents', extensions: ['pdf'] }], properties: ['openFile', 'multiSelections'] });
       for (const file of result.filePaths) await openLocal(file);
@@ -953,11 +1004,17 @@ async function command(action, args = {}) {
     }
     case 'remove-bookmark': store.data.bookmarks = store.data.bookmarks.filter(b => b.id !== args.id); store.save(); break;
     case 'clear-history': if (!t?.private) { store.data.history = []; store.save(); } break;
-    case 'clear-data': {
+    case 'clear-data':
+    case 'delete-browsing-data': {
+      const choices = deletionChoices(action === 'clear-data' ? { cookies: true, cache: true } : args);
+      if (!Object.values(choices).some(Boolean)) throw new Error('Select at least one type of browsing data.');
       const targetSession = t?.private ? privateSession : browsingSession;
-      if (targetSession) { await targetSession.clearStorageData(); await targetSession.clearCache(); }
-      if (!t?.private) permissions.clear();
-      await Promise.all(tabs.filter(tab => tab.native && !!tab.private === !!t?.private).map(tab => tab.native.call('clear-data'))); break;
+      const extensionOrigins = (extensions?.state() || []).filter(item => item.id).map(item => `chrome-extension://${item.id}`);
+      await clearSessionData(targetSession, choices, extensionOrigins);
+      if (choices.cookies && targetSession) sitePermissions.get(targetSession)?.clear();
+      await Promise.all(tabs.filter(tab => tab.native && !!tab.private === !!t?.private).map(tab => tab.native.call('delete-browsing-data', choices)));
+      if (choices.history && !t?.private) { store.data.history = []; store.save(); closeSuggestions(); }
+      break;
     }
     case 'settings': {
       if (['duckduckgo', 'google', 'bing'].includes(args.searchEngine)) store.data.settings.searchEngine = args.searchEngine;
@@ -994,6 +1051,8 @@ async function command(action, args = {}) {
 async function boot() {
   store = new Store(app.getPath('userData'));
   browsingSession = session.fromPartition('persist:flashborn');
+  extensions = new Extensions(store, browsingSession, path.join(app.getPath('userData'), 'extensions'), () => sendState());
+  extensionBridge = new ExtensionBridge(browsingSession, { tabs: () => tabs.filter(t => !t.private && !t.native && live(t)), active: activeTab, window: () => win, create: createTab, select: selectTab, close: closeTab, ensureView, options: id => extensions.state().find(item => item.id === id) });
   await session.defaultSession.protocol.handle('flashborn', handleProtocol);
   await browsingSession.protocol.handle('flashborn', handleProtocol);
   configureSession();
@@ -1007,12 +1066,33 @@ async function boot() {
   win.webContents.setZoomMode('manual');
   win.webContents.on('zoom-changed', (_event, direction) => wheelZoom(activeTab(), direction === 'in' ? 1 : -1, 'browser'));
   win.webContents.on('context-menu', (_event, params) => showEditMenu(win.webContents, params));
+  if (process.platform === 'win32') {
+    win.hookWindowMessage(0x00a1, wParam => {
+      if (wParam.readUInt32LE(0) !== 2) return; // HTCAPTION
+      // Close transient child windows before Windows acquires move capture.
+      clearTimeout(contentFocusTimer);
+      closeBrowserMenu(); closeZoomPopup(); closeSuggestions();
+    });
+    // Do not transfer activation to the independent Flash window while Windows
+    // owns the title-bar move/resize loop and its mouse capture.
+    win.hookWindowMessage(0x0231, () => {
+      windowMoving = true; clearTimeout(contentFocusTimer);
+      for (const tab of tabs) if (tab.native) tab.native.hostMoving = true;
+    });
+    win.hookWindowMessage(0x0232, () => {
+      windowMoving = false;
+      for (const tab of tabs) if (tab.native) tab.native.hostMoving = false;
+      layout(); restoreContentFocus();
+    });
+  }
   for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(event, () => { closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); layout(); sendState(true); });
   for (const event of ['resize', 'resized', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore']) win.on(event, restoreContentFocus);
   for (const event of ['enter-full-screen', 'leave-full-screen']) win.on(event, () => { for (const t of tabs) if (t.native) t.native.call('host-fullscreen', { value: win.isFullScreen() && t.id === activeId }).then(layout).catch(() => {}); });
   win.on('move', () => {
-    if (menuWindow) closeBrowserMenu(); closeZoomPopup(); closeSuggestions();
-    layout();
+    if (!windowMoving) { if (menuWindow) closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); }
+    // Geometry within the shell has not changed. Re-showing/repositioning its
+    // WebContentsViews here can disturb the ongoing native caption drag.
+    for (const tab of tabs) tab.native?.syncWindow();
   });
   win.on('minimize', () => { closeZoomPopup(); closeSuggestions(); layout(); });
   win.on('restore', layout);
@@ -1025,6 +1105,8 @@ async function boot() {
       if (response === 0) { event.preventDefault(); return; }
     }
     closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); persistTabs(); closing = true;
+    for (const popup of extensionWindows.values()) if (!popup.isDestroyed()) popup.destroy();
+    extensions?.dispose();
     for (const t of tabs) { if (t.native) t.native.dispose(); if (live(t)) t.view.webContents.close(); }
   });
   win.on('closed', () => { win = null; });
@@ -1075,9 +1157,10 @@ async function boot() {
   else createTab();
   const file = process.argv.find(arg => /\.(html?|pdf|png|jpe?g|gif|webp|svg|avif|bmp|ico|mp4|m4v|webm|ogv|mov)$/i.test(arg) && fs.existsSync(arg));
   if (file) await openLocal(file);
+  await extensions.start();
   if (testMode) {
     // Accessible only from main-process Playwright evaluation in a test launch.
-    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, get focusArea() { return focusArea; }, get privateSession() { return privateSession; }, get tabMenu() { return tabMenu; }, get menuWindow() { return menuWindow; }, get zoomWindow() { return zoomWindow; }, get editMenu() { return editMenu; }, get suggestionWindow() { return suggestionWindow; } };
+    global.__flashborn = { getState, command, tabs, activeTab, openLocal, win, browsingSession, extensions, extensionBridge, get focusArea() { return focusArea; }, get privateSession() { return privateSession; }, get tabMenu() { return tabMenu; }, get menuWindow() { return menuWindow; }, get zoomWindow() { return zoomWindow; }, get editMenu() { return editMenu; }, get suggestionWindow() { return suggestionWindow; } };
   }
 }
 if (gotLock) app.whenReady().then(boot).catch(error => { console.error(error); dialog.showErrorBox('Flashborn could not start', error.stack || error.message); app.quit(); });

@@ -139,10 +139,13 @@ class NativeFlash {
     const host = this.hostHandle(), foreground = api.foreground(), pid = [0];
     if (foreground) api.owner(foreground, pid);
     const ownGroup = pid[0] === process.pid || pid[0] === this.child.pid;
-    const visible = !!this.wantedVisible && this.host.isVisible() && !this.host.isMinimized() && (ownGroup || this.host.isAlwaysOnTop() || !foreground && this.lastVisible);
+    const visible = !!this.wantedVisible && this.host.isVisible() && !this.host.isMinimized();
+    const topmost = visible && (ownGroup || this.host.isAlwaysOnTop());
+    const actualTopmost = !!(api.getStyle(this.hwnd, -20) & 8);
+    if (visible && !ownGroup && !this.host.isAlwaysOnTop()) this.backgrounded = true;
     // A hung UI thread cannot process asynchronous hide/demote requests. Do
     // not leave its viewport floating over another app after switching away.
-    if (!visible && api.hung(this.hwnd)) {
+    if ((!visible || actualTopmost && !topmost) && api.hung(this.hwnd)) {
       this.child.kill(); return;
     }
     if (!this.wantedVisible && this.lastVisible === false) return;
@@ -154,18 +157,31 @@ class NativeFlash {
       const r = this.viewport;
       const pixels = [origin[0] + Math.round(r.x * factor), origin[1] + Math.round(r.y * factor), Math.round(r.width * factor), Math.round(r.height * factor)];
       const changed = !this.lastBounds || pixels.some((n, i) => n !== this.lastBounds[i]);
-      const raise = visible && (!this.lastVisible || !isAbove(api, this.hwnd, host));
+      const raise = topmost && (!this.lastVisible || !isAbove(api, this.hwnd, host));
       // A separate application's normal HWND can remain below the foreground
       // shell despite HWND_TOP requests. Keep the active viewport topmost only
       // while our browser group is active, and place it below browser popups.
-      const topmost = !!visible, zChanged = this.lastTopmost !== topmost;
+      const zChanged = actualTopmost !== topmost;
       const popup = topmost && this.host.getChildWindows().find(w => !w.isDestroyed() && w.isVisible() && w.isAlwaysOnTop());
       const popupHandle = popup ? Number(popup.getNativeWindowHandle().readBigUInt64LE()) : 0;
       const popupChanged = popupHandle !== this.lastPopup;
-      if (changed || raise || zChanged || popupChanged) {
-        const after = popupHandle || (topmost ? -1 : -2);
+      const backgroundOrderChanged = visible && !topmost && api.sibling(this.hwnd, 2) !== host;
+      if (changed || raise || zChanged || popupChanged || backgroundOrderChanged) {
+        let after = popupHandle || (topmost ? -1 : -2);
+        if (visible && !topmost) {
+          // Stay directly above the shell in the ordinary window stack. A
+          // foreign foreground window stays above both, while uncovered Flash
+          // remains visible. Never attach the processes' GUI input queues.
+          let previous = api.sibling(host, 3);
+          if (previous === this.hwnd) previous = api.sibling(this.hwnd, 3);
+          if (previous && !(api.getStyle(previous, -20) & 8)) after = previous;
+          else {
+            if (actualTopmost) api.position(this.hwnd, -2, ...pixels, 0x0010 | 0x4000);
+            after = 0;
+          }
+        }
         // Asynchronous positioning never waits for the legacy message pump.
-        api.position(this.hwnd, after, ...pixels, 0x0010 | 0x4000 | (raise || zChanged || popupChanged ? 0 : 0x0004));
+        api.position(this.hwnd, after, ...pixels, 0x0010 | 0x4000 | (raise || zChanged || popupChanged || backgroundOrderChanged ? 0 : 0x0004));
         this.lastBounds = pixels;
       }
       this.lastTopmost = topmost; this.lastPopup = popupHandle;
@@ -177,10 +193,12 @@ class NativeFlash {
     }
   }
   focus() {
-    if (!this.hwnd || !this.lastVisible || this.disposed || this.stopped) return;
+    if (!this.hwnd || !this.lastVisible || this.disposed || this.stopped || this.hostMoving) return;
     if (this.host.getChildWindows().some(popup => !popup.isDestroyed() && popup.isVisible())) return;
     const api = winAPI();
     if (api.foreground() !== this.hostHandle()) return;
+    const hostInfo = Buffer.alloc(72); hostInfo.writeUInt32LE(72);
+    if (api.guiInfo(api.owner(this.hostHandle(), [0]), hostInfo) && (hostInfo.readUInt32LE(4) & 2 || hostInfo.readBigUInt64LE(24))) return;
     const input = this.inputState();
     if (input?.capture || input?.moving) return;
     // A resize/tab restore must not pull focus out of the existing plugin or
@@ -193,6 +211,11 @@ class NativeFlash {
     // A real pointer event has already reached Flash. Invalidate any queued
     // toolbar handoff without changing focus or capture after mouse-down.
     this.call('focus-host', { epoch: ++this.focusRevision }).catch(() => {});
+    if (this.backgrounded && !this.host.isDestroyed()) {
+      this.backgrounded = false;
+      this.host.moveTop();
+      this.syncWindow();
+    }
   }
   inputState() {
     if (!this.hwnd || !winAPI().valid(this.hwnd)) return null;

@@ -12,6 +12,7 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
 (async () => {
   const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: path.join(output, 'window-profile-' + Date.now()) }; delete env.ELECTRON_RUN_AS_NODE;
   fs.mkdirSync(env.FLASHBORN_PROFILE, { recursive: true });
+  fs.writeFileSync(path.join(env.FLASHBORN_PROFILE, 'browser.json'), JSON.stringify({settings:{adBlockEnabled:false}}));
   const server = http.createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><title>Memory fixture</title><p>A regular browser tab.</p>'); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: process.env.FLASHBORN_EXE ? [] : [root], env });
@@ -21,8 +22,9 @@ async function poll(fn, check, timeout = 30000) { const end = Date.now() + timeo
     const ui = await app.firstWindow();
     const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
     const state = () => app.evaluate(() => global.__flashborn.getState());
-    await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 100, y: 80, width: 1100, height: 760 }); w.show(); w.focus(); });
+    await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 100, y: 80, width: 1100, height: 760 }); w.setAlwaysOnTop(true); w.show(); w.focus(); });
     await app.evaluate(({}, file) => global.__flashborn.command('add-library-source', {kind:'html',value:file}), require('./html-fixture')(path.join(output, 'window-check-html')));
+    await app.evaluate(() => global.__flashborn.win.setAlwaysOnTop(true,'pop-up-menu'));
     const native = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.activeTab().native.call(data.action, data.args), { action, args });
     const script = code => app.evaluate(({}, code) => global.__flashborn.activeTab().native.evaluate(code), code);
     await poll(() => script('document.getElementById("flash-movie")?.GetVariable("$version")'), v => v === ('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')));
