@@ -4,10 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const nodeNet = require('net');
-const { isFlashFallbackURL, legacyFlashTarget } = require('./compat');
+const { isFlashFallbackURL, legacyFlashTarget, frameDetectionScript } = require('./compat');
 const { nextZoom } = require('./zoom');
 const { clearSessionData } = require('./browsing-data');
 const { settingsScript } = require('./flash-settings');
+const { standalonePage } = require('./standalone');
 const flashRuntime = require('./runtime.json');
 app.setPath('userData', process.env.FLASHBORN_NATIVE_PROFILE);
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
@@ -22,6 +23,7 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 protocol.registerSchemesAsPrivileged([{ scheme: 'flashnative', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 let window, runtimeSession, source = null, shuttingDown = false, quality = 'high', qualityOverride = false, hostFullscreen = false;
 let settingsTimer, visible = false, settingsRuns = 0;
+let hasFlash = null, navigationRevision = 0;
 const channel = nodeNet.connect(process.env.FLASHBORN_NATIVE_CHANNEL);
 const connected = new Promise(resolve => channel.once('connect', () => { channel.write(JSON.stringify({token:process.env.FLASHBORN_NATIVE_TOKEN})+'\n'); resolve(); }));
 channel.on('error', () => app.quit());
@@ -31,14 +33,21 @@ const isWeb = value => { try { return ['http:', 'https:'].includes(new URL(value
 function state() {
   if (!window || window.isDestroyed()) return {};
   const wc = window.webContents;
-  return { url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(), quality, canBack: wc.canGoBack(), canForward: wc.canGoForward(), zoom: Math.round(wc.getZoomFactor() * 100), muted: wc.isAudioMuted(), audible: wc.isCurrentlyAudible() };
+  return { url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(), hasFlash, quality, canBack: wc.canGoBack(), canForward: wc.canGoForward(), zoom: Math.round(wc.getZoomFactor() * 100), muted: wc.isAudioMuted(), audible: wc.isCurrentlyAudible() };
 }
 function publish() { send({ type: 'state', state: state() }); }
+async function detectFlash() {
+  if (!window || window.isDestroyed()) return;
+  const revision = navigationRevision, wc = window.webContents;
+  const found = await wc.executeJavaScript(frameDetectionScript).catch(() => false);
+  if (window.isDestroyed() || wc.isDestroyed() || revision !== navigationRevision) return;
+  if (hasFlash !== found) { hasFlash = found; publish(); }
+}
 async function applySettings() {
   if (!window || window.isDestroyed() || !qualityOverride) return;
   const wc = window.webContents;
   const url = wc.getURL();
-  if ((!isWeb(url) && !url.startsWith('flashnative://document/')) || wc.isLoadingMainFrame()) return;
+  if ((!isWeb(url) && !/^flashnative:\/\/(document|standalone)\//.test(url)) || wc.isLoadingMainFrame()) return;
   // Never poll PercentLoaded or change embed attributes during playback.
   // Only a requested quality override calls into a movie, once per instance.
   settingsRuns++;
@@ -54,7 +63,8 @@ function registerProtocol() {
   runtimeSession.protocol.registerBufferProtocol('flashnative', async (request, callback) => {
     try {
       const url = new URL(request.url); let data, mimeType;
-      if (url.hostname === 'document' && source && source.kind === 'html' && url.pathname.split('/')[1] === source.token) {
+      if (url.hostname === 'standalone' && source && source.kind === 'swf' && url.pathname.split('/')[1] === source.token && url.pathname.split('/')[2] === '__player__.html') return callback({ data: Buffer.from(standalonePage(source)), mimeType: 'text/html' });
+      if (source && ((url.hostname === 'document' && source.kind === 'html') || (url.hostname === 'standalone' && source.kind === 'swf' && source.path)) && url.pathname.split('/')[1] === source.token) {
         const root = fs.realpathSync(path.dirname(source.path)), file = fs.realpathSync(path.resolve(root, decodeURIComponent(url.pathname.split('/').slice(2).join('/'))));
         const relative = path.relative(root, file);
         if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error('Asset outside selected HTML folder');
@@ -71,6 +81,10 @@ async function command(action, args) {
   switch (action) {
     case 'navigate': if (!isWeb(args.url) || /\.swf$/i.test(new URL(args.url).pathname)) throw new Error('Only HTTP and HTTPS pages can use native Flash mode.'); source = null; await wc.loadURL(args.url).catch(e => { if (e.code !== 'ERR_ABORTED') throw e; }); break;
     case 'local-html': source = { ...args, kind: 'html', path: fs.realpathSync(args.path) }; await wc.loadURL('flashnative://document/' + source.token + '/' + encodeURIComponent(path.basename(source.path))); break;
+    case 'standalone':
+      if (!args.path && !isWeb(args.url)) throw new Error('Choose a local SWF or an HTTP(S) movie URL.');
+      source = { ...args, kind: 'swf', path: args.path ? fs.realpathSync(args.path) : null };
+      await wc.loadURL('flashnative://standalone/' + source.token + '/__player__.html'); break;
     case 'back': if (wc.canGoBack()) wc.goBack(); break;
     case 'forward': if (wc.canGoForward()) wc.goForward(); break;
     case 'reload': wc.reload(); break;
@@ -150,7 +164,7 @@ app.whenReady().then(async () => {
     const mime = type && details.responseHeaders[type].join(';');
     const standalone = details.resourceType === 'mainFrame' && /application\/(x-shockwave-flash|futuresplash|vnd.adobe.flash.movie)/i.test(mime || '');
     callback({ cancel: !!standalone, responseHeaders: details.responseHeaders });
-    if (standalone) send({ type: 'error', message: 'Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.' });
+    if (standalone) send({ type: 'open-swf', url: details.url });
   });
   runtimeSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'fullscreen'));
   window = new BrowserWindow({ width: 1100, height: 700, type: 'toolbar', frame: false, show: false, skipTaskbar: true, resizable: false, minimizable: false, maximizable: false, backgroundColor: '#ffffff',
@@ -164,9 +178,9 @@ app.whenReady().then(async () => {
   }
   wc.on('new-window', (event, url) => { event.preventDefault(); if (isWeb(url)) send({ type: 'new-tab', url }); });
   wc.on('will-navigate', (event, url) => {
-    const scopedLocal = source && source.kind === 'html' && url.startsWith('flashnative://document/' + source.token + '/');
+    const scopedLocal = source && url.startsWith('flashnative://' + (source.kind === 'html' ? 'document' : 'standalone') + '/' + source.token + '/');
     if (!isWeb(url) && !scopedLocal) { event.preventDefault(); return; }
-    if (/\.swf$/i.test(new URL(url).pathname)) { event.preventDefault(); return; }
+    if (/\.swf$/i.test(new URL(url).pathname)) { event.preventDefault(); if (isWeb(url)) send({ type: 'open-swf', url }); return; }
     if (/\.pdf$/i.test(new URL(url).pathname)) { event.preventDefault(); send({ type: 'open-pdf', url }); return; }
     if (!isFlashFallbackURL(url)) return;
     event.preventDefault();
@@ -177,9 +191,12 @@ app.whenReady().then(async () => {
       return wc.loadURL(target || url);
     }).catch(e => { if (e.code !== 'ERR_ABORTED') send({type:'error',message:e.message}); });
   });
-  wc.on('will-redirect', (event, url) => { if (!isWeb(url) && !(source && source.kind === 'html' && url.startsWith('flashnative://document/' + source.token + '/'))) event.preventDefault(); });
+  wc.on('will-redirect', (event, url) => { if (!isWeb(url) && !(source && url.startsWith('flashnative://' + (source.kind === 'html' ? 'document' : 'standalone') + '/' + source.token + '/'))) event.preventDefault(); });
   wc.on('will-attach-webview', event => event.preventDefault());
   for (const name of ['did-start-loading','did-stop-loading','did-navigate','did-navigate-in-page','page-title-updated','audio-state-changed']) wc.on(name, publish);
+  wc.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) { navigationRevision++; hasFlash = null; } });
+  wc.on('did-frame-finish-load', detectFlash);
+  wc.on('did-stop-loading', detectFlash);
   wc.on('did-start-loading', () => clearTimeout(settingsTimer));
   wc.on('did-frame-finish-load', () => scheduleSettings());
   window.on('closed', () => clearTimeout(settingsTimer));

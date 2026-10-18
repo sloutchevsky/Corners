@@ -20,4 +20,16 @@ function legacyFlashTarget(currentURL, values) {
   } catch { return null; }
 }
 const detectionScript = `(()=>[...document.querySelectorAll('object,embed')].some(e=>/shockwave-flash|adobe.flash.movie/i.test(e.type||'')||/d27cdb6e-ae6d-11cf-96b8-444553540000/i.test(e.getAttribute('classid')||'')||/\\.swf(?:[?#]|$)/i.test(e.getAttribute('data')||e.getAttribute('src')||'')||[...e.querySelectorAll('param')].some(p=>p.name.toLowerCase()==='movie'&&/\\.swf/i.test(p.value))))()`;
-module.exports = { isFlashFallbackURL, legacyFlashTarget, detectionScript };
+// Scan DOM elements only. Never call PPAPI movie methods to determine presence.
+const frameDetectionScript = `(() => {
+  function visit(frame) {
+    try {
+      const document = frame.document;
+      if (${detectionScript}) return true;
+      for (let i = 0; i < frame.frames.length; i++) if (visit(frame.frames[i])) return true;
+    } catch { /* A third-party frame can deny access to its document. */ }
+    return false;
+  }
+  return visit(window);
+})()`;
+module.exports = { isFlashFallbackURL, legacyFlashTarget, detectionScript, frameDetectionScript };

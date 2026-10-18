@@ -1,6 +1,6 @@
 {
   "name": "flashborn-browser",
-  "version": "1.9.0",
+  "version": "1.11.0",
   "description": "A minimal dark Windows browser with native Adobe Flash playback",
   "main": "src/main.js",
   "author": {
@@ -40,10 +40,14 @@
     "test:ui-stability": "node scripts/ui-stability-check.js",
     "test:chrome-polish": "node scripts/chrome-polish-check.js",
     "test:link-order": "node scripts/link-order-check.js",
-    "test:flash-visibility": "node scripts/flash-visibility-check.js"
+    "test:flash-visibility": "node scripts/flash-visibility-check.js",
+    "test:library-support": "node scripts/library-support-check.js",
+    "test:flash-reload": "node scripts/flash-reload-check.js",
+    "test:navigation-release": "node scripts/navigation-release-check.js"
   },
   "dependencies": {
     "koffi": "3.3.2",
+    "lzma": "2.3.2",
     "yauzl": "3.4.0"
   },
   "devDependencies": {

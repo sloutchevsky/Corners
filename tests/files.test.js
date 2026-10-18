@@ -4,7 +4,7 @@ const { supportedLocalFile, contentType, urlSuggestions } = require('../src/file
 test('local browser formats have useful MIME types and reject executable files', () => {
   for (const file of ['page.HTML','paper.pdf','photo.JPEG','icon.svg','movie.mp4','movie.webm']) assert.equal(supportedLocalFile(file), true);
   assert.equal(supportedLocalFile('application.exe'), false);
-  assert.equal(supportedLocalFile('movie.swf'), false);
+  assert.equal(supportedLocalFile('movie.swf'), true);
   assert.equal(contentType('movie.swf'), 'application/x-shockwave-flash'); // Embedded HTML assets still work.
   assert.equal(contentType('movie.webm'), 'video/webm'); assert.equal(contentType('paper.pdf'), 'application/pdf');
 });

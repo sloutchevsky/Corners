@@ -1,6 +1,6 @@
 # Flashborn Browser version history
 
-This history covers releases from 1.0.0 to 1.9.0. Historical updates through 1.7.3 are assigned
+This history covers releases from 1.0.0 to 1.11.0. Historical updates through 1.7.3 are assigned
 to versions by comparing the archived source ZIPs, their READMEs and the recorded
 development requests. Dates are the retained installer build dates in New York
 time. Historical Git commits are imports of these snapshots, not a recovered
@@ -13,6 +13,9 @@ deferred; the production application still uses the simple lightning bolt.
 
 | Version | Build date | Main changes |
 | --- | --- | --- |
+| [1.11.0](#1110-2026-10-18) | 2026-10-18 | Quieter navigation, standalone SWF playback, browser-bound Flash windows, richer library cards and saved per-page quality |
+| [1.10.1](#1101-2026-10-18) | 2026-10-18 | Reliable local Flash reload/restore, an always-available detection bolt, light About color and remembered Add-page folder |
+| [1.10.0](#1100-2026-10-17) | 2026-10-17 | Inline About support, editable portable Flash library, saturated thumbnail placeholders and a menu without scrolling |
 | [1.9.0](#190-2026-10-17) | 2026-10-17 | Bundled headline font, quieter clipboard copying, built-in Flash card and selective browsing-data deletion |
 | [1.8.12](#1812-2026-10-16) | 2026-10-16 | Theme hover preview and simpler empty History/Downloads pages |
 | [1.8.11](#1811-2026-10-16) | 2026-10-16 | Hovering sidebar divider and Helvetica Neue Bold page headlines |
@@ -40,6 +43,39 @@ deferred; the production application still uses the simple lightning bolt.
 | [1.1.1](#111--2026-10-09) | 2026-10-09 | Blank Flash surface and legacy detection fixes |
 | [1.1.0](#110--2026-10-09) | 2026-10-09 | Original Adobe Flash and separate legacy runtime |
 | [1.0.0](#100--2026-10-08) | 2026-10-08 | Initial Windows browser with Ruffle |
+
+## 1.11.0 (2026-10-18)
+
+- Keep Flash immediately above its own browser shell in the ordinary Windows stack, without globally marking its window always on top. Other applications can cover the browser normally, while browser menus remain above Flash. Preserve separate Windows input queues so a stalled movie cannot block browser controls.
+- Restore standalone SWF playback inside normal browser tabs through file opening, dragging and dropping, file-launch arguments and direct SWF URLs. Register Flashborn as an available SWF application per user on first installed launch, without changing the installer or overwriting an existing default application.
+- Extract the movie's background from FWS, CWS and ZWS SWF metadata when available; use light grey otherwise. Preserve movie bytes, timelines and relative companion-file loading. No standalone Flash toolbar or eyedropper is reintroduced.
+- Open newly created tabs, linked tabs and duplicate tabs at the top of the sidebar. Preserve existing order on restart and keep manual drag reordering.
+- Remove drag-dot handles from library, bookmark and download cards while retaining row dragging and Alt+Up/Down reordering.
+- Increase Flash library titles by 20%, add an editable year, and let the longer description wrap across two visible lines. Align the text block with the thumbnail top and save all fields in the local manifest.
+- Remember quality separately for each open Flash tab and save regular-page choices after closing a tab. Restore them when reopening or restarting; private choices remain temporary and do not change other tabs.
+- Turn search summary generation off by default for new profiles. Preserve an existing user's explicit setting and keep website backgrounds independent of browser themes.
+- Include the 1.10.0 About support/library improvements and 1.10.1 reload fixes in this public release. Payment methods remain disabled until real provider links are configured.
+
+## 1.10.1 (2026-10-18)
+
+- Fixed local HTML Flash reload, session restore and duplication calling the library's add-only function. Each now opens the original HTML in a working player in the intended tab, without adding library records or extra tabs.
+- Enabled the Flash bolt on every tab, including new tabs and Flashcognito. A click completes a spin; pages without detected Flash stay hollow, while detected Flash stays filled and can restart its player. Presence checks inspect document elements without calling into the Flash movie.
+- Matched secondary About text and support controls to the sidebar's brown in light mode, retaining tan in dark mode.
+- Remembered the Add a Flash page file browser's last selected folder across cancellations and app restarts.
+- Retained the existing installer configuration and website background behavior.
+
+## 1.10.0 (2026-10-17)
+
+- Added the About support section with circular amount choices, a capsule-shaped custom amount field and One-time, Monthly and Yearly radio buttons. The coffee link at the top scrolls smoothly to the divider and support heading.
+- Aligned the support heading and subheading with the body; removed the lower cup icon. Support controls and secondary About information use the same tan in both themes. The logo, motto and dedication retain their light/dark ink.
+- Added configurable PayPal, Venmo and Stripe Link checkout destinations. As requested, payment links remain blank and unconfigured methods are disabled. Checkout opens directly at the provider when a verified link is supplied; the app does not collect credentials or simulate payment success. Recurring support requires provider-configured recurring links.
+- New Flash library entries appear immediately in the collection without opening a tab. Titles come from the HTML page when available.
+- Added persistent thumbnail placeholders with random hues and matching perceptual lightness/chroma. Thumbnails have straight corners; a plus appears on hover/focus to choose an image.
+- Added inline editing for the title, small line and page address. Custom titles are protected from later automatic title updates.
+- Saved the collection in a separate local `Flash Library` folder containing `manifest.json` and `images/`, with migration from older profiles and an optional prepackaged portfolio seed.
+- Applied the larger Flashborn-font item headings and matching supporting-line rules across Flash library, Bookmarks, History and Downloads.
+- Fitted the complete three-dot menu to its contents without a vertical scrollbar.
+- Kept the installer target, NSIS options, elevation behavior and installer include unchanged.
 
 ## 1.9.0 (2026-10-17)
 

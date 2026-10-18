@@ -7,6 +7,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function poll(fn, check, timeout = 30000) { let value; const end=Date.now()+timeout; do{value=await fn();if(check(value))return value;await wait(100);}while(Date.now()<end);throw Error('Timeout: '+JSON.stringify(value)); }
 (async () => {
  fs.mkdirSync(output,{recursive:true}); const profile=path.join(output,'playback-profile-'+Date.now());fs.mkdirSync(profile);
+ fs.writeFileSync(path.join(profile,'browser.json'),JSON.stringify({settings:{adBlockEnabled:false}}));
  const movie=path.join(profile,'drag.swf'),html=path.join(profile,'drag.html');fs.writeFileSync(movie,fixture);
  const markup='<!doctype html><title>Native drag fixture</title><style>html,body{margin:0;height:100%}embed{width:100%;height:100%}</style><embed id="movie" src="drag.swf" type="application/x-shockwave-flash" allowScriptAccess="always">';fs.writeFileSync(html,markup);
  const server=http.createServer((req,res)=>{res.setHeader('Content-Type',req.url.endsWith('.swf')?'application/x-shockwave-flash':'text/html');res.end(req.url.endsWith('.swf')?fixture:req.url.startsWith('/flash')?markup:'<!doctype html><title>Ordinary page</title><p>Regular tab</p>');});

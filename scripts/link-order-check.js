@@ -25,19 +25,19 @@ async function poll(fn,check,timeout=20000){let value;const end=Date.now()+timeo
         else await tab.view.webContents.executeJavaScript(code,true);
       },{opener,method,url});
       const after=await poll(state,s=>s.tabs.length===before.tabs.length+1);const child=after.tabs.find(t=>!before.tabs.some(old=>old.id===t.id));
-      assert.equal(after.tabs[index+1].id,child.id);assert.equal(after.activeId,child.id);assert.equal(child.private,before.tabs[index].private);assert.deepEqual(after.tabs.filter(t=>t.id!==child.id).map(t=>t.id),before.tabs.map(t=>t.id));return child;
+      assert.equal(after.tabs[0].id,child.id);assert.equal(after.activeId,child.id);assert.equal(child.private,before.tabs[index].private);assert.deepEqual(after.tabs.filter(t=>t.id!==child.id).map(t=>t.id),before.tabs.map(t=>t.id));return child;
     };
     await command('navigate',{value:url+'/modern'});const opener=(await state()).activeId;for(let i=0;i<3;i++)await command('new-tab');await command('select-tab',{id:opener});
     await click(opener);await command('select-tab',{id:opener});await click(opener,'context');
-    pass('Modern target-blank links and Open link in new tab insert directly below their source, preserving all other tab order');
+    pass('Modern target-blank links and Open link in new tab insert at the top, preserving all other tab order');
     await click(opener,'script');pass('A scripted popup from an inactive tab uses that actual opener rather than the currently selected tab');
     await command('new-flashcognito');await command('navigate',{value:url+'/private'});const privateOpener=(await state()).activeId;for(let i=0;i<2;i++)await command('new-tab');await command('select-tab',{id:privateOpener});await click(privateOpener);
-    pass('Private link tabs insert beside their private opener and retain Flashcognito isolation');
+    pass('Private link tabs insert at the top and retain Flashcognito isolation');
     for(const [source,isPrivate] of [[opener,false],[privateOpener,true]]){
       await command('select-tab',{id:source});await command('navigate',{value:url+'/flash-'+(isPrivate?'private':'normal')});await poll(state,s=>s.tabs.find(t=>t.id===source).native&&!s.tabs.find(t=>t.id===source).loading);
       for(let i=0;i<2;i++)await command('new-tab');await command('select-tab',{id:source});const child=await click(source);assert.equal(child.native,true);
     }
-    pass('Both ordinary and private native Flash pages open linked tabs immediately below the source and retain their engine/session');
+    pass('Both ordinary and private native Flash pages open linked tabs at the top and retain their engine/session');
     assert.ok(JSON.parse(fs.readFileSync(path.join(profile,'browser.json'))).tabs.every(t=>!t.url?.includes('/private')&&!t.url?.includes('flash-private')));
     fs.writeFileSync(path.join(output,process.env.FLASHBORN_EXE?'packaged-link-order-results.json':'link-order-results.json'),JSON.stringify({passed,completedAt:new Date().toISOString()},null,2));
   }finally{if(app)await app.close();await new Promise(r=>server.close(r));}

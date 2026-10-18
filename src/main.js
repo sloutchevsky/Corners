@@ -10,6 +10,8 @@ const { contentType, supportedLocalFile } = require('./files');
 const { canPredict, suggestions, SearchPredictions } = require('./search-suggestions');
 const { searchPage, readPageScript, makeSummary } = require('./page-summary');
 const { Store } = require('./store');
+const { placeholderColor, pageTitle } = require('./library');
+const { SupportLinks } = require('./support');
 const { SitePermissions } = require('./site-permissions');
 const { deletionChoices, clearSessionData } = require('./legacy/browsing-data');
 const { Extensions, readManifest } = require('./extensions');
@@ -18,6 +20,9 @@ const { sessionEntry, savedEntry } = require('./tab-session');
 const { NativeFlash, nativeAvailable } = require('./native-flash');
 const { isFlashFallbackURL, detectionScript } = require('./legacy/compat');
 const { nextZoom } = require('./legacy/zoom');
+const { swfInfo, DEFAULT_BACKGROUND } = require('./swf-info');
+const { qualityKey, initializeQuality } = require('./flash-quality');
+const { registerSWF } = require('./file-association');
 const flashRuntime = require('./legacy/runtime.json');
 
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
@@ -37,7 +42,7 @@ const ZOOM_URL = 'flashborn://ui/zoom.html';
 const SUGGEST_URL = 'flashborn://ui/suggestions.html';
 const MAX_PDF_SIZE = 256 * 1024 * 1024;
 const mimeTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.swf': 'application/x-shockwave-flash', '.json': 'application/json', '.mp3': 'audio/mpeg', '.xml': 'text/xml', '.txt': 'text/plain' };
-let win, store, browsingSession, activeId, panel = null, collapsed = false, closing = false;
+let win, store, supportLinks, browsingSession, activeId, panel = null, collapsed = false, closing = false;
 let panelSection = null;
 const tabs = [];
 const downloadItems = new Map();
@@ -90,14 +95,16 @@ function finishPrivateSession() {
 
 function publicTab(t) {
   const wc = live(t) ? t.view.webContents : null;
+  const flash = { flashDetected: t.native?.state.hasFlash ?? t.hasFlash ?? !!t.restoreEntry?.native, boltRevision: t.boltRevision || 0, flashQuality: t.flashQuality || store.data.settings.flashQuality };
   if (t.native) return { id: t.id, private: !!t.private, kind: t.kind, title: t.title, url: t.url, loading: t.loading, error: t.error, native: true,
-    muted: !!t.native.state.muted, audible: !!t.native.state.audible, canBack: !!t.native.state.canBack, canForward: !!t.native.state.canForward, zoom: t.native.state.zoom || 100 };
+    ...flash, muted: !!t.native.state.muted, audible: !!t.native.state.audible, canBack: !!t.native.state.canBack, canForward: !!t.native.state.canForward, zoom: t.native.state.zoom || 100 };
   return { id: t.id, private: !!t.private, kind: t.kind, title: t.title, url: t.url, loading: t.loading, error: t.error, native: !!t.restoreEntry?.native, muted: wc?.isAudioMuted() || false, audible: wc?.isCurrentlyAudible() || false,
-    canBack: wc?.navigationHistory.canGoBack() || false, canForward: wc?.navigationHistory.canGoForward() || false, zoom: Math.round((wc?.getZoomFactor() || 1) * 100) };
+    ...flash, canBack: wc?.navigationHistory.canGoBack() || false, canForward: wc?.navigationHistory.canGoForward() || false, zoom: Math.round((wc?.getZoomFactor() || 1) * 100) };
 }
 function getState() {
   return { tabs: tabs.map(publicTab), activeId, panel, panelSection, collapsed, menuOpen, pageSummary: summaryFor(activeTab()), suggestions: suggestionData, maximized: win?.isMaximized(), fullscreen: win?.isFullScreen(), bookmarks: store.data.bookmarks,
     history: activeTab()?.private ? [] : store.data.history, library: flashPages(), downloads: tabDownloads(activeTab()), settings: store.data.settings,
+    support: supportLinks?.state() || {}, libraryDirectory: store.libraryFolder.directory,
     extensions: extensions?.state() || [], flashReady: nativeAvailable(), version: app.getVersion(), chromium: process.versions.chrome, flashVersion: flashRuntime.version, flashRuntime: '9.4.4' };
 }
 function sendState(immediate = false) {
@@ -195,9 +202,11 @@ async function resumeTab(t) {
   const entry = t.restoreEntry;
   if (!entry) return;
   t.restoreEntry = null;
+  if (entry.quality) t.flashQuality = entry.quality;
   t.restoring = (async () => {
     try {
-      if (entry.kind === 'local' && entry.native) await addLibrarySource(entry.path, 'html', t);
+      if (entry.kind === 'flash') await openStandalone(entry.path || entry.url, t);
+      else if (entry.kind === 'local' && entry.native) await activateNativeLocal(t, entry.path);
       else if (['local', 'pdf'].includes(entry.kind)) await openLocal(entry.path, t);
       else if (entry.kind === 'web') {
         if (entry.native) await activateNative(t, entry.url);
@@ -266,7 +275,7 @@ function wireContents(t) {
       const original = isWebURL(wc.getURL()) ? wc.getURL() : t.url;
       if (isWebURL(original) && new URL(original).origin === new URL(destination).origin && !isFlashFallbackURL(original)) { event.preventDefault(); activateNative(t, original).catch(e => showError(t, e.message)); return; }
     }
-    if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); win.webContents.send('browser:notice', 'Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.'); }
+    if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); openStandalone(destination, t).catch(e => showError(t, e.message)); }
   });
   wc.on('will-redirect', (event, url) => {
     const destination = event.url || url;
@@ -275,7 +284,7 @@ function wireContents(t) {
       const original = isWebURL(wc.getURL()) ? wc.getURL() : t.url;
       if (isWebURL(original) && new URL(original).origin === new URL(destination).origin && !isFlashFallbackURL(original)) { event.preventDefault(); activateNative(t, original).catch(e => showError(t, e.message)); }
     }
-    else if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); win.webContents.send('browser:notice', 'Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.'); }
+    else if (/\.swf$/i.test(new URL(destination).pathname)) { event.preventDefault(); openStandalone(destination, t).catch(e => showError(t, e.message)); }
   });
   wc.on('did-start-loading', () => {
     if (wc.isLoadingMainFrame()) {
@@ -337,9 +346,39 @@ function detectFlashFrames(t) {
   if (!store.data.settings.flashEnabled || t.native || t.forceModern || !eligible()) return;
   t.flashDetectionTimer = setTimeout(async () => {
     if (!live(t) || t.native || !eligible()) return;
-    const found = await Promise.all(t.view.webContents.mainFrame.framesInSubtree.map(frame => frame.executeJavaScript(detectionScript).catch(() => false)));
-    if (found.some(Boolean) && live(t) && !t.native) (t.kind === 'local' ? addLibrarySource(t.localPath, 'html', t) : activateNative(t, t.url)).catch(e => showError(t, e.message));
+    await checkFlashPage(t).catch(e => showError(t, e.message));
   }, 120);
+}
+async function checkFlashPage(t) {
+  if (t.flashCheckPending) return t.flashCheckPending;
+  t.flashCheckPending = scanFlashPage(t);
+  try { await t.flashCheckPending; }
+  finally { t.flashCheckPending = null; }
+}
+async function scanFlashPage(t) {
+  if (!live(t) || t.native) return;
+  const wc = t.view.webContents, url = wc.getURL();
+  const found = await Promise.all(wc.mainFrame.framesInSubtree.map(frame => frame.executeJavaScript(detectionScript).catch(() => false)));
+  if (!tabs.includes(t) || !live(t) || t.view.webContents !== wc || wc.getURL() !== url || t.native) return;
+  t.hasFlash = found.some(Boolean);
+  sendState(true);
+  if (t.hasFlash) await (t.kind === 'local' ? activateNativeLocal(t, t.localPath) : activateNative(t, t.url));
+}
+async function toggleFlash(t) {
+  if (!t) return;
+  t.boltRevision = (t.boltRevision || 0) + 1;
+  sendState(true);
+  if (t.flashTogglePending) return;
+  t.flashTogglePending = (async () => {
+    // An explicit click can recover a stopped player even if its IPC thread is
+    // unresponsive. Detection, rather than the chosen engine, controls the icon.
+    if (t.restoring || t.nativeNavigation) { await (t.restoring || t.nativeNavigation); return; }
+    if (t.native || t.restoreEntry) { await reload(t); return; }
+    t.forceModern = false;
+    if (t.kind === 'web' || t.kind === 'local' && /\.html?$/i.test(t.localPath || '')) await checkFlashPage(t);
+  })();
+  try { await t.flashTogglePending; }
+  finally { t.flashTogglePending = null; }
 }
 function wirePDFZoom(t) {
   if (!live(t)) return;
@@ -367,12 +406,13 @@ function ensureView(t) {
   extensionBridge?.addTab(t);
   layout();
 }
-function showError(t, message) { if (closing || !tabs.includes(t)) return; if (t.blockedFlashURL === t.url) message = 'Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.'; t.error = message; t.loading = false; layout(); sendState(true); }
+function showError(t, message) { if (closing || !tabs.includes(t)) return; t.error = message; t.loading = false; layout(); sendState(true); }
 async function navigate(t, value) {
   if (/^(?:chrome|flashborn):\/\/extensions\/?$/i.test(String(value).trim())) { panel = 'extensions'; layout(); focusChrome(); sendState(true); return; }
   const target = resolveInput(value, store.data.settings.searchEngine);
   t.restoreEntry = null;
-  t.blockedFlashURL = null;
+  t.hasFlash = false;
+  t.forceModern = false;
   t.error = null;
   if (target.type === 'home') {
     if (t.native) { t.native.dispose(); t.native = null; }
@@ -381,18 +421,18 @@ async function navigate(t, value) {
     layout(); persistTabs(); sendState(true); return;
   }
   if (target.type === 'file') { await openLocal(target.path, t); return; }
-  if (target.type === 'flash') throw new Error('Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.');
+  if (target.type === 'flash') { await openStandalone(target.url, t); return; }
   if (t.native) { t.native.dispose(); t.native = null; }
   t.kind = 'web'; t.url = target.url; t.title = new URL(target.url).hostname; t.loading = true;
+  initializeQuality(t, store.data.flashQualities);
   ensureView(t); layout(); sendState(true);
   try { await t.view.webContents.loadURL(target.url); } catch (e) { if (e.code !== 'ERR_ABORTED') showError(t, e.message); }
 }
-function createTab(value = '', background = false, privateMode = !!activeTab()?.private, openerId = null) {
+function createTab(value = '', background = false, privateMode = !!activeTab()?.private, openerId = null, append = false) {
   if (tabs.length >= 50) { dialog.showMessageBox(win, { type: 'info', message: 'Close a tab before opening another.', detail: 'Flashborn supports up to 50 open tabs.' }); return; }
   const t = { id: crypto.randomUUID(), private: !!privateMode, kind: 'home', url: '', title: privateMode ? 'Flashcognito tab' : 'New tab', loading: false, error: null, view: null };
-  const openerIndex = tabs.findIndex(tab => tab.id === openerId);
-  if (openerIndex >= 0) tabs.splice(openerIndex + 1, 0, t);
-  else tabs.push(t);
+  if (append) tabs.push(t);
+  else tabs.unshift(t);
   if (!background) selectTab(t.id);
   if (value) navigate(t, value).catch(e => showError(t, e.message));
   sendState(true);
@@ -401,8 +441,37 @@ function createTab(value = '', background = false, privateMode = !!activeTab()?.
 
 async function openLocal(filename, existing) {
   const absolute = path.resolve(filename);
-  if (!supportedLocalFile(absolute)) throw new Error('Choose an HTML, PDF, image or video file. Standalone SWF playback has been removed.');
+  if (/\.swf$/i.test(absolute)) { await openStandalone(absolute, existing); return; }
+  if (!supportedLocalFile(absolute)) throw new Error('Choose an HTML, SWF, PDF, image or video file.');
   await openDocument(absolute, existing);
+}
+async function openStandalone(value, existing) {
+  const remote = isWebURL(value), file = remote ? null : await fsp.realpath(value);
+  let info = { background: DEFAULT_BACKGROUND };
+  if (file) {
+    const stat = await fsp.stat(file);
+    if (!stat.isFile() || stat.size > 256 * 1024 * 1024) throw new Error('Choose a SWF file smaller than 256 MB.');
+    info = await swfInfo(await fsp.readFile(file));
+  } else {
+    // Background metadata is best-effort for remote movies. Adobe streams the
+    // original URL itself, preserving relative asset locations.
+    try {
+      const response = await net.fetch(value, { signal: AbortSignal.timeout(5000), credentials: 'omit' });
+      const reader = response.body.getReader(), parts = []; let size = 0;
+      try { while (true) { const result = await reader.read(); if (result.done) break; size += result.value.length; if (size > 16 * 1024 * 1024) throw new Error('Metadata limit'); parts.push(Buffer.from(result.value)); } info = await swfInfo(Buffer.concat(parts)); }
+      finally { await reader.cancel().catch(() => {}); }
+    } catch { /* Missing optional metadata uses light grey. */ }
+  }
+  const t = existing || createTab(); if (!t) return;
+  t.kind = 'flash'; t.localPath = file; t.url = remote ? value : pathToFileURL(file).href;
+  t.title = remote ? decodeURIComponent(new URL(value).pathname.split('/').pop()) : path.basename(file);
+  t.hasFlash = true; t.loading = true; t.error = null; t.flashBackground = info.background;
+  await ensureNative(t);
+  if (live(t)) { win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; }
+  if (t.id === activeId) panel = null;
+  layout(); sendState(true);
+  await t.native.call('standalone', { path: file, url: remote ? value : null, token: crypto.randomUUID(), background: info.background });
+  persistTabs();
 }
 function flashPages() {
   // Keep previous SWF records on disk, but never launch them in website-only mode.
@@ -422,17 +491,19 @@ async function openDocument(absolute, existing) {
     if (!header.includes(Buffer.from('%PDF-'))) throw new Error('This file does not contain a valid PDF header.');
   }
   const t = existing || createTab();
+  if (!t) return;
+  t.hasFlash = false;
   if (t.native) { t.native.dispose(); t.native = null; }
   const token = crypto.randomUUID();
   const real = await fsp.realpath(absolute);
   documents.set(token, { path: real, root: path.dirname(real), assets: /\.html?$/i.test(real), tabId: t.id });
   t.kind = pdf ? 'pdf' : 'local'; t.localPath = real; t.title = path.basename(absolute); t.url = pathToFileURL(absolute).href; t.loading = true; t.error = null;
+  initializeQuality(t, store.data.flashQualities);
   if (t.id === activeId) panel = null;
   ensureView(t); layout(); sendState(true);
   await t.view.webContents.loadURL(`flashborn://document/${token}/${encodeURIComponent(t.title)}`);
 }
-async function addLibrarySource(value, kind, existing) {
-  if (kind !== 'html') throw new Error('Choose a Flash website or an HTML file.');
+async function librarySource(value) {
   const input = String(value || '').trim().replace(/^"(.*)"$/, '$1'), target = resolveInput(input);
   if (!String(value || '').trim() || target.type === 'home') throw new Error('Enter a web URL or a local file path.');
   if (target.type === 'web' && target.url === 'https://duckduckgo.com/?q=' + encodeURIComponent(input)) throw new Error('Enter a web URL or an absolute local file path.');
@@ -441,13 +512,60 @@ async function addLibrarySource(value, kind, existing) {
   if (target.type === 'file') { const stat = await fsp.stat(target.path); if (!stat.isFile()) throw new Error('Choose an HTML file.'); }
   const local = target.type === 'file' ? await fsp.realpath(target.path) : null;
   const url = local ? null : target.url;
-  const title = local ? path.basename(local, path.extname(local)) : decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || new URL(url).hostname);
-  const t = existing || createTab();
+  let title = local ? path.basename(local, path.extname(local)) : new URL(url).hostname;
+  if (local) {
+    const handle = await fsp.open(local, 'r');
+    try { const buffer = Buffer.alloc(512 * 1024); const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0); title = pageTitle(buffer.subarray(0, bytesRead).toString('utf8')) || title; } finally { await handle.close(); }
+  }
+  return { local, url, title };
+}
+async function discoverLibraryTitle(entry) {
+  if (!entry?.url || entry.titleEdited) return;
+  const source = entry.url;
+  try {
+    const response = await net.fetch(source, { credentials: 'omit', signal: AbortSignal.timeout(6000) });
+    if (!response.ok || !/html/i.test(response.headers.get('content-type') || '')) { await response.body?.cancel(); return; }
+    const reader = response.body.getReader(), chunks = []; let length = 0, title = '';
+    try {
+      while (length < 512 * 1024) {
+        const { done, value } = await reader.read(); if (done) break;
+        const chunk = Buffer.from(value).subarray(0, 512 * 1024 - length); chunks.push(chunk); length += chunk.length;
+        title = pageTitle(Buffer.concat(chunks).toString('utf8')); if (title) break;
+      }
+    } finally { await reader.cancel().catch(() => {}); }
+    if (!closing && title && store.data.library.includes(entry) && !entry.titleEdited && entry.url === source) { entry.title = title; store.save(); sendState(true); }
+  } catch { /* The page can still be added offline and its title edited. */ }
+}
+function captureLibraryTitle(t, title) {
+  if (!t.libraryTitlePending || t.private || !title) return;
+  const entry = store.data.library.find(item => item.id === t.libraryId);
+  if (!entry || entry.titleEdited) { t.libraryTitlePending = false; return; }
+  const cleaned = String(title).replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (cleaned && cleaned !== 'Flashborn Native Flash') { entry.title = cleaned; t.libraryTitlePending = false; store.save(); }
+}
+async function addLibrarySource(value, kind, { play = false } = {}) {
+  if (kind !== 'html') throw new Error('Choose a Flash website or an HTML file.');
+  const { local, url, title } = await librarySource(value);
   let entry = store.data.library.find(item => local ? item.path === local : item.url === url && item.kind === 'html');
-  if (!entry) { entry = { id: crypto.randomUUID(), kind, ...(local ? { path: local } : { url }), title, addedAt: new Date().toISOString() }; if (!t.private) store.data.library.unshift(entry); }
-  if (!t.private) { entry.lastPlayedAt = new Date().toISOString(); store.save(); }
+  if (!entry) { entry = { id: crypto.randomUUID(), kind, ...(local ? { path: local } : { url }), title, color: placeholderColor(), addedAt: new Date().toISOString() }; store.data.library.unshift(entry); store.save(); }
+  discoverLibraryTitle(entry);
+  if (!play) { sendState(true); return; }
+  const t = createTab();
+  if (!t) return;
+  if (!t.private) { entry.lastPlayedAt = new Date().toISOString(); t.libraryId = entry.id; t.libraryTitlePending = !entry.titleEdited; store.save(); }
   if (!local) { await activateNative(t, url); return; }
-  t.kind = 'local'; t.localPath = local; t.url = pathToFileURL(local).href; t.title = entry.title; t.loading = true; t.error = null;
+  await activateNativeLocal(t, local, entry.title);
+}
+async function activateNativeLocal(t, filename, title) {
+  if (t.nativeNavigation) return t.nativeNavigation;
+  t.nativeNavigation = loadNativeLocal(t, filename, title);
+  try { await t.nativeNavigation; }
+  finally { t.nativeNavigation = null; }
+}
+async function loadNativeLocal(t, filename, title) {
+  const local = await fsp.realpath(filename);
+  if (!/\.html?$/i.test(local) || !(await fsp.stat(local)).isFile()) throw new Error('Choose an HTML Flash page.');
+  t.kind = 'local'; t.localPath = local; t.url = pathToFileURL(local).href; t.title = title || t.title || path.basename(local); t.loading = true; t.error = null;
   await ensureNative(t);
   if (live(t)) { win.contentView.removeChildView(t.view); t.view.webContents.close(); t.view = null; }
   if (t.id === activeId) panel = null;
@@ -456,6 +574,7 @@ async function addLibrarySource(value, kind, existing) {
   persistTabs();
 }
 async function ensureNative(t) {
+  initializeQuality(t, store.data.flashQualities);
   if (t.native && (t.native.stopped || t.native.child && (t.native.child.exitCode !== null || t.native.child.signalCode !== null))) { t.native.dispose(); t.native = null; }
   if (t.native) { await t.native.ready; return; }
   if (!nativeAvailable()) throw new Error('Native Flash files are missing. Reinstall Flashborn.');
@@ -470,8 +589,15 @@ async function ensureNative(t) {
       if (!isWebURL(message.state.url) && !message.state.url?.startsWith('flashnative:')) return;
       const started = !!message.state.loading && !t.loading;
       t.loading = !!message.state.loading;
+      if (typeof message.state.hasFlash === 'boolean') t.hasFlash = message.state.hasFlash;
       if (started) t.nativeHistoryURL = null;
-      if (t.kind === 'web' && isWebURL(message.state.url)) { t.url = message.state.url; t.title = message.state.title || new URL(t.url).hostname; }
+      if (t.kind === 'web' && isWebURL(message.state.url)) {
+        t.url = message.state.url; t.title = message.state.title || new URL(t.url).hostname;
+        const previousQualityPage = t.flashQualityKey;
+        initializeQuality(t, store.data.flashQualities);
+        if (previousQualityPage !== t.flashQualityKey) native.call('quality', { quality: t.flashQuality || store.data.settings.flashQuality, initial: !t.flashQuality }).catch(() => {});
+      }
+      if (!t.loading) captureLibraryTitle(t, message.state.title);
       if (!t.private && !t.loading && t.kind === 'web' && isWebURL(t.url) && t.nativeHistoryURL !== t.url) {
         t.nativeHistoryURL = t.url;
         store.data.history = [{ id: crypto.randomUUID(), url: t.url, title: t.title, visitedAt: new Date().toISOString() }, ...store.data.history.filter(h => h.url !== t.url)].slice(0, 500);
@@ -480,6 +606,7 @@ async function ensureNative(t) {
       sendState(started);
     } else if (message.type === 'new-tab') { const created = createTab('', false, t.private, t.id); if (created) activateNative(created, message.url).catch(e => showError(created, e.message)); }
     else if (message.type === 'open-pdf' && isWebURL(message.url)) { navigate(t, message.url).catch(e => showError(t, e.message)); }
+    else if (message.type === 'open-swf' && isWebURL(message.url)) { openStandalone(message.url, t).catch(e => showError(t, e.message)); }
     else if (message.type === 'zoom-wheel') wheelZoom(t, message.direction === 'in' ? 1 : -1, message.source || 'browser');
     else if (message.type === 'drop-files') openDroppedFiles(message.paths).catch(e => win?.webContents.send('browser:notice', e.message));
     else if (message.type === 'download' && isWebURL(message.url)) { ensureView(t); t.view.webContents.downloadURL(message.url); }
@@ -493,10 +620,17 @@ async function ensureNative(t) {
   layout();
   await t.native.ready;
   if (closing || !tabs.includes(t) || t.native !== native) { native.dispose(); throw new Error('Flash tab was closed.'); }
-  await t.native.call('quality', { quality: store.data.settings.flashQuality, initial: true });
+  await t.native.call('quality', { quality: t.flashQuality || store.data.settings.flashQuality, initial: !t.flashQuality });
   layout();
 }
 async function activateNative(t, url) {
+  if (t.nativeNavigation) return t.nativeNavigation;
+  t.nativeNavigation = loadNativePage(t, url);
+  try { await t.nativeNavigation; }
+  finally { t.nativeNavigation = null; }
+}
+async function loadNativePage(t, url) {
+  if (/\.swf$/i.test(new URL(url).pathname)) { await openStandalone(url, t); return; }
   if (isPDFURL(url)) { await navigate(t, url); return; }
   t.kind = 'web'; t.url = url; t.title = new URL(url).hostname; t.error = null; t.loading = true;
   await ensureNative(t);
@@ -510,11 +644,11 @@ async function duplicateTab(id) {
   if (!source) return;
   const copy = createTab('', false, source.private);
   if (!copy) return;
-  tabs.splice(tabs.indexOf(copy), 1);
-  tabs.splice(tabs.indexOf(source) + 1, 0, copy);
   copy.forceModern = source.forceModern;
+  copy.flashQuality = source.flashQuality;
   if (source.restoreEntry) { copy.restoreEntry = { ...source.restoreEntry }; await resumeTab(copy); }
-  else if (source.kind === 'local' && source.native) await addLibrarySource(source.localPath, 'html', copy);
+  else if (source.kind === 'flash') await openStandalone(source.localPath || source.url, copy);
+  else if (source.kind === 'local' && source.native) await activateNativeLocal(copy, source.localPath, source.title);
   else if (['local', 'pdf'].includes(source.kind)) await openLocal(source.localPath, copy);
   else if (source.kind === 'web') {
     if (source.native) await activateNative(copy, source.url);
@@ -539,13 +673,14 @@ function showTabMenu(args) {
 }
 function reload(t = activeTab()) {
   if (!t) return;
-  if (t.restoreEntry) { t.error = null; resumeTab(t).catch(e => showError(t, e.message)); return; }
+  if (t.restoring || t.nativeNavigation) return t.restoring || t.nativeNavigation;
+  if (t.restoreEntry) { t.error = null; return resumeTab(t).catch(e => showError(t, e.message)); }
   if (t.native) {
     // Reload must work even when the legacy UI thread cannot process IPC.
     // Recreate the complete tab runtime, retaining URL, zoom and mute state.
     if (t.id === activeId && win.isVisible() && !win.isMinimized()) win.focus();
     const entry = sessionEntry({ ...t, private: false }); t.native.dispose(true); t.native = null; t.recreateNative = false;
-    t.restoreEntry = entry; t.error = null; resumeTab(t).catch(e => showError(t, e.message)); return;
+    t.restoreEntry = entry; t.error = null; return resumeTab(t).catch(e => showError(t, e.message));
   }
   if (!live(t)) return;
   t.error = null;
@@ -574,7 +709,7 @@ async function handleProtocol(request) {
     if (url.pathname.startsWith('/library-image/')) {
       const entry = store.data.library.find(item => item.id === url.pathname.slice(15));
       if (!entry?.image || !/^[\da-f-]{36}\.png$/.test(entry.image)) return new Response('Not found', { status: 404 });
-      return new Response(await fsp.readFile(containedPath(path.join(app.getPath('userData'), 'library-images'), entry.image)), { headers: { 'Content-Type': 'image/png', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' } });
+      return new Response(await fsp.readFile(containedPath(store.libraryFolder.images, entry.image)), { headers: { 'Content-Type': 'image/png', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' } });
     }
     const filename = containedPath(path.join(__dirname, 'ui'), decodeURIComponent(url.pathname.slice(1) || 'index.html'));
     return new Response(await fsp.readFile(filename), { headers: {
@@ -607,7 +742,7 @@ async function setLibraryImage(id, file) {
   if (image.isEmpty()) throw new Error('This image format could not be read. Choose PNG, JPEG, WebP or BMP.');
   const size = image.getSize(), scale = Math.min(1, 640 / Math.max(size.width, size.height));
   image = image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)), quality: 'best' });
-  const directory = path.join(app.getPath('userData'), 'library-images'), name = crypto.randomUUID() + '.png', previous = entry.image;
+  const directory = store.libraryFolder.images, name = crypto.randomUUID() + '.png', previous = entry.image;
   await fsp.mkdir(directory, { recursive: true });
   await fsp.writeFile(containedPath(directory, name), image.toPNG());
   entry.image = name; store.save();
@@ -618,7 +753,7 @@ async function removeLibraryImage(entry) {
   const image = entry?.image;
   if (!entry) return;
   delete entry.image; store.save();
-  if (/^[\da-f-]{36}\.png$/.test(image || '')) await fsp.unlink(containedPath(path.join(app.getPath('userData'), 'library-images'), image)).catch(() => {});
+  if (/^[\da-f-]{36}\.png$/.test(image || '')) await fsp.unlink(containedPath(store.libraryFolder.images, image)).catch(() => {});
 }
 function setFullscreen(value) {
   focusArea = 'content'; focusIntentAt = Date.now();
@@ -705,9 +840,8 @@ function configureSession(targetSession = browsingSession, privateMode = false) 
     if (details.resourceType === 'mainFrame' && /application\/(x-shockwave-flash|futuresplash|vnd.adobe.flash.movie)/i.test(header)) {
       const t = tabs.find(t => live(t) && t.view.webContents.id === details.webContentsId);
       if (t && t.kind === 'web') {
-        t.blockedFlashURL = details.url;
         callback({ cancel: true });
-        showError(t, 'Open the HTML page containing this Flash movie. Standalone SWF playback has been removed.');
+        openStandalone(details.url, t).catch(e => showError(t, e.message));
         return;
       }
     }
@@ -838,7 +972,7 @@ async function showBrowserMenu() {
   if (menuWindow && !menuWindow.isDestroyed()) { closeBrowserMenu(true); return; }
   const bounds = win.getContentBounds();
   const work = screen.getDisplayMatching(bounds).workArea;
-  const width = 320, height = Math.min(612, work.height - 20);
+  const width = 320, height = Math.min(700, work.height - 20);
   const x = Math.max(work.x, Math.min(work.x + work.width - width, bounds.x + bounds.width - width - 12));
   const y = Math.max(work.y, Math.min(work.y + work.height - height, bounds.y + 92));
   const popup = menuWindow = new BrowserWindow({ x, y, width, height, parent: win, frame: false, show: false,
@@ -854,6 +988,11 @@ async function showBrowserMenu() {
   popup.on('closed', () => { if (menuWindow === popup) { menuWindow = null; menuOpen = false; sendState(true); } });
   menuOpen = true; sendState(true);
   await popup.loadURL(MENU_URL);
+  if (menuWindow === popup && !popup.isDestroyed()) {
+    const needed = await popup.webContents.executeJavaScript(`(() => { const nav = document.querySelector('.browser-menu'), css = getComputedStyle(nav); return Math.ceil([...nav.children].reduce((height, child) => { const c = getComputedStyle(child); return height + child.getBoundingClientRect().height + parseFloat(c.marginTop || 0) + parseFloat(c.marginBottom || 0); }, parseFloat(css.paddingTop) + parseFloat(css.paddingBottom)) + 2); })()`);
+    const fitted = Math.min(work.height - 20, Math.max(360, needed));
+    popup.setBounds({ x, y: Math.max(work.y, Math.min(work.y + work.height - fitted, bounds.y + 92)), width, height: fitted });
+  }
   if (menuWindow === popup && !popup.isDestroyed()) { popup.show(); popup.focus(); sendState(true); }
 }
 async function showExtensionPage(key, kind) {
@@ -905,11 +1044,14 @@ async function command(action, args = {}) {
     }
     case 'flash-quality': {
       if (!['high', 'medium', 'low'].includes(args.quality)) throw new Error('Choose high, medium or low Flash quality.');
-      store.data.settings.flashQuality = args.quality; store.save();
-      await Promise.all(tabs.filter(tab => tab.native).map(tab => tab.native.call('quality', { quality: args.quality })));
+      if (!t) break;
+      t.flashQuality = args.quality; t.flashQualityKey = qualityKey(t);
+      if (!t.private && t.flashQualityKey) store.data.flashQualities[t.flashQualityKey] = args.quality;
+      if (t.native) await t.native.call('quality', { quality: args.quality });
+      persistTabs(); store.save();
       break;
     }
-    case 'native-mode': if (t && isWebURL(t.url)) { if (t.native) { t.native.dispose(); t.native = null; t.forceModern = true; await navigate(t, t.url); } else { t.forceModern = false; await activateNative(t, t.url); } } break;
+    case 'native-mode': await toggleFlash(t); break;
     case 'navigate': closeSuggestions(); closeZoomPopup(); focusArea = 'content'; panel = null; await navigate(t, args.value); break;
     case 'contact-email': clipboard.writeText('sloutchevsky@gmail.com'); break;
     case 'suggest': await showSuggestions(args); break;
@@ -939,7 +1081,7 @@ async function command(action, args = {}) {
     case 'close-tab': closeTab(args.id); break;
     case 'back': if (t?.native) await t.native.call('back'); else if (wc?.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); break;
     case 'forward': if (t?.native) await t.native.call('forward'); else if (wc?.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); break;
-    case 'reload': reload(); break;
+    case 'reload': await reload(); break;
     case 'stop': if (t?.native) await t.native.call('stop'); else wc?.stop(); break;
     case 'home': panel = null; await navigate(t, ''); break;
     case 'collapse': closeBrowserMenu(); closeZoomPopup(); closeSuggestions(); collapsed = !collapsed; break;
@@ -975,18 +1117,39 @@ async function command(action, args = {}) {
       await showExtensionPage(args.key, args.kind); break;
     }
     case 'open-file': {
-      const result = await dialog.showOpenDialog(win, { title: 'Open file', filters: [{ name: 'Browser files', extensions: ['html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico', 'mp4', 'm4v', 'webm', 'ogv', 'mov'] }, { name: 'PDF documents', extensions: ['pdf'] }], properties: ['openFile', 'multiSelections'] });
+      const result = await dialog.showOpenDialog(win, { title: 'Open file', filters: [{ name: 'Browser files', extensions: ['swf', 'html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico', 'mp4', 'm4v', 'webm', 'ogv', 'mov'] }, { name: 'Flash movies', extensions: ['swf'] }, { name: 'PDF documents', extensions: ['pdf'] }], properties: ['openFile', 'multiSelections'] });
       for (const file of result.filePaths) await openLocal(file);
       break;
     }
     case 'add-library-source': await addLibrarySource(args.value, args.kind); break;
     case 'browse-library-source': {
       if (args.kind !== 'html') throw new Error('Choose a Flash website or HTML file.');
-      const result = await dialog.showOpenDialog(win, { title: 'Open HTML with Flash', filters: [{ name: 'HTML Flash pages', extensions: ['html', 'htm'] }], properties: ['openFile', 'multiSelections'] });
+      const savedFolder = store.data.settings.lastAddPageFolder;
+      const defaultPath = typeof savedFolder === 'string' && (await fsp.stat(savedFolder).catch(() => null))?.isDirectory() ? savedFolder : undefined;
+      const result = await dialog.showOpenDialog(win, { title: 'Open HTML with Flash', defaultPath, filters: [{ name: 'HTML Flash pages', extensions: ['html', 'htm'] }], properties: ['openFile', 'multiSelections'] });
+      if (!result.canceled && result.filePaths.length) { store.data.settings.lastAddPageFolder = path.dirname(result.filePaths[0]); store.save(); }
       for (const file of result.filePaths) await addLibrarySource(file, args.kind);
       break;
     }
-    case 'play-library': { const entry = flashPages().find(e => e.id === args.id); if (!entry) throw new Error('This item is not a Flash website or HTML page.'); await addLibrarySource(entry.path || entry.url, 'html'); break; }
+    case 'play-library': { const entry = flashPages().find(e => e.id === args.id); if (!entry) throw new Error('This item is not a Flash website or HTML page.'); await addLibrarySource(entry.path || entry.url, 'html', { play: true }); break; }
+    case 'library-update': {
+      const entry = flashPages().find(item => item.id === args.id);
+      if (!entry) throw new Error('Library item not found.');
+      const title = String(args.title || '').trim().slice(0, 300), description = String(args.description || '').trim().slice(0, 4000), year = String(args.year || '').trim().slice(0, 40);
+      if (!title) throw new Error('Enter a title for this Flash page.');
+      const requestedSource = String(args.source || entry.path || entry.url).trim();
+      const source = requestedSource === (entry.path || entry.url) ? { local: entry.path || null, url: entry.url || null } : await librarySource(requestedSource);
+      const changed = (source.local || source.url) !== (entry.path || entry.url);
+      delete entry.path; delete entry.url;
+      Object.assign(entry, source.local ? { path: source.local } : { url: source.url });
+      entry.title = title; entry.description = description; entry.year = year; entry.titleEdited = true;
+      entry.updatedAt = new Date().toISOString(); store.save();
+      if (changed) for (const tab of tabs) if (tab.libraryId === entry.id) tab.libraryTitlePending = false;
+      break;
+    }
+    case 'library-folder': { const error = await shell.openPath(store.libraryFolder.directory); if (error) throw new Error(error); break; }
+    case 'support-folder': { shell.showItemInFolder(supportLinks.file); break; }
+    case 'support-checkout': { const url = supportLinks.checkout(args.provider, args.frequency, args.amount); await shell.openExternal(url); break; }
     case 'library-image': {
       if (!store.data.library.some(item => item.id === args.id)) throw new Error('Library item not found.');
       const result = await dialog.showOpenDialog(win, { title: 'Choose a Flash library image', filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }], properties: ['openFile'] });
@@ -1050,6 +1213,8 @@ async function command(action, args = {}) {
 
 async function boot() {
   store = new Store(app.getPath('userData'));
+  if (process.platform === 'win32' && app.isPackaged && !testMode && store.data.settings.swfAssociationPath !== process.execPath) registerSWF(process.execPath).then(() => { store.data.settings.swfAssociationPath = process.execPath; store.save(); }).catch(error => console.error('SWF association:', error.message));
+  supportLinks = new SupportLinks(app.getPath('userData'));
   browsingSession = session.fromPartition('persist:flashborn');
   extensions = new Extensions(store, browsingSession, path.join(app.getPath('userData'), 'extensions'), () => sendState());
   extensionBridge = new ExtensionBridge(browsingSession, { tabs: () => tabs.filter(t => !t.private && !t.native && live(t)), active: activeTab, window: () => win, create: createTab, select: selectTab, close: closeTab, ensureView, options: id => extensions.state().find(item => item.id === id) });
@@ -1150,12 +1315,12 @@ async function boot() {
   const saved = store.data.settings.restoreTabs ? store.data.tabs.map(savedEntry).filter(Boolean).slice(0, 50) : [];
   const savedIndex = store.data.tabs.slice(0, store.data.activeTabIndex || 0).map(savedEntry).filter(Boolean).length;
   for (const entry of saved) {
-    const restored = createTab('', true, false);
+    const restored = createTab('', true, false, null, true);
     Object.assign(restored, { kind: entry.kind, title: entry.title, url: entry.url, localPath: entry.path, restoreEntry: entry.kind === 'home' ? null : entry });
   }
   if (tabs.length) selectTab(tabs[Math.min(Math.max(0, savedIndex), tabs.length - 1)].id);
   else createTab();
-  const file = process.argv.find(arg => /\.(html?|pdf|png|jpe?g|gif|webp|svg|avif|bmp|ico|mp4|m4v|webm|ogv|mov)$/i.test(arg) && fs.existsSync(arg));
+  const file = process.argv.find(arg => /\.(swf|html?|pdf|png|jpe?g|gif|webp|svg|avif|bmp|ico|mp4|m4v|webm|ogv|mov)$/i.test(arg) && fs.existsSync(arg));
   if (file) await openLocal(file);
   await extensions.start();
   if (testMode) {
@@ -1167,7 +1332,7 @@ if (gotLock) app.whenReady().then(boot).catch(error => { console.error(error); d
 app.on('second-instance', async (_event, argv) => {
   if (!win) return;
   if (win.isMinimized()) win.restore(); win.focus();
-  const file = argv.find(arg => /\.(html?|pdf|png|jpe?g|gif|webp|svg|avif|bmp|ico|mp4|m4v|webm|ogv|mov)$/i.test(arg) && fs.existsSync(arg));
+  const file = argv.find(arg => /\.(swf|html?|pdf|png|jpe?g|gif|webp|svg|avif|bmp|ico|mp4|m4v|webm|ogv|mov)$/i.test(arg) && fs.existsSync(arg));
   if (file) try { await openLocal(file); } catch (e) { dialog.showErrorBox('Could not open file', e.message); }
 });
 app.on('window-all-closed', () => app.quit());

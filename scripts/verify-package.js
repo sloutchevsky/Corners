@@ -26,4 +26,5 @@ const player = fs.readFileSync(path.join(payload, 'resources', 'native-flash', '
 assert.equal(crypto.createHash('sha256').update(player).digest('hex'), manifest.sha256);
 assert.equal(fs.existsSync(path.join(payload, 'resources', 'elevate.exe')), false, 'Unused updater elevation helper must not ship');
 assert.equal(require('../package.json').build.fileAssociations, undefined);
-console.log('Verified ' + count + ' source files, version ' + version + ', exact native helper contents, pinned Flash bytes, and absence of the standalone player/picker/elevation helper.');
+assert.ok(packaged.has('/src/legacy/standalone.js'));
+console.log('Verified ' + count + ' source files, version ' + version + ', exact native helper contents, pinned Flash bytes, restored inline SWF wrapper and absence of obsolete picker/elevation helper.');

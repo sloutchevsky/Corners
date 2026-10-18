@@ -48,6 +48,12 @@ Original font license reference: http://www.linotype.com/license
 The extended brand wordmark remains fixed artwork typeset from HelveticaNeueLT
 Com 53 Extended. That original typeface software is not bundled.
 
+## LZMA-JS
+
+Standalone SWF background metadata uses LZMA-JS 2.3.2 to read ZWS-compressed movies.
+Copyright © 2016 Nathan Rugg. MIT licensed; its full license is included in the
+packaged `lzma` dependency. Source: https://github.com/LZMA-JS/LZMA-JS
+
 ## Koffi
 
 Native Windows window positioning uses Koffi 3.3.2, Copyright (C) 2026 Niels

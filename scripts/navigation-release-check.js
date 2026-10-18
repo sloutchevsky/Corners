@@ -1,0 +1,74 @@
+'use strict';
+const { _electron: electron } = require('playwright');
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '..'), out = path.join(root, 'test-output'), wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function poll(read, check, timeout = 30000) { let value; const end = Date.now() + timeout; do { value = await read(); if (check(value)) return value; await wait(70); } while (Date.now() < end); throw Error('Timeout: ' + JSON.stringify(value)); }
+(async () => {
+  const profile = path.join(out, 'navigation-release-' + Date.now()); fs.mkdirSync(profile, { recursive: true });
+  fs.writeFileSync(path.join(profile, 'browser.json'), JSON.stringify({ settings: { adBlockEnabled: false } }));
+  const html = require('./html-fixture')(profile, require('./playback-fixture')), movie = path.join(profile, 'movie.swf');
+  const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
+  let app, ui; const passed = [], pass = message => { passed.push(message); console.log('PASS ' + message); };
+  const state = () => app.evaluate(() => global.__flashborn.getState());
+  const active = async () => { const s = await state(); return s.tabs.find(t => t.id === s.activeId); };
+  const command = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.command(data.action, data.args), { action, args });
+  const script = code => app.evaluate(({}, code) => global.__flashborn.activeTab().native?.evaluate(code), code);
+  const ready = () => poll(async () => { try { return await script('Number(document.querySelector("embed").GetVariable("ticks"))'); } catch { return null; } }, value => Number(value) > 2);
+  const launch = async (file = '') => {
+    app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: [...(process.env.FLASHBORN_EXE ? [] : [root]), ...(file ? [file] : [])], env });
+    await poll(() => app.evaluate(() => !!global.__flashborn), Boolean); ui = await app.firstWindow();
+    await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 80, y: 80, width: 1360, height: 930 }); w.show(); w.focus(); });
+  };
+  const drop = files => app.evaluate(async ({}, files) => { const wc = global.__flashborn.win.webContents; if (!wc.debugger.isAttached()) wc.debugger.attach('1.3'); for (const type of ['dragEnter', 'dragOver', 'drop']) await wc.debugger.sendCommand('Input.dispatchDragEvent', { type, x: 420, y: 180, data: { items: [], files, dragOperationsMask: 1 } }); }, files);
+  try {
+    await launch(movie); await ready(); assert.equal((await active()).kind, 'flash');
+    await ui.locator('#menu-button').click();
+    const menu = await poll(() => app.windows().find(w => w.url().endsWith('/menu.html')), Boolean);
+    assert.equal(await app.evaluate(() => global.__flashborn.menuWindow.isAlwaysOnTop()), true);
+    await menu.locator('[data-action="menu-close"]').count().then(async count => { if (count) await menu.locator('[data-action="menu-close"]').click(); else await command('menu-close'); });
+    assert.equal((await active()).native, true);
+    assert.equal(await script('getComputedStyle(document.body).backgroundColor'), 'rgb(30, 32, 37)');
+    assert.equal((await state()).settings.pageSummaries, false); const first = (await active()).id;
+    await command('flash-quality', { quality: 'low' });
+    await command('new-tab'); assert.equal((await state()).tabs[0].id, (await state()).activeId);
+    await command('navigate', { value: html }); await ready(); const second = (await active()).id;
+    await command('flash-quality', { quality: 'medium' }); assert.equal((await state()).tabs.find(t => t.id === first).flashQuality, 'low');
+    await command('close-tab', { id: first });
+    await app.evaluate(({ app: hostApp }, movie) => hostApp.emit('second-instance', {}, ['Flashborn.exe', movie]), movie); await ready();
+    assert.equal((await active()).kind, 'flash'); assert.equal((await active()).flashQuality, 'low');
+    await command('reload'); await ready(); assert.equal((await active()).flashQuality, 'low');
+    const quality = await poll(() => script('document.querySelector("embed").TGetProperty("/",19)'), value => String(value).toUpperCase() === 'LOW', 5000);
+    assert.equal(String(quality).toUpperCase(), 'LOW');
+    pass('SWF file-launch arguments open inside Flashborn with their embedded background and menus above Flash; quality survives close/reopen and reload without changing another tab');
+    await command('duplicate-tab', { id: (await active()).id }); await ready();
+    assert.equal((await state()).tabs[0].id, (await state()).activeId); assert.equal((await active()).flashQuality, 'low');
+    await command('panel', { name: 'library' }); await command('add-library-source', { value: html, kind: 'html' });
+    const entry = (await state()).library[0]; await ui.locator(`[data-edit-library="${entry.id}"]`).last().click();
+    const form = ui.locator('.library-edit-form'); await form.locator('[name="title"]').fill('Club John Frieda'); await form.locator('[name="year"]').fill('2001');
+    const description = 'A Firstborn portfolio piece preserved in its original Flash form. A long description can now wrap naturally onto a second line beside the thumbnail, without disrupting the title and year above it.';
+    await form.locator('[name="description"]').fill(description); await form.getByRole('button', { name: 'Save', exact: true }).click();
+    const row = ui.locator(`[data-reorder-id="${entry.id}"]`); await row.locator('.library-year').waitFor();
+    assert.equal(await row.locator('.library-year').innerText(), '2001');
+    assert.equal(await row.locator('.item-title').evaluate(el => getComputedStyle(el).fontSize), '18.72px');
+    const alignment = await row.evaluate(el => { const image = el.querySelector('.library-thumbnail').getBoundingClientRect(), title = el.querySelector('.item-title').getBoundingClientRect(), detail = el.querySelector('.library-small-line').getBoundingClientRect(); return { top: title.top - image.top, lines: detail.height }; });
+    assert.ok(Math.abs(alignment.top) < 2); assert.equal(alignment.lines, 34); assert.equal(await ui.locator('.reorder-handle').count(), 0);
+    await ui.screenshot({ path: path.join(out, 'navigation-library-dark.png') }); await command('theme'); await ui.screenshot({ path: path.join(out, 'navigation-library-light.png') });
+    pass('Library title is 20% larger, year and two-line description persist and align at the thumbnail top; drag dots are gone');
+    await command('new-tab'); await drop([html]); await poll(active, t => t.kind === 'local'); await ready();
+    await command('new-tab'); await drop([movie]); await poll(active, t => t.kind === 'flash'); await ready();
+    const withoutBG = Buffer.from(require('./playback-fixture'));
+    let offset = 8 + Math.ceil((5 + (withoutBG[8] >> 3) * 4) / 8) + 4;
+    while (offset + 2 < withoutBG.length) { const record = withoutBG.readUInt16LE(offset), code = record >> 6; let len = record & 63, header = 2; if (len === 63) { len = withoutBG.readUInt32LE(offset + 2); header = 6; } if (code === 9) { const plain = Buffer.concat([withoutBG.subarray(0, offset), withoutBG.subarray(offset + header + len)]); plain.writeUInt32LE(plain.length, 4); fs.writeFileSync(path.join(profile, 'no-bg.swf'), plain); break; } offset += header + len; }
+    await command('navigate', { value: path.join(profile, 'no-bg.swf') }); await ready();
+    assert.equal(await script('getComputedStyle(document.body).backgroundColor'), 'rgb(230, 230, 230)');
+    pass('Dragging HTML and standalone SWF files into the main window opens playable tabs; a movie without a background tag uses light grey');
+    await command('select-tab', { id: second }); await ready();
+    const before = (await state()).tabs.filter(t => !t.private).map(t => ({ url: t.url, quality: t.flashQuality }));
+    await app.close(); app = null; await launch(); await ready();
+    assert.deepEqual((await state()).tabs.map(t => t.url), before.map(t => t.url));
+    assert.equal((await active()).flashQuality, 'medium');
+    await command('panel', { name: 'library' }); assert.equal((await state()).library[0].year, '2001'); assert.equal((await state()).library[0].description, description);
+    pass('Restart preserves tab order and independent Flash quality, plus the library year and full description');
+    fs.writeFileSync(path.join(out, 'navigation-release-results.json'), JSON.stringify({ passed, profile }, null, 2));
+  } finally { if (app) await app.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

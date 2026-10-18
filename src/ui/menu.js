@@ -7,10 +7,10 @@ function render(state) {
   document.getElementById('zoom-out').disabled = zoom <= 25 || !tab?.url;
   document.getElementById('zoom-in').disabled = zoom >= 500 || !tab?.url;
   document.getElementById('zoom-reset').disabled = !tab?.url;
-  document.getElementById('menu-native').disabled = !tab?.url?.startsWith('http');
-  document.getElementById('menu-native').setAttribute('aria-pressed', String(!!tab?.native));
+  document.getElementById('menu-native').disabled = false;
+  document.getElementById('menu-native').setAttribute('aria-pressed', String(!!tab?.flashDetected));
   document.getElementById('menu-mute').firstElementChild.textContent = tab?.muted ? 'Unmute tab' : 'Mute tab';
-  document.querySelectorAll('[data-quality]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.quality === state.settings.flashQuality)));
+  document.querySelectorAll('[data-quality]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.quality === (tab?.flashQuality || state.settings.flashQuality))));
 }
 async function call(action, args = {}) {
   const result = await window.browser.call(action, args);

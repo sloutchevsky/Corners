@@ -30,13 +30,6 @@ function winAPI() {
 }
 const directory = name => app.isPackaged ? path.join(process.resourcesPath, name) : path.join(__dirname, '..', 'vendor', name);
 const nativeAvailable = () => fs.existsSync(path.join(directory('native-flash'), 'pepflashplayer64.dll')) && fs.existsSync(path.join(directory('native-runtime'), 'FlashRuntime.exe'));
-function isAbove(api, upper, lower) {
-  // Reading z-order never calls either window's message handler. Activation or
-  // moveTop can raise the shell without changing the foreground HWND.
-  for (let hwnd = upper, count = 0; hwnd && count < 512; count++, hwnd = api.sibling(hwnd, 2)) if (hwnd === lower) return true;
-  return false;
-}
-
 class NativeFlash {
   constructor(host, tabId, onEvent, options = {}) {
     this.private = !!options.private;
@@ -140,12 +133,11 @@ class NativeFlash {
     if (foreground) api.owner(foreground, pid);
     const ownGroup = pid[0] === process.pid || pid[0] === this.child.pid;
     const visible = !!this.wantedVisible && this.host.isVisible() && !this.host.isMinimized();
-    const topmost = visible && (ownGroup || this.host.isAlwaysOnTop());
     const actualTopmost = !!(api.getStyle(this.hwnd, -20) & 8);
     if (visible && !ownGroup && !this.host.isAlwaysOnTop()) this.backgrounded = true;
     // A hung UI thread cannot process asynchronous hide/demote requests. Do
     // not leave its viewport floating over another app after switching away.
-    if ((!visible || actualTopmost && !topmost) && api.hung(this.hwnd)) {
+    if ((!visible || actualTopmost) && api.hung(this.hwnd)) {
       this.child.kill(); return;
     }
     if (!this.wantedVisible && this.lastVisible === false) return;
@@ -157,34 +149,20 @@ class NativeFlash {
       const r = this.viewport;
       const pixels = [origin[0] + Math.round(r.x * factor), origin[1] + Math.round(r.y * factor), Math.round(r.width * factor), Math.round(r.height * factor)];
       const changed = !this.lastBounds || pixels.some((n, i) => n !== this.lastBounds[i]);
-      const raise = topmost && (!this.lastVisible || !isAbove(api, this.hwnd, host));
-      // A separate application's normal HWND can remain below the foreground
-      // shell despite HWND_TOP requests. Keep the active viewport topmost only
-      // while our browser group is active, and place it below browser popups.
-      const zChanged = actualTopmost !== topmost;
-      const popup = topmost && this.host.getChildWindows().find(w => !w.isDestroyed() && w.isVisible() && w.isAlwaysOnTop());
-      const popupHandle = popup ? Number(popup.getNativeWindowHandle().readBigUInt64LE()) : 0;
-      const popupChanged = popupHandle !== this.lastPopup;
-      const backgroundOrderChanged = visible && !topmost && api.sibling(this.hwnd, 2) !== host;
-      if (changed || raise || zChanged || popupChanged || backgroundOrderChanged) {
-        let after = popupHandle || (topmost ? -1 : -2);
-        if (visible && !topmost) {
-          // Stay directly above the shell in the ordinary window stack. A
-          // foreign foreground window stays above both, while uncovered Flash
-          // remains visible. Never attach the processes' GUI input queues.
-          let previous = api.sibling(host, 3);
-          if (previous === this.hwnd) previous = api.sibling(this.hwnd, 3);
-          if (previous && !(api.getStyle(previous, -20) & 8)) after = previous;
-          else {
-            if (actualTopmost) api.position(this.hwnd, -2, ...pixels, 0x0010 | 0x4000);
-            after = 0;
-          }
-        }
+      const orderChanged = visible && api.sibling(this.hwnd, 2) !== host;
+      if (changed || actualTopmost || orderChanged || !this.lastVisible) {
+        // Follow the shell's existing place in the normal Z-order. Never use
+        // HWND_TOPMOST: it floats Flash above unrelated applications. Browser
+        // popups naturally remain above this ordinary viewport window.
+        if (actualTopmost) api.position(this.hwnd, -2, ...pixels, 0x0010 | 0x4000);
+        let previous = api.sibling(host, 3);
+        if (previous === this.hwnd) previous = api.sibling(this.hwnd, 3);
+        const after = previous && !(api.getStyle(previous, -20) & 8) ? previous : 0;
         // Asynchronous positioning never waits for the legacy message pump.
-        api.position(this.hwnd, after, ...pixels, 0x0010 | 0x4000 | (raise || zChanged || popupChanged || backgroundOrderChanged ? 0 : 0x0004));
+        api.position(this.hwnd, after, ...pixels, 0x0010 | 0x4000 | (actualTopmost || orderChanged || !this.lastVisible ? 0 : 0x0004));
         this.lastBounds = pixels;
       }
-      this.lastTopmost = topmost; this.lastPopup = popupHandle;
+      this.lastTopmost = false;
     }
     if (this.lastVisible !== visible) {
       this.lastVisible = visible;

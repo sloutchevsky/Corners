@@ -3,14 +3,29 @@
 A minimal dark Windows browser with current Chromium for ordinary pages and
 the original, Adobe-signed Flash Player 32.0.0.363 for Flash content.
 
-**Current version: 1.9.0 · Windows 10/11 · x64 · MIT application source**
+**Current version: 1.11.0 · Windows 10/11 · x64 · MIT application source**
 
-[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.9.0/Flashborn-Setup-1.9.0-x64.exe)
+[Download the Windows installer](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.11.0/Flashborn-Setup-1.11.0-x64.exe)
 · [Releases and update notes](https://github.com/sloutchevsky/Flashborn-Browser/releases)
-· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.9.0/Flashborn-Source-1.9.0-GitHub.zip)
+· [Current source](https://github.com/sloutchevsky/Flashborn-Browser/releases/download/v1.11.0/Flashborn-Source-1.11.0-GitHub.zip)
 
-See [the complete version history](CHANGELOG.md) for all 27 releases, from the
+See [the complete version history](CHANGELOG.md) for all releases, from the
 initial Ruffle build to native Adobe playback and the current browser.
+
+## A quieter way to browse
+
+Tabs belong on the left, where you can read their titles. New tabs appear at the
+top and drag into the order you want. The clear title bar has room to grab and
+move the browser, without a row of tabs or other distractions.
+
+Keep pages, documents and Flash movies in one browser window, instead of
+scattering windows across your desktop. A compact interface, a flat three-dot
+menu with inline controls, and just the essential settings keep navigation
+simple. Official AdBlock is ready in regular modern tabs. Address completion
+shows familiar pages and search predictions, with no AI mode. Search summaries
+start off; turn them on if you want them.
+
+See [what changed in 1.11.0](docs/release-notes-1.11.0.md).
 
 ## Extensions, Flash and sRGB out of the box
 
@@ -20,16 +35,21 @@ initial Ruffle build to native Adobe playback and the current browser.
   with its original filters and site controls. Private tabs and Flash use
   separate engines/sessions.
 - **Original Adobe Flash:** bundled playback for trusted legacy websites,
-  with a per-website Flash toggle and a built-in runtime card in Extensions.
+  for embedded Flash and standalone SWFs, with a detection/recovery bolt,
+  remembered per-page quality and a built-in runtime card in Extensions.
 - **sRGB:** both browsing engines explicitly start in sRGB, with no user flag
   changes needed in Flashborn. Browser theme changes leave website colors alone.
 - **Privacy:** choose history, cookies/site data and cached images/files under
   Settings, then use one Delete data button. Ordinary clipboard copying no longer
   opens Gmail's repeated write-permission dialog.
 
-See [what changed in 1.9.0](docs/release-notes-1.9.0.md).
-
 ## Preview
+
+![Flashborn 1.11.0, with a clear title bar and readable vertical tabs](previews/screenshots/v1.11.0/new-tab-dark.png)
+
+| Flash library · dark theme | Flash library · light theme |
+| --- | --- |
+| ![Larger titles, years and two-line descriptions](previews/screenshots/v1.11.0/library-dark.png) | ![The updated library in light grey](previews/screenshots/v1.11.0/library-light.png) |
 
 | Extensions · dark theme | Extensions · light theme |
 | --- | --- |
@@ -51,21 +71,24 @@ Version 1.8.0 restores automatic playback of the Embody website:
 
 [View all 10 screenshots](previews/screenshots/README.md), including New Tab,
 Flashcognito, search summaries, bookmarks, settings, the Flash Library and About.
-These earlier screenshots include standalone SWF controls removed in 1.8.3.
+These earlier screenshots include standalone SWF controls removed in 1.8.3;
+version 1.11.0 restores playback with a simpler inline player.
 
 ## Install
 
-Download and run `Flashborn-Setup-1.9.0-x64.exe` on Windows 10 or 11 x64. When
+Download and run `Flashborn-Setup-1.11.0-x64.exe` on Windows 10 or 11 x64. When
 building locally, the same file is produced in `release/`. The installer
 contains both browser engines and the Adobe player. No separate Flash install
 is needed. Close the previous Flashborn version before updating. Settings,
 bookmarks, history and the Flash library are retained.
 
-Since version 1.8.3, Flashborn focuses on Flash embedded in websites and local HTML pages.
-The standalone SWF player, color picker/eyedropper, direct SWF open controls,
-SWF badge and file association have been removed. Existing standalone SWF tabs
-are skipped on restore; their files and old library records are retained on disk.
-Website and HTML library entries, PDFs, images and video remain supported.
+Version 1.11.0 restores standalone SWFs inside browser tabs. Drop a SWF or HTML
+file into the window, use Open File, or open a SWF with Flashborn from Windows.
+On its first installed launch, Flashborn registers in Windows' SWF Open With
+choices. If another app is already the default, choose Open with → Flashborn →
+Always once to use double-click playback. The installer is unchanged.
+Background metadata is read from the SWF, with light grey as the fallback.
+Website/HTML library entries, PDFs, images and video remain supported.
 
 The default Flash path no longer polls loading or calls movie APIs automatically.
 Quality overrides use one call per instance without rewriting embed attributes.
@@ -75,8 +98,9 @@ its own Windows input queue, so a stalled legacy host cannot lock the modern
 address bar, tab controls or context menus. Reload replaces the entire Flash tab
 runtime, preserving its source, zoom and mute settings. The legacy renderer uses
 normal process priority, matching Flash Browser; hidden tabs still throttle timers.
-The active Flash viewport stays above the shell and below browser popups. It is
-hidden and demoted when the browser group loses activation or is minimized. A
+The active Flash viewport stays directly above its own shell in the normal
+window stack, below browser popups and any other application covering the
+browser. Losing focus keeps the same movie alive; minimizing hides it. A
 hung hidden host is terminated to prevent it floating above other applications.
 A deliberate 30-second host hang is covered by the isolation regression check.
 This does not establish that every legacy movie or site is free of internal stalls.
@@ -100,8 +124,8 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
 ## Use
 
 - Enter an address or search in the top bar. Press **Enter** or click **Go**.
-- Right-click any tab for **Duplicate Tab** and **Close Tab**. Duplicates open
-  immediately beside the original and keep its modern/native and private mode.
+- Right-click any tab for **Duplicate Tab** and **Close Tab**. New tabs,
+  duplicates and linked pages open at the top, retaining the source's private mode.
 - Choose **Flashcognito tab** from the three-dot menu, or press **Ctrl+Shift+N**.
   Silver bolts and a quiet new-tab page identify private tabs. Browsing history,
   restored tabs, automatic library additions and download records are not saved.
@@ -110,8 +134,8 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   Closing the last private tab clears its temporary site data and download list.
   Bookmarks and downloaded files you explicitly keep remain on disk. Websites
   and your network can still see your activity.
-- Open local HTML, PDF, image and video files with **Ctrl+O** or the three-dot menu.
-- Drop HTML, PDF, image or video files onto the browser to open them in new tabs.
+- Open local HTML, SWF, PDF, image and video files with **Ctrl+O** or the three-dot menu.
+- Drop HTML, SWF, PDF, image or video files onto the browser to open them in new tabs.
   Local HTML can load companion files within its folder.
 - PDF links, PDF MIME responses and local PDF files display in Chromium’s PDF viewer.
 - Image formats include PNG, JPEG, GIF, WebP, SVG, AVIF, BMP and ICO. Video formats
@@ -131,8 +155,8 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   ready, pushing the HTML viewport down, and aligns with the organic search results.
   Click × to dismiss it for that page visit; reloading makes it available again.
   The summary follows browser theme changes; search results retain their own colors.
-  **Settings → Generate search summaries** is on by default; turn it off to remove
-  summaries from existing and future pages. Summary text stays in memory, including
+  **Settings → Generate search summaries** is off by default; turn it on to add
+  summaries to supported search pages. Summary text stays in memory, including
   in Flashcognito. Empty results, verification pages and unsupported page layouts
   show the original page without a summary.
 - Drag tabs, bookmarks, downloads and Flash library entries to reorder them. With an item
@@ -153,12 +177,11 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
 - On New Tab, click the gold bolt tile or its caption to open the Flash library.
 - App and installer icons use the first frame of the same darker gold animation.
   The Windows publisher/company metadata and installer welcome screen name Vas Sloutchevsky.
-- Standalone SWF files, URLs and main-frame Flash MIME responses are rejected.
-  Open the website or HTML wrapper containing the movie instead. Embedded SWF
-  subresources continue to load normally.
+- Standalone SWFs play in their own tabs with their embedded background color,
+  or light grey when none is available. Companion files resolve beside the movie.
 - Pages with embedded Flash, including framesets, are detected and opened in native mode.
-- Click the **lightning button** for pages that hide Flash behind detection scripts,
-  or to switch a website between modern and native mode.
+- Click the **lightning button** to check a page for Flash or restart its player.
+  It works on every tab: hollow without detected Flash, filled when Flash is present.
 - The title bar uses a static first frame of the same gold bolt, without the application name.
 - The gold lightning button spins once every two seconds while loading, then
   finishes its current turn. The About screen uses a larger continuous animation.
@@ -168,7 +191,8 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
   inline Chrome-style zoom controls, fullscreen, and Adobe High/Medium/Low Flash quality.
   Its five groups contain new tabs/files; library, bookmarks, history and downloads;
   Print and Find; zoom/Flash controls; and Settings/About.
-- High/Medium/Low quality is saved and applies to open native movies and future loads.
+- High/Medium/Low quality applies to the current tab. Regular pages remember their
+  choice after closing and reopening; private choices stay temporary.
 - The sidebar provides tabs, bookmarks, history, downloads, settings and a Flash page library.
   The simple gold bolt is retained. The Flash library bolt and smaller bookmark
   star spin once on hover; the History arrow and hands complete a counterclockwise
@@ -183,9 +207,12 @@ See [Microsoft’s code-signing options](https://learn.microsoft.com/en-us/windo
 - Flash library offers **Add a Flash page**. Enter a website URL or an absolute
   local HTML path, or choose **Browse**. Local HTML companion assets stay scoped
   to the selected folder. The main address bar also detects embedded Flash.
-- Click **Add image** on a library entry, or drop an image onto its thumbnail,
+- Click a library thumbnail (a plus appears on hover), or drop an image onto it,
   to add a landscape **2:1** image. Click it to replace it; use its × to remove it.
   The original image stays untouched; the browser keeps a resized PNG copy in its profile.
+- Edit a library card's title, year and longer description. The description wraps
+  to two visible lines. The separate Flash Library manifest and images folder
+  keeps the collection across upgrades and can be used to curate a portfolio.
 
 The original demo `assets/Flashborn-Demo.swf` displays a moving cream square.
 The library references your files; keep their companion assets in the same folder.

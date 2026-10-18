@@ -2,12 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Flashborn</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="themes.css">
+  <title>Flashborn</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="themes.css"><link rel="stylesheet" href="collection-support.css">
 </head>
 <body>
   <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg"><defs>
     <linearGradient id="nav-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#94621b"/><stop offset=".38" stop-color="#d6aa4e"/><stop offset=".53" stop-color="#f5e1a2"/><stop offset=".7" stop-color="#c29435"/><stop offset="1" stop-color="#916020"/></linearGradient>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4 8h13v9a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4ZM17 9h2a3 3 0 0 1 0 6h-2M7 2v3m4-3v3m4-3v3"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 4 5 5M4 15 16 3a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3L9 20l-6 1Z"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
     <symbol id="i-forward" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
@@ -32,7 +34,6 @@
     <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8z"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
     <symbol id="i-extension" viewBox="0 0 24 24"><path d="M9 4H4v5a3 3 0 1 1 0 6v5h5a3 3 0 1 0 6 0h5v-5a3 3 0 1 0 0-6V4h-5a3 3 0 1 0-6 0Z"/></symbol>
-    <symbol id="i-grip" viewBox="0 0 24 24"><path d="M8 6h.01M16 6h.01M8 12h.01M16 12h.01M8 18h.01M16 18h.01" stroke-width="3"/></symbol>
     <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" stroke="none"/></symbol>
   </defs></svg>
   <header class="titlebar">
@@ -75,6 +76,6 @@
   <main id="content" class="content"></main>
   <footer class="statusbar"><span id="page-status">Make yourself at home.</span><span id="status-right">Chromium · Adobe Flash</span></footer>
   <div id="toast" role="status" class="toast hidden"></div>
-  <script src="lightning.js"></script><script src="navigation-icons.js"></script><script src="app.js"></script>
+  <script src="lightning.js"></script><script src="navigation-icons.js"></script><script src="support.js"></script><script src="app.js"></script>
 </body>
 </html>

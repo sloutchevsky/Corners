@@ -11,9 +11,9 @@ async function poll(fn,check,timeout=20000){let value;const end=Date.now()+timeo
   try{
     app=await electron.launch({executablePath:process.env.FLASHBORN_EXE||require('electron'),args:process.env.FLASHBORN_EXE?[]:[root],env});await poll(()=>app.evaluate(()=>!!global.__flashborn),Boolean);await app.firstWindow();
     await app.evaluate(()=>{const w=global.__flashborn.win;w.setBounds({x:80,y:80,width:1160,height:800});w.show();w.focus();});
-    await app.evaluate(({},file)=>global.__flashborn.command('add-library-source',{kind:'html',value:file}),require('./html-fixture')(profile,require('./playback-fixture')));
+    await app.evaluate(({},file)=>global.__flashborn.openLocal(file,global.__flashborn.activeTab()),require('./html-fixture')(profile,require('./playback-fixture')));
     const native=(action,args={})=>app.evaluate(({},input)=>global.__flashborn.activeTab().native.call(input.action,input.args),{action,args});
-    const script=code=>app.evaluate(({},code)=>global.__flashborn.activeTab().native.evaluate(code),code);
+    const script=code=>app.evaluate(({},code)=>global.__flashborn.activeTab().native?.evaluate(code),code);
     await poll(()=>script('Number(document.querySelector("embed")?.GetVariable("ticks"))'),ticks=>ticks>2);
     const pid=await app.evaluate(()=>global.__flashborn.activeTab().native.child.pid);await script('document.querySelector("embed").SetVariable("marker",73)');
     cover=await electron.launch({executablePath:require('electron'),args:[coverFile],env});await cover.firstWindow();

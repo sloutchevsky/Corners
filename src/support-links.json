@@ -1,0 +1,5 @@
+{
+  "paypal": { "one-time": "", "monthly": "", "yearly": "" },
+  "venmo": { "one-time": "", "monthly": "", "yearly": "" },
+  "link": { "one-time": "", "monthly": "", "yearly": "" }
+}

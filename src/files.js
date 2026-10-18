@@ -6,7 +6,7 @@ const types = { '.pdf':'application/pdf', '.html':'text/html', '.htm':'text/html
   '.mp4':'video/mp4', '.m4v':'video/mp4', '.webm':'video/webm', '.ogv':'video/ogg', '.mov':'video/quicktime', '.mp3':'audio/mpeg', '.ogg':'audio/ogg', '.wav':'audio/wav',
   '.woff':'font/woff', '.woff2':'font/woff2', '.ttf':'font/ttf', '.swf':'application/x-shockwave-flash' };
 function contentType(file) { return types[path.extname(file).toLowerCase()] || 'application/octet-stream'; }
-function supportedLocalFile(file) { return /\.(html?|pdf|png|jpe?g|gif|webp|svg|avif|bmp|ico|mp4|m4v|webm|ogv|mov)$/i.test(file); }
+function supportedLocalFile(file) { return /\.(swf|html?|pdf|png|jpe?g|gif|webp|svg|avif|bmp|ico|mp4|m4v|webm|ogv|mov)$/i.test(file); }
 function urlSuggestions(query, entries) {
   if (typeof query !== 'string') return [];
   const term = query.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '');

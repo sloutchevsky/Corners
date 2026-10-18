@@ -103,6 +103,11 @@
       this.draw(this.reducedMotion.matches ? 0 : this.angle);
       this.schedule();
     }
+    spinOnce() {
+      if (!this.loading) this.target = Math.max(TAU, Math.ceil((this.angle + 0.000001) / TAU) * TAU);
+      this.draw(this.reducedMotion.matches ? 0 : this.angle);
+      this.schedule();
+    }
     schedule() {
       if (!this.frameId && !document.hidden && !this.reducedMotion.matches && (this.loading || this.target !== null)) {
         this.frameId = requestAnimationFrame(this.animate);

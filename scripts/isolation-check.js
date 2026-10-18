@@ -10,6 +10,7 @@ async function poll(fn, check, timeout = 20000) {
 }
 (async () => {
   const profile = path.join(output, 'isolation-' + Date.now()); fs.mkdirSync(profile, { recursive: true });
+  fs.writeFileSync(path.join(profile, 'browser.json'), JSON.stringify({ settings: { adBlockEnabled: false } }));
   const file = require('./html-fixture')(profile, require('./playback-fixture'));
   const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
   const app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: process.env.FLASHBORN_EXE ? [] : [root], env });
@@ -22,7 +23,7 @@ async function poll(fn, check, timeout = 20000) {
       try { return await global.__flashborn.activeTab().native?.evaluate('document.querySelector("embed")?.GetVariable("ticks")'); } catch { return null; }
     }), value => Number(value) > 2);
     await app.evaluate(() => { const w = global.__flashborn.win; w.show(); w.focus(); });
-    await command('add-library-source', { kind: 'html', value: file }); await ready();
+    await app.evaluate(({}, file) => global.__flashborn.openLocal(file, global.__flashborn.activeTab()), file); await ready();
     const detail = await app.evaluate(() => { const n = global.__flashborn.activeTab().native; return { ...n.inspect(), pid: n.child.pid, id: n.tabId }; });
     assert.equal(detail.parent, 0, 'Flash must have neither a cross-process parent nor owner');
     assert.equal(Number(detail.style) & 0x40000000, 0, 'Flash must not be a WS_CHILD window');
