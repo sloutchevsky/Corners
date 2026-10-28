@@ -1,0 +1,5 @@
+/* Window bounds include the entire 15px masked perimeter. */
+#browser-surface{position:absolute;inset:var(--window-inset-top,15px) var(--window-inset-right,15px) var(--window-inset-bottom,15px) var(--window-inset-left,15px);overflow:hidden;isolation:isolate;transform:translate(0,0);background:var(--sidebar)}
+
+/* Only the inner surface paints. The unused perimeter keeps zero alpha. */
+html,body{background:transparent!important}

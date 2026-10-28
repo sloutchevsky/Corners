@@ -56,8 +56,8 @@ async function poll(read, check, timeout = 30000) { const end = Date.now() + tim
     assert.equal(await ui.locator('.support-methods button:disabled').count(), 3);
     assert.equal(await ui.locator('.support-section .icon').count(), 0);
     const geometry = await ui.locator('[data-support-amount="5"]').evaluate(el => ({ width: el.offsetWidth, height: el.offsetHeight, radius: getComputedStyle(el).borderRadius }));
-    assert.equal(geometry.width, 48); assert.equal(geometry.height, 48); assert.equal(geometry.radius, '50%');
-    assert.equal(await ui.locator('.support-other > span:last-child').evaluate(el => getComputedStyle(el).borderRadius), '24px');
+    assert.equal(geometry.width, 48); assert.equal(geometry.height, 48); assert.equal(geometry.radius, '0px');
+    assert.equal(await ui.locator('.support-other > span:last-child').evaluate(el => getComputedStyle(el).borderRadius), '0px');
     const colors = [];
     for (let i = 0; i < 2; i++) {
       colors.push(await ui.locator('#support-heading').evaluate(el => getComputedStyle(el).color));

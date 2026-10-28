@@ -61,9 +61,9 @@ async function run() {
       }
       await ui.locator('.title-note').hover();
     }
-    await ui.locator('.sidebar [data-panel="settings"]').hover();
+    await ui.locator('.sidebar [data-panel="support"]').hover();
     await ui.emulateMedia({ reducedMotion: 'reduce' });
-    await poll(() => ui.locator('.nav-gold-settings').getAttribute('data-motion'), value => value === 'reduced');
+    await poll(() => ui.locator('.nav-gold-support').getAttribute('data-motion'), value => value === 'reduced');
     await ui.emulateMedia({ reducedMotion: 'no-preference' });
     await command('navigate', { value: base + '/ordinary' }); await ready();
     const originalId = (await state()).activeId;

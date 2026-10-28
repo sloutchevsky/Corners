@@ -2,6 +2,7 @@
 const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 function render(state) {
   document.body.dataset.theme = state.settings.theme || 'current';
+  document.body.dataset.contrast = state.settings.highContrast ? 'high' : 'normal';
   const data = state.suggestions;
   document.getElementById('suggestions').innerHTML = (data?.items || []).map((item, index) => `<button role="option" class="suggestion-${item.type || 'url'}" aria-selected="${index === data.selected}" data-index="${index}"><span>${escape(item.title)}</span>${item.type === 'search' ? '' : `<small>${escape(item.url)}</small>`}</button>`).join('');
 }

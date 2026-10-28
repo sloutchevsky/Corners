@@ -1,0 +1,19 @@
+/* Icon hit areas remain intact; hover changes the glyph, without a tile. */
+body[data-theme] :is(.icon-button,.tab-close,.thumbnail-remove,.reorder-handle,.find button),
+body[data-theme] :is(.icon-button,.tab-close,.thumbnail-remove,.reorder-handle,.find button):is(:hover,:active,:focus-visible) {
+  background:transparent!important;
+  border-color:transparent;
+  outline:none;
+  box-shadow:none;
+}
+body[data-theme] :is(.icon-button,.tab-close,.find button):not(:disabled):is(:hover,:focus-visible) { color:var(--text); }
+body[data-theme] #theme-button,
+body[data-theme] #theme-button:is(:hover,:active,:focus-visible) { color:#fff; }
+body[data-theme="light"] #theme-button,
+body[data-theme="light"] #theme-button:is(:hover,:active,:focus-visible) { color:#000; }
+body[data-theme] :is(.zoom-popup button:not(.reset),.fullscreen-button),
+body[data-theme] :is(.zoom-popup button:not(.reset),.fullscreen-button):is(:hover,:active,:focus-visible) {
+  background:transparent;
+  outline:none;
+  box-shadow:none;
+}

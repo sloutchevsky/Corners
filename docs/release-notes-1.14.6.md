@@ -1,0 +1,9 @@
+# Flashborn 1.14.6
+
+The browser's native thick resize frame is removed, and Windows is prevented from adding it back during maximize or restore. The frame composition toggling introduced in 1.14.5 is deleted. Title-bar drags keep the existing Flash cutout stable, and sidebar collapse no longer fights a visible/invisible native frame.
+
+A live DWM representation of the native Flash window belongs to the browser's compositor visual. During minimize, maximize and restore, the separate Flash input window is parked until the transition settles, so the scene follows the browser rather than appearing as a separate rectangle. The same Flash runtime continues playing, and its normal input and window order return afterward. The existing Flash viewport cutout and menu ordering remain in place.
+
+Validation: 88 unit tests passed, including move cutout stability, compositor cleanup, minimized-rectangle retention and interrupted transitions. Native checks passed for the removed frame in both themes, repeated tab selection, real Flash pixels supplied by the compositor while its input window is parked, caption dragging, collapse/expand, maximize/unmaximize, minimize/restore and fullscreen. Existing Flash layering and Windows thumbnail/Peek checks passed. A real title-bar drag and maximize control were also checked through Computer Use.
+
+Packaged motion and border checks passed. All 68 source files, native helper contents and pinned Adobe player bytes matched both the packaged build and the installation. Version 1.14.5 was uninstalled, then 1.14.6 was installed for all users in `C:\Program Files\Flashborn` with shared Start Menu and Desktop shortcuts and launched normally. Saved browser configuration, support links and thumbnail data were verified unchanged before first launch; a local backup is retained in the workspace's test-output folder.

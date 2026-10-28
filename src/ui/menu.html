@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Flashborn menu</title><link rel="stylesheet" href="themes.css"><link rel="stylesheet" href="menu.css"></head><body>
-<nav class="browser-menu" aria-label="Browser menu">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Corners menu</title><link rel="stylesheet" href="themes.css"><link rel="stylesheet" href="menu.css"><link rel="stylesheet" href="inline-icons.css"></head><body>
+<div class="menu-surface"><nav class="browser-menu" aria-label="Browser menu">
   <button data-action="new-tab"><span>New tab</span><kbd>Ctrl+T</kbd></button>
   <button data-action="new-flashcognito"><span>New Flashcognito tab</span><kbd>Ctrl+Shift+N</kbd></button>
   <button data-action="open-file"><span>Open file…</span><kbd>Ctrl+O</kbd></button>
   <hr>
-  <button data-panel="library"><span>Flash library</span></button>
+  <button data-panel="library"><span>Flash Gallery</span></button>
   <button data-panel="bookmarks"><span>Bookmarks</span></button>
   <button data-panel="history"><span>History</span><kbd>Ctrl+H</kbd></button>
   <button data-panel="downloads"><span>Downloads</span><kbd>Ctrl+J</kbd></button>
@@ -22,6 +22,7 @@
   <button data-panel="settings" data-section="privacy"><span>Delete browsing data...</span></button>
   <button data-panel="settings"><span>Settings</span></button>
   <button data-panel="about"><span>About</span></button>
+  <button data-panel="support"><span>Support Corners</span></button>
 </nav>
-<div id="menu-error" role="status"></div>
+<div id="menu-error" role="status"></div></div>
 <script src="menu.js"></script></body></html>

@@ -3,11 +3,13 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { isWebURL } = require('./core');
 const { supportedLocalFile } = require('./files');
+const { validThumbnailId } = require('./tab-thumbnail-store');
 
 function sessionEntry(tab) {
   if (!tab || tab.private) return null;
   if (tab.restoreEntry) return savedEntry(tab.restoreEntry);
   const entry = { kind: tab.kind, title: String(tab.title || '').slice(0, 200), url: tab.url || '', native: !!tab.native };
+  if (validThumbnailId(tab.thumbnailId)) entry.thumbnailId = tab.thumbnailId;
   if (entry.kind === 'home') { entry.url = ''; entry.native = false; }
   else if (entry.kind === 'flash') {
     if (typeof tab.localPath === 'string' && path.isAbsolute(tab.localPath) && /\.swf$/i.test(tab.localPath)) { entry.path = tab.localPath; entry.url = pathToFileURL(tab.localPath).href; }
@@ -27,7 +29,7 @@ function sessionEntry(tab) {
 
 function savedEntry(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.private) return null;
-  const tab = { kind: value.kind || 'web', title: value.title, url: value.url, native: !!value.native, localPath: value.path };
+  const tab = { kind: value.kind || 'web', title: value.title, url: value.url, native: !!value.native, localPath: value.path, thumbnailId: value.thumbnailId };
   const entry = sessionEntry(tab);
   if (!entry) return null;
   entry.native = !!value.native;

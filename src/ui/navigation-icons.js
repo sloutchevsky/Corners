@@ -1,7 +1,8 @@
 'use strict';
 (() => {
   const TAU = Math.PI * 2;
-  const durations = { library: 2000, bookmarks: 1200, history: 2000, downloads: 1000, settings: 3000 };
+  const durations = { library: 2000, bookmarks: 1200, history: 2000, downloads: 1000, settings: 3000, support:1600 };
+  const dollar=new Path2D('M15.3 7.7C14.4 6.7 13.4 6.4 11.9 6.4C9.8 6.4 8.6 7.5 8.6 9C8.6 12.8 15.5 10.8 15.5 14.7C15.5 16.3 14.1 17.5 12 17.5C10.5 17.5 9.2 17 8.4 16M12 4.8V19.2');
   // Repeat one tooth around the hub so the outline and hole share the same center.
   const gear = new Path2D();
   for (let tooth = 0; tooth < 6; tooth++) {
@@ -41,7 +42,7 @@
       this.button = canvas.closest('button'); this.frame = 0; this.start = 0; this.progress = 0;
       this.hovered = false; this.focused = false; this.elapsed = 0; this.finishAt = null;
       this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
-      this.bolt = this.kind === 'library' ? new GoldLightning(canvas) : null;
+      this.bolt = null;
       this.tick = this.tick.bind(this);
       this.enter = () => { this.hovered = true; this.play(); };
       this.focus = () => { this.focused = this.button.matches(':focus-visible'); if (this.focused && !this.hovered) this.play(); };
@@ -59,6 +60,13 @@
       if (this.reduced.matches || document.hidden || this.frame) return;
       this.start = 0; this.elapsed = 0; this.canvas.dataset.motion = 'spinning';
       this.frame = requestAnimationFrame(this.tick);
+    }
+    setReminderEnabled(enabled) {
+      if(this.kind!=='support' || this.reminderEnabled===!!enabled)return;
+      this.reminderEnabled=!!enabled;clearInterval(this.reminder);
+      this.canvas.dataset.reminder=enabled?'active':'stopped';
+      if(enabled)this.reminder=setInterval(()=>{if(!this.button.hidden)this.play();},60000);
+      else this.stop();
     }
     setTheme(theme) {
       if (theme === this.theme) return;
@@ -99,25 +107,28 @@
         const ctx = surface.getContext('2d'), scale = pixels / 24, lightMode = this.theme === 'light';
         ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, pixels, pixels);
         ctx.setTransform(scale, 0, 0, scale, 0, 0);
-        // This studio gradient is in screen/world coordinates. Paths move through it;
-        // the gradient never rotates, translates, or changes with animation time.
-        const light = ctx.createLinearGradient(1, 1, 24, 25);
-        const silver = this.metal === 'silver';
-        const colors = silver ? (lightMode ? ['#808894','#939ca8','#b0b8c3','#929ba8','#808894'] : ['#7b8492','#aab5c5','#dce3ed','#a6b3c4','#747e8e']) : (lightMode ? ['#a08c64','#b49a64','#cbb987','#b09969','#a08c64'] : ['#94621b','#d6aa4e','#f5e1a2','#c29435','#916020']);
-        [0,.38,.53,.7,1].forEach((stop, i) => light.addColorStop(stop, colors[i]));
-        const stroke = path => {
-          ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-          ctx.strokeStyle = silver ? (lightMode ? '#7c8592' : '#697587') : lightMode ? '#958260' : '#79551e'; ctx.lineWidth = 2.25; ctx.stroke(path);
-          ctx.strokeStyle = light; ctx.lineWidth = 1.65; ctx.stroke(path);
-        };
-        if (this.kind === 'bookmarks') {
+        const ink=this.metal==='silver'?'#999999':lightMode?'#9b7e38':'#c4a14b';
+        const stroke=path=>{ctx.lineJoin='round';ctx.lineCap='round';ctx.strokeStyle=ink;ctx.lineWidth=1.65;ctx.stroke(path);};
+        if(this.kind==='library'){
+          const bolt=new Path2D('M13.5 2.5 5.5 13h5L9.5 21.5 18.5 10h-6Z');ctx.fillStyle=ink;ctx.save();ctx.translate(12,12);ctx.rotate(progress*TAU);ctx.translate(-12,-12);ctx.fill(bolt);ctx.restore();canvas.dataset.rotation=String(progress*360);
+        }else if(this.kind==='support') {
+          const phase=(3*progress**2-2*progress**3)*TAU,c=Math.cos(phase),s=Math.sin(phase);
+          const face=z=>Array.from({length:64},(_,i)=>{const angle=i*TAU/64,x=8.5*Math.cos(angle),y=8.5*Math.sin(angle),worldX=x*c+z*s,worldZ=-x*s+z*c,perspective=48/(48-worldZ);return [12+worldX*perspective,12+y*perspective];});
+          const front=face(.65),back=face(-.65);
+          const path=points=>{const p=new Path2D();points.forEach((point,i)=>i?p.lineTo(...point):p.moveTo(...point));p.closePath();return p;};
+          
+          
+          ctx.globalAlpha=1;stroke(path(c>=0?front:back));
+          const symbol=new Path2D(),width=Math.abs(c);symbol.addPath(dollar,{a:width,d:1,e:12*(1-width)});stroke(symbol);
+          canvas.dataset.rotation=(phase*180/Math.PI).toFixed(2);
+        } else if (this.kind === 'bookmarks') {
           const phase = (3 * progress ** 2 - 2 * progress ** 3) * TAU;
           const c = Math.cos(phase), s = Math.sin(phase);
           const face = z => star.map(([x, y]) => { const worldX = x * c + z * s, worldZ = -x * s + z * c, perspective = 48 / (48 - worldZ); return [12 + worldX * perspective, 12 + y * perspective]; });
           const front = face(.65), back = face(-.65);
           const path = points => { const p = new Path2D(); points.forEach((point, i) => i ? p.lineTo(...point) : p.moveTo(...point)); p.closePath(); return p; };
-          ctx.globalAlpha = .55; stroke(path(c >= 0 ? back : front));
-          const edges = new Path2D(); front.forEach((point, i) => { edges.moveTo(...point); edges.lineTo(...back[i]); }); stroke(edges);
+          
+          
           ctx.globalAlpha = 1; stroke(path(c >= 0 ? front : back));
           canvas.dataset.rotation = (phase * 180 / Math.PI).toFixed(2);
         } else if (this.kind === 'history') {
@@ -138,10 +149,11 @@
       }
       canvas.dataset.progress = progress.toFixed(4);
       canvas.dataset.metal = this.metal;
-      canvas.dataset.lights = 'fixed';
+      canvas.dataset.lights = 'flat';
       if (!this.frame) canvas.dataset.motion = this.reduced.matches ? 'reduced' : 'idle';
     }
     dispose() {
+      clearInterval(this.reminder);
       this.stop(); this.bolt?.dispose();
       this.button.removeEventListener('pointerenter', this.enter); this.button.removeEventListener('pointerleave', this.leave);
       this.button.removeEventListener('focus', this.focus); this.button.removeEventListener('blur', this.blur);

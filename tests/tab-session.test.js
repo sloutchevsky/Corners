@@ -16,3 +16,13 @@ test('website-only sessions keep HTML sources and reject obsolete SWFs, private 
   assert.deepEqual(sessionEntry({restoreEntry:html}),html);
   assert.equal(sessionEntry({restoreEntry:{kind:"flash",source:{path:file}}}),null);
 });
+
+test('thumbnail identities survive regular session restore but never enter private sessions', () => {
+  const thumbnailId = require('node:crypto').randomUUID();
+  const tab = { kind: 'web', url: 'https://example.com/', thumbnailId };
+  const saved = savedEntry(sessionEntry(tab));
+  assert.equal(saved.thumbnailId, thumbnailId);
+  assert.equal(sessionEntry({ restoreEntry: saved }).thumbnailId, thumbnailId);
+  assert.equal(sessionEntry({ ...tab, private: true }), null);
+  assert.equal(savedEntry({ ...tab, thumbnailId: '../../elsewhere' }).thumbnailId, undefined);
+});

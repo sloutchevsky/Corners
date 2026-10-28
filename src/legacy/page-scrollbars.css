@@ -1,0 +1,17 @@
+/* Native tracks keep their normal drag, wheel and page-on-track-click input. */
+*{scrollbar-width:auto!important;scrollbar-color:auto!important}
+::-webkit-scrollbar{width:15px!important;height:15px!important}
+::-webkit-scrollbar-track,::-webkit-scrollbar-track-piece{background:transparent!important;border:0!important;border-radius:0!important;box-shadow:none!important}
+body[data-theme='light']{--flashborn-scroll-thumb:#aaa;--flashborn-scroll-hover:#777;--flashborn-scroll-active:#000}
+::-webkit-scrollbar-thumb{background:var(--flashborn-scroll-thumb,#333)!important;border:0!important;border-radius:0!important;box-shadow:none!important;min-height:40px;min-width:40px}
+::-webkit-scrollbar-thumb:hover{background:var(--flashborn-scroll-hover,#808080)!important}
+::-webkit-scrollbar-thumb:active{background:var(--flashborn-scroll-active,#fff)!important}
+::-webkit-scrollbar-button{display:none!important;width:0!important;height:0!important}
+::-webkit-scrollbar-corner{background:transparent!important}
+:root::-webkit-scrollbar-track:vertical,#content::-webkit-scrollbar-track:vertical{margin-bottom:40px!important}
+:root::-webkit-scrollbar-track:horizontal,#content::-webkit-scrollbar-track:horizontal{margin-right:40px!important}
+
+html::-webkit-scrollbar,body::-webkit-scrollbar,#content::-webkit-scrollbar,#browser-surface #tabs::-webkit-scrollbar{width:0!important;height:0!important}html{scrollbar-gutter:auto!important}
+
+/* The tab list uses the retractable track in the left window perimeter. */
+#browser-surface #tabs{scrollbar-width:none!important;scrollbar-gutter:auto!important}

@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, session, Menu, ipcMain, protocol, nativeTheme } = require('electron');
+const { app, BrowserWindow, session, Menu, ipcMain, protocol, nativeTheme, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
@@ -9,7 +9,21 @@ const { nextZoom } = require('./zoom');
 const { clearSessionData } = require('./browsing-data');
 const { settingsScript } = require('./flash-settings');
 const { standalonePage } = require('./standalone');
+const { cropThumbnail } = require('./thumbnail');
+const { scrollbarStyle } = require('./scrollbar-style');
+let scrollbarLight=false,scrollbarCSS,scrollbarRevision=0;
+async function styleScrollbars(){
+  const wc=window.webContents,revision=++scrollbarRevision;
+  const key=await wc.insertCSS(scrollbarStyle(scrollbarLight));
+  if(wc.isDestroyed())return;
+  if(revision!==scrollbarRevision){wc.removeInsertedCSS(key).catch(()=>{});return;}
+  const previous=scrollbarCSS;scrollbarCSS=key;if(previous)wc.removeInsertedCSS(previous).catch(()=>{});
+}
+const { LIBRARY_PAGE_URL, isLibraryPage } = require('./library-page-url');
+const libraryPageURL = process.env.FLASHBORN_LIBRARY_URL || LIBRARY_PAGE_URL;
 const flashRuntime = require('./runtime.json');
+app.setName('Corners');
+app.setAppUserModelId('com.flashborn.browser');
 app.setPath('userData', process.env.FLASHBORN_NATIVE_PROFILE);
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
 nativeTheme.themeSource = 'system';
@@ -79,7 +93,14 @@ function registerProtocol() {
 async function command(action, args) {
   const wc = window.webContents;
   switch (action) {
+    case 'scrollbar-theme':
+      scrollbarLight=!!args.light;
+      // Before the first navigation old Chromium cannot resolve insertCSS.
+      // Remember the theme now; did-finish-load applies it to the document.
+      if(wc.getURL()&&wc.getURL()!=='about:blank'&&!wc.isLoadingMainFrame())await styleScrollbars();
+      break;
     case 'navigate': if (!isWeb(args.url) || /\.swf$/i.test(new URL(args.url).pathname)) throw new Error('Only HTTP and HTTPS pages can use native Flash mode.'); source = null; await wc.loadURL(args.url).catch(e => { if (e.code !== 'ERR_ABORTED') throw e; }); break;
+    case 'library-response': if (isLibraryPage(wc.getURL(), libraryPageURL)) wc.send('browser:library-response', args); break;
     case 'local-html': source = { ...args, kind: 'html', path: fs.realpathSync(args.path) }; await wc.loadURL('flashnative://document/' + source.token + '/' + encodeURIComponent(path.basename(source.path))); break;
     case 'standalone':
       if (!args.path && !isWeb(args.url)) throw new Error('Choose a local SWF or an HTTP(S) movie URL.');
@@ -89,13 +110,36 @@ async function command(action, args) {
     case 'forward': if (wc.canGoForward()) wc.goForward(); break;
     case 'reload': wc.reload(); break;
     case 'stop': clearTimeout(settingsTimer); wc.stop(); break;
+    case 'present':
+      wc.setBackgroundThrottling(false);
+      try { await wc.capturePage(); } finally { if (!visible) wc.setBackgroundThrottling(true); }
+      break;
     case 'focus': if (visible && (args.before === undefined || Date.now() <= args.before)) { window.focus(); wc.focus(); } break;
     case 'focus-host': break;
+    case 'viewport-size': {
+      // Update Chromium's fixed-size constraints as well as the HWND. Otherwise
+      // a later DPI change restores the helper's original preferred size.
+      // Release the old constraints only during this synchronous update: input
+      // cannot run until the surface is fixed again at the new viewport size.
+      const width = Math.max(1, Math.round(args.width)), height = Math.max(1, Math.round(args.height));
+      window.setResizable(true);
+      try { window.setSize(width, height, false); }
+      finally { window.setResizable(false); }
+      // Leave one DIP of rounding room on either side: the host rounds physical
+      // pixels while old Chromium ceils DIP conversions at fractional DPI. The
+      // non-resizable widget still exposes no user resize input.
+      window.setMinimumSize(Math.max(1, width - 1), Math.max(1, height - 1));
+      window.setMaximumSize(width + 1, height + 1);
+      break;
+    }
     case 'visibility':
       visible = !!args.value;
       wc.setBackgroundThrottling(!visible);
-      if (visible) window.showInactive();
-      else window.hide();
+      // Keep the compositor opaque. Alpha and ignore-mouse transitions both
+      // change WS_EX_LAYERED in this runtime and can discard a displayed frame.
+      // The host positions a replacement behind its outgoing page first.
+      // The host parks inactive tabs outside the virtual desktop. All helpers
+      // remain mapped and opaque; only their background timers are throttled.
       break;
     case 'mute': wc.setAudioMuted(args.value === undefined ? !wc.isAudioMuted() : !!args.value); break;
     case 'zoom': wc.setZoomFactor(nextZoom(wc.getZoomFactor() * 100, args.direction) / 100); break;
@@ -113,6 +157,15 @@ async function command(action, args) {
     case 'clear-data': await clearSessionData(runtimeSession, { cookies: true, cache: true }); break;
     case 'delete-browsing-data': await clearSessionData(runtimeSession, args); break;
     case 'capture': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); return (await wc.capturePage()).toPNG().toString('base64');
+    case 'snapshot': {
+      if (!visible || window.isDestroyed()) return null;
+      let image = await wc.capturePage();
+      if (!visible || image.isEmpty()) return null;
+      if (!args.windowPreview) image = cropThumbnail(image);
+      const size = image.getSize(), scale = Math.min((args.windowPreview ? 1600 : 512) / size.width, (args.windowPreview ? 1000 : 320) / size.height, 1);
+      const preview = image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)), quality: 'good' });
+      return { data: 'data:image/jpeg;base64,' + preview.toJPEG(args.windowPreview ? 92 : 72).toString('base64'), ...preview.getSize() };
+    }
     case 'memory': {
       // Each Flash tab has its own complete runtime, including the PPAPI player.
       const metrics = app.getAppMetrics();
@@ -134,7 +187,7 @@ async function command(action, args) {
     case 'evaluate': if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action'); return wc.executeJavaScript(args.code, true);
     case 'test-playback':
       if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
-      return { settingsRuns, visible, focused: wc.isFocused(), windowFocused: window.isFocused(), backgroundThrottling: wc.getWebPreferences().backgroundThrottling, normalRendererPriority: app.commandLine.hasSwitch('disable-renderer-backgrounding'), colorProfile: app.commandLine.getSwitchValue('force-color-profile') };
+      return { settingsRuns, visible, resizable: window.isResizable(), bounds: window.getBounds(), focused: wc.isFocused(), windowFocused: window.isFocused(), backgroundThrottling: wc.getWebPreferences().backgroundThrottling, normalRendererPriority: app.commandLine.hasSwitch('disable-renderer-backgrounding'), colorProfile: app.commandLine.getSwitchValue('force-color-profile') };
     case 'test-renderer-crash':
       if (process.env.FLASHBORN_NATIVE_TEST !== '1') throw new Error('Test-only action');
       setTimeout(() => process.kill(wc.getOSProcessId(), 'SIGKILL'), 0); return;
@@ -167,17 +220,33 @@ app.whenReady().then(async () => {
     if (standalone) send({ type: 'open-swf', url: details.url });
   });
   runtimeSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'fullscreen'));
-  window = new BrowserWindow({ width: 1100, height: 700, type: 'toolbar', frame: false, show: false, skipTaskbar: true, resizable: false, minimizable: false, maximizable: false, backgroundColor: '#ffffff',
+  const displays = screen.getAllDisplays();
+  const initialPosition = { x: Math.min(...displays.map(d => d.bounds.x)) - 1300, y: Math.min(...displays.map(d => d.bounds.y)) - 900 };
+  // Only the browser frame owns resize input. The movie follows its viewport
+  // programmatically and must never expose an independent resize border.
+  window = new BrowserWindow({ ...initialPosition, width: 1100, height: 700, type: 'toolbar', frame: false, thickFrame: false, show: false, skipTaskbar: true, resizable: false, minimizable: false, maximizable: false, backgroundColor: '#ffffff',
     webPreferences: { session: runtimeSession, plugins: true, sandbox: true, nodeIntegration: false, contextIsolation: true, enableRemoteModule: false, webSecurity: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') } });
   Menu.setApplicationMenu(null);
+  window.on('focus', () => send({ type: 'activated' }));
   const wc = window.webContents;
+  wc.on('did-finish-load', () => {
+    styleScrollbars().catch(()=>{});
+    if (isLibraryPage(wc.getURL(), libraryPageURL)) {
+      wc.insertCSS('button,.card,.feature-stage,dialog,.empty,.notice,dialog input,dialog textarea{border-radius:0!important}').catch(() => {});
+    }
+  });
   ipcMain.on('browser:content-focus', (event, at) => { if (event.sender === wc && Number.isFinite(at)) send({ type: 'input-pointer', at }); });
+  ipcMain.on('browser:library-page', (event, request) => {
+    if (event.sender !== wc || event.senderFrame && event.senderFrame !== wc.mainFrame || !isLibraryPage(wc.getURL(), libraryPageURL) || !request || typeof request.id !== 'string' || request.id.length > 80) return;
+    send({ type: 'library-page', request });
+  });
   if (process.env.FLASHBORN_NATIVE_TEST === '1') {
     runtimeSession.webRequest.onErrorOccurred(details => console.error('NATIVE REQUEST ERROR', details.error, details.url));
     wc.on('console-message', (_event, level, message, line, source) => { if (level >= 2) console.error('NATIVE PAGE', message, source, line); });
   }
   wc.on('new-window', (event, url) => { event.preventDefault(); if (isWeb(url)) send({ type: 'new-tab', url }); });
   wc.on('will-navigate', (event, url) => {
+    if (isLibraryPage(wc.getURL(), libraryPageURL) && isWeb(url) && !isLibraryPage(url, libraryPageURL)) { event.preventDefault(); send({ type: 'new-tab', url }); return; }
     const scopedLocal = source && url.startsWith('flashnative://' + (source.kind === 'html' ? 'document' : 'standalone') + '/' + source.token + '/');
     if (!isWeb(url) && !scopedLocal) { event.preventDefault(); return; }
     if (/\.swf$/i.test(new URL(url).pathname)) { event.preventDefault(); if (isWeb(url)) send({ type: 'open-swf', url }); return; }
@@ -211,7 +280,7 @@ app.whenReady().then(async () => {
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const key = input.key.toLowerCase();
-    if (((input.control || input.meta) && (input.shift && key === 'n' || ['l','t','w','o','r','f','d','h','j','p','+','=','-','0','tab','1','2','3','4','5','6','7','8','9'].includes(key))) || (input.alt && ['arrowleft','arrowright'].includes(key)) || ['f11','f5','escape'].includes(key)) { event.preventDefault(); send({ type: 'key', input }); }
+    if (((input.control || input.meta) && (input.shift && key === 'n' || ['l','t','w','o','r','f','d','h','j','p','+','=','-','0','tab','1','2','3','4','5','6','7','8','9'].includes(key))) || (input.alt && ['arrowleft','arrowright'].includes(key)) || ['f11','f5','escape'].includes(key) && !(key === 'escape' && isLibraryPage(wc.getURL(), libraryPageURL))) { event.preventDefault(); send({ type: 'key', input }); }
   });
   wc.on('zoom-changed', (_event, direction) => send({ type: 'zoom-wheel', direction }));
   ipcMain.on('browser:wheel', (event, direction) => { if (event.sender === wc && [-1, 1].includes(direction)) send({ type: 'zoom-wheel', direction: direction === 1 ? 'in' : 'out', source: 'dom' }); });
@@ -221,6 +290,9 @@ app.whenReady().then(async () => {
   reader.on('line', async line => { let message; try { message = JSON.parse(line); const value = await command(message.action, message.args || {}); if (message.id) send({ reply: message.id, value }); } catch (e) { if (message && message.id) send({ reply: message.id, error: e.message }); else send({ type: 'error', message: e.message }); } });
   reader.on('close', () => { shuttingDown = true; app.quit(); });
   const handle = window.getNativeWindowHandle();
+  // Map exactly once, outside every display and before the host can position
+  // this HWND. Never let showInactive briefly raise a new tab over the old one.
+  window.showInactive();
   send({ type: 'ready', handle: Buffer.from(handle).reverse().toString('hex'), pid:process.pid, electron: process.versions.electron, chromium: process.versions.chrome, flash: flashRuntime.version });
 });
 app.on('window-all-closed', () => app.quit());

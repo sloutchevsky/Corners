@@ -6,7 +6,7 @@ if (extensionContext) {
   const api = {
     call: (method, args) => ipcRenderer.invoke('extension:api', method, args),
     listen: callback => ipcRenderer.on('extension:event', (_event, name, args) => callback(name, args)),
-    browserInfo: { name: 'Chromium', vendor: 'Flashborn', version: process.versions.chrome, buildID: process.versions.electron }
+    browserInfo: { name: 'Chromium', vendor: 'Corners', version: process.versions.chrome, buildID: process.versions.electron }
   };
   if (process.contextIsolated) contextBridge.exposeInMainWorld('__flashbornExtension', api);
   else globalThis.__flashbornExtension = api;

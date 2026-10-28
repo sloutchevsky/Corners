@@ -1,0 +1,60 @@
+/* Firstborn 5: flush 2:1 picture, compact type and a continuous selection band. */
+:root{--sidebar-width:320px;--tab-selected:#303030;--tab-row-height:43px;--tab-thumb-width:86px;--tab-placeholder-ink:#fff;--collection-placeholder:#303030}
+body[data-theme='light']{--tab-selected:#fff;--tab-placeholder-ink:#000;--collection-placeholder:#d2d2d2}
+body[data-theme='light'] #tabs .tab:not(.active):hover{background:rgba(248,248,248,.5)}
+.sidebar .tabs{margin-inline:-12px;width:calc(100% + 24px);padding-top:1.5px;padding-bottom:12px;background-image:linear-gradient(var(--tab-selected),var(--tab-selected));background-repeat:no-repeat;background-position:0 var(--selected-tab-y,0px);background-size:var(--selected-tab-width,100%) var(--selected-tab-height,0px);background-attachment:local}
+#tabs .tab{width:100%;margin:0;border-radius:0;height:var(--tab-row-height);overflow:hidden}
+#tabs .tab.active{height:var(--tab-row-height);background:transparent;color:var(--text)}
+#tabs .tab.active:hover{background:transparent}
+#tabs .tab-select{padding:0 36px 0 0;border-radius:0;gap:0;overflow:hidden}
+.tab-copy{display:block;flex:1;min-width:0;text-align:left;padding-left:55px;transition:padding-left 190ms cubic-bezier(.25,.75,.25,1)}
+.tab-copy .tab-title{display:block;min-width:0;font-family:inherit;font-size:12px;font-weight:400;letter-spacing:normal;line-height:1.25}
+#tabs .tab.active .tab-title{font-weight:700}
+.tab-thumbnail{display:block;width:0;height:var(--tab-row-height);flex:none;overflow:hidden;background:var(--raised);color:var(--muted);transition:width 190ms cubic-bezier(.25,.75,.25,1)}
+.tab-thumbnail img{display:block;width:var(--tab-thumb-width);height:var(--tab-row-height);max-width:none;object-fit:cover;object-position:center top;pointer-events:none}
+.tab-thumbnail img,.tab-thumbnail-placeholder{transform:translateX(calc(-1 * var(--tab-thumb-width)));transition:transform 190ms cubic-bezier(.25,.75,.25,1)}
+.tab-thumbnail img[hidden]{display:none}
+.tab-thumbnail-placeholder{width:var(--tab-thumb-width);height:var(--tab-row-height);display:grid;place-items:center;font-size:15px}
+.tab-thumbnail-placeholder .icon{width:18px;height:18px}
+.tab-thumbnail.has-snapshot .tab-thumbnail-placeholder{display:none}
+.tab.private-tab .tab-thumbnail{background:#808080;color:#f5f5f5}
+#tabs .tab-icon{position:absolute;left:24px;top:50%;transform:translateY(-50%);width:19px;margin:0;opacity:1;overflow:hidden;transition:opacity 190ms ease}
+#tabs .tab.active .tab-icon{font-weight:700}
+#tabs .tab:is(.active,.previewing) .tab-thumbnail{width:var(--tab-thumb-width)}
+#tabs .tab:is(.active,.previewing) .tab-thumbnail img,#tabs .tab:is(.active,.previewing) .tab-thumbnail-placeholder{transform:translateX(0)}
+#tabs .tab:is(.active,.previewing) .tab-copy{padding-left:14px}
+#tabs .tab:is(.active,.previewing) .tab-icon{opacity:0}
+#tabs .tab-close{right:10px}
+#tabs .tab-memory{margin-left:4px}
+[data-reorder-id].drop-before,[data-reorder-id].drop-after{box-shadow:none}
+#reorder-line{position:fixed;height:2px;background:var(--accent);z-index:60;pointer-events:none;border:0;border-radius:0}
+body[data-reordering] [data-reorder-id]{user-select:none}
+body[data-reordering] [data-reorder-id] button{cursor:grabbing}
+[data-reorder-id]{touch-action:none;user-select:none;-webkit-user-drag:none}
+[data-reorder-id] img,[data-reorder-id] a,[data-reorder-id] button{-webkit-user-drag:none}
+.toolbar .address{min-width:0}
+@media(max-width:980px){.private-badge{width:28px;overflow:hidden;white-space:nowrap;padding-inline:7px}.private-badge .icon{flex:none}}
+@media(prefers-reduced-motion:reduce){.tab-copy,.tab-thumbnail,.tab-thumbnail img,.tab-thumbnail-placeholder,#tabs .tab-icon{transition:none}}
+
+/* One persistent glyph moves from the collapsed selection into its 2:1 tile. */
+#tabs .placeholder-tab .tab-thumbnail{background:var(--tab-selected);color:var(--tab-placeholder-ink)}
+#tabs .placeholder-tab .tab-thumbnail-placeholder{display:none}
+#tabs .placeholder-tab .tab-icon{color:var(--tab-placeholder-ink);opacity:1;transition:left 190ms cubic-bezier(.25,.75,.25,1)}
+#tabs .placeholder-tab:is(.active,.previewing) .tab-icon{left:calc((var(--tab-thumb-width) - 19px)/2);opacity:1}
+#tabs .placeholder-tab:is(.active,.previewing) .tab-thumbnail{display:block;width:min(var(--sidebar-width),var(--tab-thumb-width))}
+.sidebar-animating #tabs .placeholder-tab .tab-thumbnail{transition:none}
+@media(prefers-reduced-motion:reduce){#tabs .placeholder-tab .tab-icon{transition:none}}
+
+/* Compact two-line collection rows use the same flush picture treatment. */
+.panel:is([data-kind='bookmarks'],[data-kind='history'],[data-kind='downloads']) .item-list{gap:2px}
+.panel .list-item.collection-row{position:relative;min-height:48px;height:48px;gap:14px;padding:0;border:0;border-radius:0;background:transparent}
+.panel .list-item.collection-row:hover{background:var(--tab-selected)}
+.collection-thumbnail{display:grid;place-items:center;position:relative;flex:none;width:96px;height:48px;padding:0;border:0;border-radius:0;background:var(--collection-placeholder);color:var(--tab-placeholder-ink);overflow:hidden}
+.collection-thumbnail img{display:block;width:100%;height:100%;object-fit:cover;object-position:center top;pointer-events:none}
+.collection-thumbnail img[hidden]{display:none}
+.collection-thumbnail .icon{width:20px;height:20px;pointer-events:none}
+.collection-thumbnail.has-snapshot .icon{display:none}
+.panel .collection-row .item-title{font-family:inherit;font-size:13px;font-weight:500;letter-spacing:normal;line-height:17px}
+.panel .collection-row .item-detail{font-size:11px;line-height:15px;margin:0}
+.collection-row .item-actions{margin-right:8px}
+.collection-row .progress{position:absolute;left:110px;right:8px;bottom:1px;height:2px;margin:0}

@@ -1,0 +1,34 @@
+/* Floating controls share the title row; the page starts inside the 15 px mask. */
+body.special-page:not(.fullscreen) .content{top:0;padding-top:60px;box-sizing:border-box}
+body.special-page:not(.fullscreen) .toolbar{top:86px;left:0;right:0;height:34px;width:auto;padding:0 8px;gap:0;justify-content:flex-end;background:transparent;border:0;overflow:visible;pointer-events:none}
+body.special-page .toolbar :where(.address,#native-mode,#private-badge){display:none!important}
+body.special-page .toolbar #menu-button{height:34px;width:34px;pointer-events:auto}
+body.special-page .panel{padding-top:0}
+body.special-page.address-editing:not(.fullscreen) .toolbar .address{display:flex!important;position:fixed;left:calc(var(--sidebar-width) + 16px);right:154px;top:36px;height:24px}
+body.special-page .address .icon-button{height:22px;width:24px}
+body.special-page:not(.fullscreen) .find{position:fixed;left:calc(var(--sidebar-width) + 16px);right:154px;top:36px;height:24px}
+body.special-page .find input{flex:1;min-width:0}
+body.special-page .find button{height:20px}
+.special-page .content{z-index:2}
+body.special-page{background:var(--sidebar)}
+body.special-page .content{background:transparent!important}
+.content{bottom:0}
+.statusbar{display:none}
+.gallery-stage{position:fixed;top:0;left:var(--sidebar-width);right:0;bottom:0;z-index:3;border:0;width:calc(100% - var(--sidebar-width));height:100%;background:transparent;clip-path:inset(0);transition:clip-path 360ms cubic-bezier(.22,1,.36,1)}
+.fullscreen .gallery-stage{inset:0;width:100%;height:100%}
+body.special-page .titlebar{background:transparent!important}
+@media(prefers-reduced-motion:reduce){.gallery-stage{transition:none}}
+/* 48 px content + 102 px space = three times the previous 50 px pitch. */
+.panel:is([data-kind='bookmarks'],[data-kind='history'],[data-kind='downloads']) .item-list{gap:102px}
+
+
+/* The theme toggle sits immediately before the system window controls. */
+.window-controls #theme-button{width:46px;height:100%;border-radius:0}
+.window-controls #theme-icon{width:18px;height:18px;stroke-width:var(--chrome-icon-stroke,1.65)}
+body.special-page:not(.fullscreen) .titlebar{top:0;height:36px}
+body.special-page .toolbar .find,body.special-page.address-editing .toolbar .address{pointer-events:auto}
+body.special-page #menu-button .menu-glyph{transform:rotate(90deg)}
+body.special-page #menu-button:is(:hover,[aria-expanded="true"]) .menu-glyph{transform:rotate(180deg)}
+body.special-page #menu-button:is(:hover,[aria-expanded="true"]) .menu-dot:nth-child(1){transform:translateY(-5.5875px)}
+body.special-page #menu-button:is(:hover,[aria-expanded="true"]) .menu-dot:nth-child(3){transform:translateY(5.5875px)}
+body.special-page #menu-button:is(:hover,[aria-expanded="true"]) .menu-dot path{transform:rotate(-180deg)}

@@ -6,9 +6,9 @@ const publisher = process.env.FLASHBORN_SIGNING_PUBLISHER?.trim();
 if (!publisher) throw new Error('FLASHBORN_SIGNING_PUBLISHER must match the verified certificate name.');
 const root = path.resolve(__dirname, '..');
 const files = [
-  'release/win-unpacked/Flashborn.exe',
-  'release/win-unpacked/resources/native-runtime/FlashRuntime.exe',
-  `release/Flashborn-Setup-${version}-x64.exe`,
+  'release/win-unpacked/Corners.exe',
+  'release/win-unpacked/resources/native-runtime/CornersNative.exe',
+  `release/Corners-Setup-${version}-x64.exe`,
 ].map(file => path.join(root, file));
 // Pass values as environment data; never interpolate them into PowerShell code.
 execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "feature": {
+    "image": "featured-pearl-jam.png",
+    "pageURL": "https://www.sloutchevsky.com/demos/pearl-jam-ten-game/",
+    "title": "Pearl Jam Ten Game",
+    "year": "2009",
+    "createdBy": "Freedom + Partners"
+  },
+  "introduction": "Firstborn and Freedom + Partners were at the forefront of Flash design in the early 2000s. Below is a selection of work by Vas Sloutchevsky, creative director of both Firstborn (1997–2006) and Freedom + Partners (2006–2009).",
+  "items": [
+    {"id":"kpf","title":"KPF - Kohn Pedersen Fox Architects","url":"https://www.sloutchevsky.com/demos/kpf/main.htm","year":"","createdBy":"","description":"","color":"#39b45e"},
+    {"id":"embody","title":"Herman Miller Embody Chair","url":"https://www.sloutchevsky.com/demos/hermanmiller/index.html","year":"2006","createdBy":"Firstborn","description":"","color":"#b2a000"}
+  ]
+}

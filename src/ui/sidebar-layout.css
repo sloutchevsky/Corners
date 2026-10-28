@@ -1,0 +1,13 @@
+/* Collapse the drawer by clipping its labels, retaining the same 86 x 43 px thumbnails. */
+.collapsed{--sidebar-width:160px}
+.sidebar .sidebar-top{gap:0;margin-inline:0;justify-content:flex-start;flex:none}
+.sidebar-top .icon-button{width:34px;height:34px}
+.sidebar .nav-button>span:not(.count):not(.download-badge){min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.collapsed .new-tab kbd{display:none}
+
+/* One vertical anchor across web, home and special pages. The toolbar follows the animated drawer width. */
+body:not(.fullscreen) .sidebar{padding-top:15px}
+.sidebar .sidebar-top{height:34px}
+.toolbar .nav-controls{display:flex;gap:0;flex:none}
+.toolbar .nav-controls .icon-button{width:34px;height:34px}
+body.special-page:not(.fullscreen) .toolbar .nav-controls{position:absolute;left:46px;top:-35px;pointer-events:auto}

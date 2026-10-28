@@ -52,3 +52,12 @@ test('Imported entry IDs are unique safe UUIDs, including hand-edited legacy IDs
   assert.equal(new Set(items.map(item => item.id)).size, 3);
   assert.ok(items.every(item => /^[a-f\d-]{36}$/i.test(item.id)));
 });
+test('Portfolio title/subtitle and creator credits live in the collection manifest and survive restart', t => {
+  const root = directory(t), store = new Store(root);
+  assert.deepEqual(store.libraryFolder.heading, { title: 'Vas Sloutchevsky', subtitle: 'Flash design portfolio' });
+  store.libraryFolder.heading = { title: 'My collection', subtitle: 'Selected work' };
+  store.data.library.push({ id: '12345678-1234-1234-1234-123456789012', kind: 'html', title: 'Herman Miller Embody Chair', year: '2006', createdBy: 'Firstborn', url: 'https://example.com' }); store.save();
+  const restored = new Store(root);
+  assert.equal(restored.libraryFolder.heading.title, 'My collection'); assert.equal(restored.data.library[0].createdBy, 'Firstborn');
+  const manifest = JSON.parse(fs.readFileSync(restored.libraryFolder.file)); assert.equal(manifest.heading.subtitle, 'Selected work');
+});

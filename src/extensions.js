@@ -81,10 +81,10 @@ class Extensions {
           }
         }
       };
-      // Copy into Flashborn's profile so later launches do not depend on a
+      // Copy into Corners's profile so later launches do not depend on a
       // temporary download folder. Never modify the selected source folder.
       const source = await fs.realpath(directory);
-      if (source === this.directory || this.directory.startsWith(source + path.sep) || source.startsWith(this.directory + path.sep)) throw new Error('Choose a folder outside Flashborn’s managed extensions directory.');
+      if (source === this.directory || this.directory.startsWith(source + path.sep) || source.startsWith(this.directory + path.sep)) throw new Error('Choose a folder outside Corners’s managed extensions directory.');
       await copy(source, target);
       const item = { key, enabled: true }; await this.load(item);
       if (!this.loaded.has(key)) throw new Error(this.errors.get(key) || 'Extension did not load.');

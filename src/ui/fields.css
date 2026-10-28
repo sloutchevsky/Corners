@@ -1,0 +1,29 @@
+/* Shared by the browser chrome, special pages and hosted Flash Gallery. */
+:root { --field-background:#333; --field-focus-background:rgb(30%,30%,30%); }
+body[data-theme="light"],html[data-theme="light"] { --field-background:#ccc; --field-focus-background:#fff; }
+
+input,textarea,select,
+.address,.search-box,.find,.support-other-pill {
+  outline:none!important;
+  box-shadow:none!important;
+}
+input:not([type]),input[type="text"],input[type="search"],input[type="url"],input[type="number"],input[type="password"],input[type="email"],input[type="tel"],input[type="date"],input[type="datetime-local"],input[type="month"],input[type="week"],input[type="time"],
+textarea,select,.address,.search-box,.find,.support-other-pill {
+  border:0!important;
+  background-color:var(--field-background)!important;
+  transition:background-color 150ms ease;
+}
+input:not([type]):focus,input[type="text"]:focus,input[type="search"]:focus,input[type="url"]:focus,input[type="number"]:focus,input[type="password"]:focus,input[type="email"]:focus,input[type="tel"]:focus,input[type="date"]:focus,input[type="datetime-local"]:focus,input[type="month"]:focus,input[type="week"]:focus,input[type="time"]:focus,
+textarea:focus,select:focus,
+.address:focus-within,.search-box:focus-within,.find:focus-within,.support-other-pill:focus-within {
+  background-color:var(--field-focus-background)!important;
+}
+.address input,.search-box input,.find input,.support-other-pill input,
+.address input:focus,.search-box input:focus,.find input:focus,.support-other-pill input:focus {
+  background-color:transparent!important;
+}
+.address button:focus-visible,.search-box button:focus-visible,.find button:focus-visible,
+.switch input:focus-visible+span { outline:none; box-shadow:none; }
+@media(prefers-reduced-motion:reduce) {
+  input,textarea,select,.address,.search-box,.find,.support-other-pill { transition:none; }
+}

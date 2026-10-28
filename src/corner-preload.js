@@ -1,0 +1,15 @@
+'use strict';
+const {ipcRenderer}=require('electron');
+window.addEventListener('DOMContentLoaded',()=>{document.documentElement.dataset.edge=location.hash.slice(1);document.title='Resize browser — '+location.hash.slice(1);});
+ipcRenderer.on('browser:corner-theme',(_event,light)=>{document.documentElement.dataset.theme=light?'light':'current';});
+ipcRenderer.on('browser:corner-hover',(_event,hover)=>{document.documentElement.dataset.hover=String(hover);});
+ipcRenderer.on('browser:resize-state',(_event,resizing)=>{document.documentElement.dataset.resizing=String(!!resizing);});
+let pointer,captureTarget;
+ipcRenderer.on('browser:corner-release',()=>{if(pointer!==undefined&&captureTarget?.hasPointerCapture(pointer))captureTarget.releasePointerCapture(pointer);ipcRenderer.send('browser:resize-corner','released');});
+const send=(action,event)=>ipcRenderer.send('browser:resize-corner',{action,point:{x:event.screenX,y:event.screenY},client:{x:event.clientX,y:event.clientY}});
+window.addEventListener('pointerdown',event=>{if(event.isTrusted&&event.button===0){event.preventDefault();pointer=event.pointerId;captureTarget=event.target;event.target.setPointerCapture(event.pointerId);send('down',event);}},true);
+window.addEventListener('pointermove',event=>{if(event.isTrusted&&event.pointerId===pointer)send('move',event);},true);
+window.addEventListener('pointerup',event=>{if(event.isTrusted&&event.pointerId===pointer){send('up',event);pointer=null;}},true);
+window.addEventListener('pointercancel',event=>{if(event.pointerId===pointer){send('cancel',event);pointer=null;}},true);
+window.addEventListener('pointerleave',()=>ipcRenderer.send('browser:resize-corner','leave'));
+window.addEventListener('dblclick',event=>{if(event.isTrusted&&event.button===0){event.preventDefault();send('restore',event);}},true);

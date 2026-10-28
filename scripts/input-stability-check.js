@@ -6,6 +6,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function poll(fn, test, timeout = 25000) { const end = Date.now() + timeout; let value; do { value = await fn(); if (test(value)) return value; await wait(30); } while (Date.now() < end); throw Error('Timeout: ' + JSON.stringify(value)); }
 (async () => {
   const profile = path.join(output, 'input-stability-' + Date.now()); fs.mkdirSync(profile, { recursive: true });
+  fs.writeFileSync(path.join(profile, 'browser.json'), JSON.stringify({ settings: { adBlockEnabled: false } }));
   const movie = require('./html-fixture')(profile, require('./playback-fixture'));
   const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
   const app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: process.env.FLASHBORN_EXE ? [] : [root], env });

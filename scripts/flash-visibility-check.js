@@ -20,13 +20,29 @@ async function poll(fn,check,timeout=20000){let value;const end=Date.now()+timeo
     const coverInfo=await cover.evaluate(()=>({handle:Number(global.cover.getNativeWindowHandle().readBigUInt64LE()),pid:process.pid}));
     await app.evaluate(({},input)=>{const api=process.mainModule.require(input.module).load('user32.dll');global.visibilityAPI={style:api.func('intptr_t __stdcall GetWindowLongPtrW(intptr_t,int)'),next:api.func('intptr_t __stdcall GetWindow(intptr_t,uint32_t)'),fg:api.func('intptr_t __stdcall GetForegroundWindow()'),owner:api.func('uint32_t __stdcall GetWindowThreadProcessId(intptr_t,_Out_ uint32_t*)'),allow:api.func('int __stdcall AllowSetForegroundWindow(uint32_t)')};global.coverHandle=input.handle;global.visibilityAPI.allow(input.pid);}, {...coverInfo,module:path.join(root,'node_modules','koffi')});
     await cover.evaluate(()=>global.cover.focus());
-    const snapshot=()=>app.evaluate(()=>{const n=global.__flashborn.activeTab().native,a=global.visibilityAPI,pid=[0],fg=a.fg();a.owner(fg,pid);let above=false;for(let h=global.coverHandle,i=0;h&&i<512;i++,h=a.next(h,2))if(h===n.hwnd){above=true;break;}return {foreground:pid[0],shellPID:process.pid,nativePID:n.child.pid,visible:n.inspect().visible,parent:n.inspect().parent,topmost:!!(a.style(n.hwnd,-20)&8),coverAbove:above,next:a.next(n.hwnd,2),host:n.hostHandle(),lastVisible:n.lastVisible};});
+    const snapshot=()=>app.evaluate(()=>{const n=global.__flashborn.activeTab().native,a=global.visibilityAPI,pid=[0],fg=a.fg();a.owner(fg,pid);let above=false;for(let h=global.coverHandle,i=0;h&&i<16384;i++,h=a.next(h,2))if(h===n.hwnd){above=true;break;}return {foreground:pid[0],shellPID:process.pid,nativePID:n.child.pid,visible:n.inspect().visible,parent:n.inspect().parent,topmost:!!(a.style(n.hwnd,-20)&8),coverAbove:above,next:n.nextLayer(n.hwnd,2,n.hostHandle()),host:n.hostHandle(),lastVisible:n.lastVisible};});
     const background=await poll(snapshot,s=>s.foreground!==s.shellPID&&s.foreground!==s.nativePID&&s.visible===1&&!s.topmost&&s.coverAbove&&s.next===s.host);
     const tick=await script('Number(document.querySelector("embed").GetVariable("ticks"))');await poll(()=>script('Number(document.querySelector("embed").GetVariable("ticks"))'),value=>value>tick+3);assert.equal(await script('Number(document.querySelector("embed").GetVariable("marker"))'),73);assert.equal(background.parent,0);assert.equal((await native('test-playback')).visible,true);
     pass('Losing focus keeps the same live Flash movie visible without parenting the legacy window or promoting it above the other application');
-    await cover.evaluate(()=>global.cover.setAlwaysOnTop(false));
+    await cover.evaluate(()=>{global.cover.setAlwaysOnTop(false);global.cover.show();global.cover.moveTop();global.cover.focus();});
+    const currentCover = await cover.evaluate(()=>({handle:Number(global.cover.getNativeWindowHandle().readBigUInt64LE()),visible:global.cover.isVisible(),topmost:global.cover.isAlwaysOnTop(),pid:process.pid}));
+    await app.evaluate(({},handle)=>{global.coverHandle=handle;},currentCover.handle);
+    // Position the fixture without activation; Windows can reject moveTop's
+    // activation request while the user is working in another application.
+    const beforeMovie = await app.evaluate(()=>global.__flashborn.activeTab().native.inspect().previous);
+    await cover.evaluate(({},input)=>{const api=process.mainModule.require(input.module).load('user32.dll'),h=Number(global.cover.getNativeWindowHandle().readBigUInt64LE());api.func('int __stdcall SetWindowPos(intptr_t,intptr_t,int,int,int,int,uint32_t)')(h,input.after,0,0,0,0,0x0001|0x0002|0x0010);},{module:path.join(root,'node_modules','koffi'),after:beforeMovie});
     await poll(snapshot,s=>s.visible===1&&!s.topmost&&s.coverAbove&&s.next===s.host);
     pass('An ordinary overlapping application remains above Flash while the Flash surface stays directly above its own browser shell');
+    const beforeActivation = await script('Number(document.querySelector("embed").GetVariable("presses"))');
+    if (process.env.FLASHBORN_FOREGROUND_CHECK === '1') {
+      console.log('Waiting for Windows activation of the isolated Flashborn overlap test window');
+      await poll(snapshot, s => s.foreground === coverInfo.pid, 120000);
+    }
+    await cover.evaluate(({},input)=>{const api=process.mainModule.require(input.module).load('user32.dll');api.func('int __stdcall AllowSetForegroundWindow(uint32_t)')(input.pid);},{module:path.join(root,'node_modules','koffi'),pid});
+    await native('focus');
+    await poll(snapshot,s=>!s.coverAbove&&s.next===s.host&&s.visible===1&&!s.topmost);
+    assert.equal(await script('Number(document.querySelector("embed").GetVariable("presses"))'),beforeActivation);
+    pass('Native Flash activation raises the entire browser above the covering app without relying on DOM mouse events or globally pinning Flash');
     const presses=await script('Number(document.querySelector("embed").GetVariable("presses"))');await native('test-mouse',{type:'mouseDown',x:120,y:120,button:'left',clickCount:1});await native('test-mouse',{type:'mouseUp',x:120,y:120,button:'left',clickCount:1});await poll(()=>script('Number(document.querySelector("embed").GetVariable("presses"))'),value=>value===presses+1);
     assert.equal(await app.evaluate(()=>global.__flashborn.activeTab().native.child.pid),pid);
     pass('The real Adobe plugin still accepts mouse input after backgrounding without reloading or losing movie state');

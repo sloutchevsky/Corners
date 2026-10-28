@@ -6,6 +6,10 @@ const crypto = require('node:crypto');
 const imageName = value => /^[a-f\d-]{36}\.png$/i.test(value || '');
 const validColor = value => /^oklch\(68% 0\.16 (?:[0-9]|[1-9][0-9]|[12][0-9]{2}|3[0-5][0-9])\)$/.test(value || '');
 const placeholderColor = () => `oklch(68% 0.16 ${crypto.randomInt(360)})`;
+const defaultHeading = { title: 'Vas Sloutchevsky', subtitle: 'Flash design portfolio' };
+function collectionHeading(value) {
+  return { title: typeof value?.title === 'string' ? value.title.trim().slice(0, 300) : defaultHeading.title, subtitle: typeof value?.subtitle === 'string' ? value.subtitle.trim().slice(0, 600) : defaultHeading.subtitle };
+}
 function pageTitle(html) {
   const match = String(html).replace(/<!--[\s\S]*?-->|<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '').match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
   if (!match) return '';
@@ -31,6 +35,7 @@ class LibraryFolder {
     this.legacyImages = path.join(profile, 'library-images');
     this.seedDirectory = seedDirectory;
     this.snapshot = '';
+    this.heading = { ...defaultHeading };
   }
   load(previous = []) {
     fs.mkdirSync(this.images, { recursive: true });
@@ -39,6 +44,7 @@ class LibraryFolder {
       const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (saved.version !== 1 || !Array.isArray(saved.items)) throw new Error('Invalid Flash library manifest.');
       entries = saved.items;
+      this.heading = collectionHeading(saved.heading);
     } catch (error) {
       if (fs.existsSync(this.file)) {
         // Preserve a hand-edited/damaged manifest before recovering from browser.json.
@@ -50,6 +56,7 @@ class LibraryFolder {
           const sources = new Set(entries.map(item => item.url || item.path));
           entries = [...entries, ...seed.items.filter(item => item && !sources.has(item.url || item.path))];
           seeded = true;
+          this.heading = collectionHeading(seed.heading);
         }
       } catch { /* A portfolio is optional. */ }
     }
@@ -67,7 +74,7 @@ class LibraryFolder {
     return entries;
   }
   save(entries) {
-    const serialized = JSON.stringify({ version: 1, items: entries }, null, 2) + '\n';
+    const serialized = JSON.stringify({ version: 1, heading: this.heading, items: entries }, null, 2) + '\n';
     if (serialized === this.snapshot) return;
     fs.mkdirSync(this.images, { recursive: true });
     fs.writeFileSync(this.file + '.tmp', serialized, 'utf8');

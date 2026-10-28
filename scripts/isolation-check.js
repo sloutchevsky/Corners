@@ -9,7 +9,7 @@ async function poll(fn, check, timeout = 20000) {
   throw Error('Timeout: ' + JSON.stringify(value));
 }
 (async () => {
-  const profile = path.join(output, 'isolation-' + Date.now()); fs.mkdirSync(profile, { recursive: true });
+  const profile = path.join(process.env.FLASHBORN_TEST_PROFILES || output, 'isolation-' + Date.now()); fs.mkdirSync(profile, { recursive: true });
   fs.writeFileSync(path.join(profile, 'browser.json'), JSON.stringify({ settings: { adBlockEnabled: false } }));
   const file = require('./html-fixture')(profile, require('./playback-fixture'));
   const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;

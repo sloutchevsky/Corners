@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="flashborn-gallery-version" content="1.14.24">
+  <meta name="flashborn-gallery-revision" content="exterior-scrollbars">
+  <title>Flash Gallery</title>
+  <style>
+    @font-face{font-family:'Flashborn 75';src:url('data:font/ttf;base64,/* FONT */') format('truetype');font-weight:700;font-display:swap}
+    *{box-sizing:border-box}
+    :root{color-scheme:dark;--gallery-bg:#171717;--gallery-ink:#fff;--gallery-muted:#85898c;--field-bg:#333;--field-hover:#404040;--field-focus:#4d4d4d;--field-placeholder:#999}
+    :root[data-theme=light]{color-scheme:light;--gallery-bg:#dedede;--gallery-ink:#111;--gallery-muted:#666;--field-bg:#ccc;--field-hover:#e0e0e0;--field-focus:#fff;--field-placeholder:#727272}
+    :root[data-contrast=high]{--gallery-bg:#000}
+    :root[data-theme=light][data-contrast=high]{--gallery-bg:#fff}
+    html,body{width:100%;height:100%;margin:0;background:var(--gallery-bg);color:var(--gallery-ink)}
+    html{overflow-x:hidden;overflow-y:scroll;overflow-anchor:none;scrollbar-gutter:stable;scrollbar-color:auto;scrollbar-width:auto}
+    html::-webkit-scrollbar{width:15px;height:15px}
+    html::-webkit-scrollbar-track{background:var(--gallery-bg)}
+    html{--scroll-thumb:#333;--scroll-hover:#808080;--scroll-active:#fff}
+    html[data-theme='light']{--scroll-thumb:#aaa;--scroll-hover:#777;--scroll-active:#000}
+    html::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border:0;border-radius:0;min-height:40px;min-width:40px}
+    html::-webkit-scrollbar-thumb:hover{background:var(--scroll-hover)}
+    html::-webkit-scrollbar-thumb:active{background:var(--scroll-active)}
+    html::-webkit-scrollbar-button{display:none;width:0;height:0}
+    html::-webkit-scrollbar-corner{background:transparent}
+    body{position:relative;min-height:100%;isolation:isolate;--gutter:clamp(18px,calc(-6px + 5vw),48px);--heading-top:0px;--title-size:clamp(28px,7.5vw,78px);--subtitle-size:13px;--sorting-gap:20px;--field-height:40px;--index-size:40px;--line-gap:44px;--tile-idle-paper:#8b8b8b}
+    body,input,button{font:13px 'Segoe UI',Arial,sans-serif}
+    html.embedded,html.embedded body,html.embedded .scene{background:transparent}
+    html.embedded.exterior-scrollbars::-webkit-scrollbar{width:0!important;height:0!important}html.embedded.exterior-scrollbars{scrollbar-gutter:auto}html.embedded::-webkit-scrollbar-track{background:transparent}
+    html.embedded::-webkit-scrollbar-track:vertical{margin-bottom:40px}
+    html.embedded::-webkit-scrollbar-track:horizontal{margin-right:40px}
+    button,input{outline:none;border:0;box-shadow:none}
+    button{color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .scene{z-index:0;position:absolute;left:0;top:0;width:100%;background:var(--gallery-bg);touch-action:pan-y;pointer-events:none}
+    .block{position:absolute;left:0;top:0;transform-origin:50% 50%;background:var(--tile-idle-paper);border:0;outline:none;box-shadow:none;color:#111;z-index:1}
+    .block::before{content:"";position:absolute;top:-1px;right:-1px;bottom:-1px;left:-1px;background:inherit;z-index:-1}
+    .block[data-selected=true]{z-index:2;background:var(--gallery-bg)}
+    .block[data-interactive=true]{pointer-events:auto;cursor:pointer}
+    .block[data-size=xlg]{z-index:3;cursor:default}
+    .block[data-expanded=true]{z-index:4}
+    .block[data-selected=true]::before{top:0;right:0;bottom:0;left:0}
+    .tile-paper{position:absolute;left:0;right:0;top:0;bottom:0;background:var(--tile-idle-paper);pointer-events:none}
+    .tile-artwork{position:absolute;left:0;right:0;top:0;bottom:0;overflow:hidden;pointer-events:none}
+    .tile-image{display:block;width:100%;height:var(--art-height);object-fit:cover;object-position:center;pointer-events:none;user-select:none}
+    .tile-caption{position:absolute;left:0;right:0;bottom:0;height:0;overflow:hidden;background:var(--gallery-bg);pointer-events:none;color:#808080}
+    .tile-title{margin:10px 0 0;font:700 var(--caption-title-size)/1.3 'Flashborn 75',Arial,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tile-details{visibility:hidden;margin-top:9px;padding-right:var(--launch-space)}
+    .tile-creator{font-weight:600;font-size:var(--caption-creator-size);line-height:1.3;margin:0}
+    .tile-summary{font-size:var(--caption-text-size);line-height:1.5;margin:9px 0 0}
+    .tile-launch{position:absolute;right:0;bottom:4px;display:flex;align-items:center;height:42px;padding:0;background:none;color:inherit;visibility:hidden;pointer-events:none;font-size:var(--launch-font-size)}
+    .tile-launch svg{margin-left:var(--launch-gap);width:var(--launch-arrow-size);height:var(--launch-arrow-size);fill:none;stroke:currentColor;stroke-width:4;stroke-linecap:square;stroke-linejoin:miter}
+    .block[data-size=xlg] .tile-caption{color:var(--gallery-ink)}
+    .block[data-size=xlg] .tile-details,.block[data-size=xlg] .tile-launch{visibility:visible}
+    .block[data-size=xlg][data-interactive=true] .tile-launch{pointer-events:auto}
+    .tile-launch:disabled{cursor:default}
+    .column{position:absolute;left:50%;width:calc(100% - var(--gutter) - var(--gutter));max-width:1454.4px;transform:translateX(-50%)}
+    .heading{top:var(--heading-top);pointer-events:none;z-index:3}
+    .heading-inner{position:relative;display:flex;align-items:baseline;overflow:hidden}
+    h1{flex:none;font:700 var(--title-size)/1.2 'Flashborn 75',Arial,sans-serif;letter-spacing:-.02em;margin:0;white-space:nowrap;animation:heading-enter 650ms cubic-bezier(.22,1,.36,1) both}
+    .heading p{display:flex;align-items:baseline;min-width:0;white-space:nowrap;color:#808080;font-size:var(--subtitle-size);line-height:1.7;margin:0 0 0 12px;animation:heading-enter 650ms cubic-bezier(.22,1,.36,1) 80ms both}
+    @keyframes heading-enter{from{transform:translateX(-100vw);opacity:0}to{transform:translateX(0);opacity:1}}
+    #project-count{font:700 var(--title-size)/1.2 'Flashborn 75',Arial,sans-serif;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+    #loading-label{margin-left:12px}
+    .is-loaded #loading-label{visibility:hidden}
+    .sorting{top:calc(var(--heading-top) + var(--title-size) * 1.2 + var(--sorting-gap));z-index:4;visibility:hidden}
+    .sorting.is-ready{visibility:visible}
+    .sorting-panel{position:relative;left:-100vw;opacity:0;transition:left 600ms cubic-bezier(.22,1,.36,1),opacity 600ms ease}
+    .is-ready .sorting-panel{left:0;opacity:1}
+    .sorting-content{position:relative;display:grid;grid-template-columns:var(--gallery-search-width,140px) minmax(0,1fr);column-gap:var(--controls-gap,24px)}
+    .toolbar{display:flex;align-items:center;justify-content:flex-start;height:var(--field-height)}
+    .search{display:block;width:100%;min-width:0;height:var(--field-height);padding:0 14px;background:var(--field-bg);border-radius:999px;color:var(--gallery-ink);appearance:none;transition:background 150ms}
+    .search::placeholder{color:var(--field-placeholder);opacity:1}
+    .search:hover{background:var(--field-hover)}
+    .search:focus{background:var(--field-focus)}
+    .index-track{position:relative;min-width:0}
+    .index-marker{position:absolute;top:0;left:0;width:40px;height:40px;pointer-events:none;transition:transform 400ms cubic-bezier(.22,1,.36,1),width 400ms,height 400ms;z-index:0}
+    .index-marker-dot{display:block;width:100%;height:100%;border-radius:50%;background:#808080;transform:translateX(-100vw);opacity:0;transition:transform 400ms cubic-bezier(.22,1,.36,1),opacity 250ms ease}
+    .is-dot-ready .index-marker-dot{transform:translateX(0);opacity:1}
+    .indices{position:relative;display:flex;align-items:center;justify-content:space-between;gap:0;min-height:var(--index-size);margin-top:0}
+    .index{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;flex:0 1 40px;min-width:0;max-width:40px;background:none;padding:0;width:40px;height:var(--index-size);border-radius:50%;color:#808080;font-size:clamp(9px,calc(var(--index-width,700px) * .05),13px);font-weight:600;transition:background 160ms,color 160ms}
+    .index:hover,.index:focus-visible{color:var(--gallery-ink)}
+    .index:disabled{cursor:default}
+    .index[aria-pressed=true]{background:none;color:#fff}
+    .magnet-line{grid-column:1/-1;height:1px;margin-top:var(--line-gap);background:#808080}
+    .empty{position:absolute;top:calc(100% + 28px);left:0;margin:0;color:var(--gallery-muted);font-size:13px;line-height:1.7}
+    .empty[hidden]{display:none}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media(prefers-reduced-motion:reduce){h1,.heading p{animation-duration:1ms;animation-delay:0ms}.sorting-panel,.index-marker-dot{transition-duration:1ms;transition-delay:0ms}}
+  </style>
+</head>
+<body>
+  <div class="scene" id="scene" aria-label="Gallery projects falling and stacking. Sorting and search magnetize matching projects beneath the line. Hover to preview, click to expand to full width. Resize the window to move the boundaries."></div>
+  <header class="heading column"><div class="heading-inner" id="heading-content"><h1>Flash Gallery</h1><p><strong id="project-count">0</strong><span id="loading-label">projects loaded</span></p></div></header>
+  <section class="sorting column" id="sorting" aria-label="Gallery sorting" aria-hidden="true" inert>
+    <div class="sorting-panel">
+      <div class="sorting-content" id="sorting-content">
+      <div class="toolbar">
+        <input class="search" id="search" type="search" placeholder="Find" aria-label="Find in gallery by project, creator or year" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="index-track"><span class="index-marker" id="index-marker" aria-hidden="true"><span class="index-marker-dot" id="index-marker-dot"></span></span><div class="indices" id="indices" role="group" aria-label="Select year"></div></div>
+      <div class="magnet-line" id="magnet-line" aria-hidden="true"></div>
+      <p class="empty" id="empty" aria-live="polite" hidden>No matching pages.</p>
+      </div>
+    </div>
+  </section>
+  <p class="sr-only" id="status" aria-live="polite"></p>
+  <ol class="sr-only" id="card-list" aria-label="Gallery rectangles"></ol>
+  <noscript>This prototype needs JavaScript to run the rectangle simulation.</noscript>
+  <script>/* THEME */</script>
+  <script>window.galleryProjects=/* PROJECTS */;</script>
+  <script>window.galleryPrototype=/* PROTOTYPE */;</script>
+  <script>/* MATTER */</script>
+  <script>/* GRID */</script>
+  <script>/* PHYSICS */</script>
+  <!-- MATTER_LICENSE -->
+</body>
+</html>

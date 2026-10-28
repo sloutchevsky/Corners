@@ -11,7 +11,7 @@ async function poll(fn, check, timeout = 25000) {
 (async () => {
   const profile = path.join(output, 'toolbar-profile-' + Date.now());
   fs.mkdirSync(profile, { recursive: true });
-  fs.writeFileSync(path.join(profile, 'browser.json'), JSON.stringify({ settings: { restoreTabs: false } }));
+  fs.writeFileSync(path.join(profile, 'browser.json'), JSON.stringify({ settings: { restoreTabs: false, adBlockEnabled: false } }));
   const env = { ...process.env, FLASHBORN_TEST: '1', FLASHBORN_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
   const app = await electron.launch({ executablePath: process.env.FLASHBORN_EXE || require('electron'), args: process.env.FLASHBORN_EXE ? [] : [root], env });
   const passed = [], pass = text => { passed.push(text); console.log('PASS ' + text); };
@@ -23,7 +23,7 @@ async function poll(fn, check, timeout = 25000) {
     const native = (action, args = {}) => app.evaluate(({}, data) => global.__flashborn.activeTab().native.call(data.action, data.args), { action, args });
     const ready = () => poll(() => app.evaluate(() => global.__flashborn.activeTab().native?.evaluate('document.getElementById("flash-movie")?.GetVariable("$version")')), v => v === ('WIN ' + require('../src/legacy/runtime.json').version.replaceAll('.', ',')));
     await app.evaluate(() => { const w = global.__flashborn.win; w.setBounds({ x: 80, y: 80, width: 1280, height: 820 }); w.show(); w.focus(); });
-    await app.evaluate(({}, file) => global.__flashborn.command('add-library-source', {kind:'html',value:file}), require('./html-fixture')(path.join(output, 'toolbar-check-html')));
+    await app.evaluate(({}, file) => global.__flashborn.openLocal(file, global.__flashborn.activeTab()), require('./html-fixture')(path.join(output, 'toolbar-check-html')));
     await ready(); const flashId = (await state()).activeId;
     for (let i = 0; i < 4; i++) {
       await command('select-tab', { id: flashId });

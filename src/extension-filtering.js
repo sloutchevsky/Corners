@@ -10,7 +10,7 @@ class ExtensionFiltering {
   async add(extension) {
     if (!extension.manifest.declarative_net_request) return;
     const hostFile = '.flashborn-filter-host.html';
-    await fs.writeFile(path.join(extension.path, hostFile), '<!doctype html><meta charset="utf-8"><title>Flashborn extension filtering host</title>');
+    await fs.writeFile(path.join(extension.path, hostFile), '<!doctype html><meta charset="utf-8"><title>Corners extension filtering host</title>');
     const window = new BrowserWindow({ show:false, skipTaskbar:true, webPreferences:{ session:this.session, sandbox:true, contextIsolation:true, nodeIntegration:false, webSecurity:true } });
     window.setMenu(null); window.webContents.setWindowOpenHandler(() => ({action:'deny'})); window.webContents.on('will-navigate', event => event.preventDefault());
     try { await window.loadURL(extension.url + hostFile); }

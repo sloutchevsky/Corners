@@ -1,6 +1,23 @@
 'use strict';
 const { ipcRenderer, webUtils } = require('electron');
+window.addEventListener('message', event => {
+  if (window.top !== window || event.source !== window || event.origin !== location.origin || !event.data || event.data.type !== 'flashborn-library-request') return;
+  const data = event.data;
+  if (typeof data.id !== 'string' || data.id.length > 80 || typeof data.action !== 'string') return;
+  ipcRenderer.invoke('browser:library-page', { id: data.id, action: data.action, args: data.args }).then(response => {
+    window.postMessage({ type: 'flashborn-library-response', ...response }, location.origin);
+  }).catch(() => {});
+});
+ipcRenderer.on('browser:library-page-state', (_event, state) => {
+  window.postMessage({ type: 'flashborn-library-response', ok: true, state }, location.origin);
+});
 let pdfToken;
+let tabActive = true;
+window.addEventListener('pointerdown', event => { if (tabActive && event.isTrusted) ipcRenderer.send('browser:menu-outside'); }, true);
+ipcRenderer.on('browser:tab-active', (_event, enabled) => { tabActive = enabled; });
+for (const name of ['pointerdown', 'mousedown', 'click', 'keydown', 'drop']) window.addEventListener(name, event => {
+  if (!tabActive && event.isTrusted) { event.preventDefault(); event.stopImmediatePropagation(); }
+}, true);
 let summaryEnabled = false, summaryObserver, summaryTimer;
 function watchSummary() {
   summaryObserver?.disconnect(); clearTimeout(summaryTimer);

@@ -1,7 +1,7 @@
 {
   "name": "flashborn-browser",
-  "version": "1.11.0",
-  "description": "A minimal dark Windows browser with native Adobe Flash playback",
+  "version": "1.14.27",
+  "description": "Corners browser with a fluid, responsive interface",
   "main": "src/main.js",
   "author": {
     "name": "Vas Sloutchevsky",
@@ -43,7 +43,33 @@
     "test:flash-visibility": "node scripts/flash-visibility-check.js",
     "test:library-support": "node scripts/library-support-check.js",
     "test:flash-reload": "node scripts/flash-reload-check.js",
-    "test:navigation-release": "node scripts/navigation-release-check.js"
+    "test:navigation-release": "node scripts/navigation-release-check.js",
+    "test:portfolio-polish": "node scripts/portfolio-polish-check.js",
+    "test:special-pages": "node scripts/special-pages-check.js",
+    "test:tab-presentation": "node scripts/tab-presentation-check.js",
+    "test:flash-layering": "node scripts/flash-layering-check.js",
+    "test:flash-desktop": "node scripts/flash-desktop-composition-check.js",
+    "test:menu-toggle": "node scripts/menu-toggle-check.js",
+    "test:firstborn-tabs": "node scripts/firstborn-tabs-check.js",
+    "test:tab-cache": "node scripts/tab-cache-collapse-check.js",
+    "build:library": "node scripts/build-library-page.cjs",
+    "test:hosted-library": "node scripts/hosted-library-check.js",
+    "test:library-pane": "node scripts/library-pane-check.js",
+    "test:sidebar-navigation": "node scripts/sidebar-navigation-check.js",
+    "test:collection-thumbnails": "node scripts/collection-thumbnails-check.js",
+    "test:window-preview": "node scripts/window-preview-check.js",
+    "test:window-activation": "node scripts/window-activation-check.js",
+    "test:window-border": "node scripts/window-border-check.js",
+    "test:window-motion": "node scripts/window-motion-check.js",
+    "test:flash-resize": "node scripts/flash-resize-check.js",
+    "test:desktop-artifact": "node scripts/desktop-artifact-check.js",
+    "test:menu-selection": "node scripts/menu-selection-check.js",
+    "test:sidebar-flash-edge": "node scripts/sidebar-flash-edge-check.js",
+    "test:support-page": "node scripts/support-page-check.js",
+    "test:menu-motion": "node scripts/menu-motion-check.js",
+    "test:page-fields": "node scripts/page-fields-check.js",
+    "test:appearance-thumbnails": "node scripts/appearance-thumbnails-check.js",
+    "test:four-themes": "node scripts/four-theme-check.js"
   },
   "dependencies": {
     "koffi": "3.3.2",
@@ -57,7 +83,7 @@
   },
   "build": {
     "appId": "com.flashborn.browser",
-    "productName": "Flashborn",
+    "productName": "Corners",
     "directories": {
       "output": "release",
       "buildResources": "assets"
@@ -90,7 +116,7 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "Flashborn-Setup-${version}-${arch}.${ext}",
+      "artifactName": "Corners-Setup-${version}-${arch}.${ext}",
       "signAndEditExecutable": true
     },
     "nsis": {
@@ -99,7 +125,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Flashborn",
+      "shortcutName": "Corners",
       "deleteAppDataOnUninstall": false,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
@@ -107,5 +133,13 @@
       "packElevateHelper": false
     },
     "copyright": "© 2026 Vas Sloutchevsky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sloutchevsky/Corners.git"
+  },
+  "homepage": "https://github.com/sloutchevsky/Corners",
+  "bugs": {
+    "url": "https://github.com/sloutchevsky/Corners/issues"
   }
 }

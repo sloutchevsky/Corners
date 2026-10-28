@@ -1,7 +1,8 @@
 'use strict';
 function render(state) {
   document.body.dataset.theme = state.settings.theme || 'current';
-  const level = state.tabs.find(tab => tab.id === state.activeId)?.zoom || 100;
+  document.body.dataset.contrast = state.settings.highContrast ? 'high' : 'normal';
+  const level = (state.panelPage || state.tabs.find(tab => tab.id === state.activeId))?.zoom || 100;
   document.getElementById('zoom-level').textContent = level + '%';
   document.getElementById('zoom-out').disabled = level <= 25;
   document.getElementById('zoom-in').disabled = level >= 500;

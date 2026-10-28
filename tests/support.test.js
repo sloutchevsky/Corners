@@ -2,6 +2,14 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { SupportLinks, validatedLink } = require('../src/support');
+const { Store } = require('../src/store');
+
+test('supporter confirmation is a persistent local choice, with no inferred donation from checkout',t=>{
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'flashborn-supporter-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+  const store=new Store(directory);assert.equal(store.data.supporter,false);
+  store.data.supporter=true;store.save();assert.equal(new Store(directory).data.supporter,true);
+  fs.writeFileSync(store.file,JSON.stringify({supporter:'true'}));assert.equal(new Store(directory).data.supporter,false);
+});
 test('Payment destinations require the right HTTPS provider host and reject spoofed domains and credentials', () => {
   for (const url of ['http://paypal.com/donate','https://paypal.com.evil.test/pay','javascript:alert(1)','https://user:pass@paypal.com/donate','https://venmo.com/pay']) assert.equal(validatedLink('paypal', url), null);
   assert.ok(validatedLink('paypal','https://www.paypal.com/donate/?hosted_button_id=EXAMPLE'));

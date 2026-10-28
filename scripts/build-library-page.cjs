@@ -1,0 +1,12 @@
+'use strict';
+const fs = require('node:fs'), path = require('node:path');
+const root = path.resolve(__dirname, '..'), source = path.join(root, 'site', 'flash-library');
+const output = path.resolve(process.argv[2] || path.join(root, 'test-output', 'flash.gallery.html'));
+const catalog = JSON.parse(fs.readFileSync(path.join(source, 'catalog.json'), 'utf8'));
+if (catalog.feature.image) catalog.feature.image = 'data:image/png;base64,' + fs.readFileSync(path.join(source,catalog.feature.image)).toString('base64');
+const data = JSON.stringify(catalog).replace(/</g, '\\u003c');
+const style = fs.readFileSync(path.join(source, 'page.css'), 'utf8').replace('/* LIBRARY_FONT */', fs.readFileSync(path.join(root, 'src', 'ui', 'fonts', 'Flashborn75Bold.ttf')).toString('base64')) + '\n' + fs.readFileSync(path.join(root, 'src', 'ui', 'fields.css'), 'utf8');
+const html = fs.readFileSync(path.join(source, 'page.html'), 'utf8').replace('/* LIBRARY_STYLE */', style).replace('/* LIBRARY_DATA */', data).replace('/* DRAG_PREVIEW */', fs.readFileSync(path.join(root, 'src', 'ui', 'drag-preview.js'), 'utf8')).replace('/* GALLERY_LIGHTNING */', fs.readFileSync(path.join(root, 'src', 'ui', 'lightning.js'), 'utf8')).replace('/* GALLERY_BOLT */', fs.readFileSync(path.join(source, 'heading-bolt.js'), 'utf8')).replace('/* LIBRARY_SCRIPT */', fs.readFileSync(path.join(source, 'page.js'), 'utf8'));
+if (/\/\* (?:LIBRARY|DRAG|GALLERY)_/.test(html)) throw Error('Unresolved template marker');
+fs.mkdirSync(path.dirname(output), {recursive:true}); fs.writeFileSync(output, html);
+console.log(output + ' (' + Buffer.byteLength(html) + ' bytes)');

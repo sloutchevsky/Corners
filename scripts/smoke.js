@@ -74,7 +74,7 @@ async function run() {
     assert.equal((await state()).tabs.length, 1);
     assert.equal((await state()).flashReady, true);
     results.push('Desktop shell and bundled native Adobe Flash load');
-    const sidebarPositions = () => ui.evaluate(() => ({ settings:document.querySelector('.nav-button[data-panel="settings"] .nav-gold').getBoundingClientRect().x, selection:document.querySelector('.tab.active').getBoundingClientRect().x, newTab:document.querySelector('.new-tab').getBoundingClientRect().x }));
+    const sidebarPositions = () => ui.evaluate(() => ({ settings:document.querySelector('.nav-button[data-panel="support"] .nav-gold').getBoundingClientRect().x, selection:document.querySelector('.tab.active').getBoundingClientRect().x, newTab:document.querySelector('.new-tab').getBoundingClientRect().x }));
     const expanded = await sidebarPositions();
     await command('collapse');
     assert.deepEqual(await sidebarPositions(), expanded);
@@ -89,10 +89,12 @@ async function run() {
     assert.equal(await ui.locator('body').getAttribute('data-theme'),'light');
     assert.equal(await ui.locator('#theme-icon').evaluate(el=>el.style.transform),'rotate(180deg)');
     await saveUI('home-light.png');
-    await ui.locator('#theme-button').click();
-    await poll(state,s=>s.settings.theme==='current');
-    assert.equal(await ui.locator('#theme-icon').evaluate(el=>el.style.transform),'rotate(360deg)');
-    results.push('Theme button switches dark grey/light grey and turns 180 degrees on each toggle');
+    for(const [theme,highContrast,angle] of [['light',false,270],['current',true,360],['current',false,450]]){
+      await ui.locator('#theme-button').click();
+      await poll(state,s=>s.settings.theme===theme&&s.settings.highContrast===highContrast);
+      assert.equal(await ui.locator('#theme-icon').evaluate(el=>el.style.transform),'rotate('+angle+'deg)');
+    }
+    results.push('Theme button cycles white, light grey, black and dark grey with clockwise quarter turns');
     assert.equal(await ui.locator('.nav-button[data-panel="about"]').count(), 0);
     assert.equal(await ui.locator('.profile').count(), 0);
     await ui.locator('.sidebar-wordmark').click();

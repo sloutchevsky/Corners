@@ -1,0 +1,126 @@
+'use strict';
+const {_electron:electron}=require('playwright');
+const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const root=path.resolve(__dirname,'..'),out=path.join(root,'test-output'),html=process.env.FLASHBORN_LIBRARY_HTML||path.join(out,'flash.gallery.html');
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function poll(read,check,timeout=25000){const end=Date.now()+timeout;let value;do{value=await read();if(check(value))return value;await wait(80);}while(Date.now()<end);throw Error('Timeout: '+JSON.stringify(value));}
+(async()=>{
+ const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(req.url.startsWith('/flash.gallery.html')?fs.readFileSync(html):'<!doctype html><title>Library fixture</title><h1>Fixture page</h1>');});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base='http://127.0.0.1:'+server.address().port,liveSite=process.env.FLASHBORN_LIBRARY_LIVE==='1',libraryURL=liveSite?'https://flashborn.sloutchevsky.com/flash.gallery.html':base+'/flash.gallery.html';
+ const profile=path.join(out,'hosted-library-'+Date.now());fs.mkdirSync(profile,{recursive:true});
+ const items=['Alpha','Bravo','Charlie'].map((title,i)=>({id:crypto.randomUUID(),kind:'html',title,titleEdited:true,url:base+'/'+title,description:'Original saved card '+i,color:'oklch(68% 0.16 '+(50+i*70)+')'}));
+ fs.writeFileSync(path.join(profile,'browser.json'),JSON.stringify({library:items,settings:{adBlockEnabled:false}}));
+ const env={...process.env,FLASHBORN_TEST:'1',FLASHBORN_PROFILE:profile};delete env.ELECTRON_RUN_AS_NODE;delete env.FLASHBORN_LIBRARY_URL;if(!liveSite)env.FLASHBORN_LIBRARY_URL=libraryURL;
+ let app,ui;const passed=[],pass=t=>{passed.push(t);console.log('PASS '+t);};
+ const launch=async()=>{app=await electron.launch({executablePath:process.env.FLASHBORN_EXE||require('electron'),args:process.env.FLASHBORN_EXE?[]:[root],env});await poll(()=>app.evaluate(()=>!!global.__flashborn),Boolean);ui=await app.firstWindow();await app.evaluate(()=>{const w=global.__flashborn.win;w.setBounds({x:70,y:70,width:1360,height:1040});w.showInactive();});};
+ const command=(action,args={})=>app.evaluate(({},r)=>global.__flashborn.command(r.action,r.args),{action,args});
+ const state=()=>app.evaluate(()=>global.__flashborn.getState());
+ const native=code=>app.evaluate(({},code)=>global.__flashborn.activeContent().native.evaluate(code),code);
+ const mouse=(type,x,y)=>app.evaluate(({},args)=>global.__flashborn.activeContent().native.call('test-mouse',args),{type,x,y,button:'left'});
+ const capture=async name=>{const bytes=Buffer.from(await app.evaluate(()=>global.__flashborn.activeContent().native.screenshot()),'base64');fs.writeFileSync(path.join(out,name+'.png'),bytes);return crypto.createHash('sha256').update(bytes).digest('hex');};
+ try{
+  await launch();await command('panel',{name:'library'});
+  await poll(()=>native('!document.getElementById("browse-page").hidden'),Boolean,18000);
+  const boltRead='(()=>{var c=document.getElementById("gallery-bolt"),pixels=c.getContext("2d").getImageData(0,0,c.width,c.height).data,chroma=0,visible=0;for(var i=0;i<pixels.length;i+=4)if(pixels[i+3]>240){visible++;chroma=Math.max(chroma,Math.max(pixels[i],pixels[i+1],pixels[i+2])-Math.min(pixels[i],pixels[i+1],pixels[i+2]));}return {state:c.dataset.state,plays:c.dataset.plays,progress:+c.dataset.progress,gold:+c.dataset.gold,chroma:chroma,visible:visible}})()';
+  const boltSamples=[];let goldCaptured=false;
+  for(let i=0;i<35;i++){const sample=await native(boltRead);boltSamples.push(sample);if(sample.gold>.75&&!goldCaptured){await capture('gallery-bolt-gold');goldCaptured=true;}if(sample.state==='idle')break;await wait(100);}
+  assert.ok(boltSamples.some(s=>s.gold>.75&&s.chroma>30),JSON.stringify(boltSamples));
+  assert.equal(boltSamples.at(-1).state,'idle');assert.equal(boltSamples.at(-1).progress,1);assert.equal(boltSamples.at(-1).gold,0);assert.equal(boltSamples.at(-1).chroma,0);assert.ok(boltSamples.at(-1).visible>200);
+  pass('The superscript bolt plays once on load, shows metallic gold mid-animation and settles to neutral grey');
+  assert.equal((await state()).hostedLibraryActive,true);assert.equal((await state()).panel,'library');
+  assert.equal(await ui.locator('#address').inputValue(),libraryURL);
+  assert.equal(await ui.locator('.sidebar [data-panel="library"]').evaluate(el=>el.classList.contains('active')),true);
+  assert.deepEqual(await native('Array.from(document.querySelectorAll(".card-title")).map(el=>el.textContent)'),items.map(i=>i.title));
+  assert.ok((await native('Array.from(document.querySelectorAll("button,.card,.feature-stage,dialog")).map(el=>getComputedStyle(el).borderRadius)')).every(radius=>radius==='0px'));
+  assert.equal(await native('getComputedStyle(document.getElementById("filter")).borderRadius'),'999px');
+  assert.equal(await native('document.title'),'Flash Gallery');assert.equal(await native('document.querySelector("h1").textContent'),'Flash Gallery');
+  assert.equal(await native('getComputedStyle(document.querySelector("h1")).fontSize'),'78px');
+  assert.equal(await ui.locator('.sidebar [data-panel="library"]').innerText(),'Flash Gallery');
+  await poll(()=>native('document.getElementById("feature-image").naturalWidth'),width=>width===1125);
+  const image=await native('document.getElementById("feature-image").src');
+  assert.deepEqual(Buffer.from(image.split(',')[1],'base64'),fs.readFileSync(path.join(root,'site/flash-library/featured-pearl-jam.png')));
+  const movie=await native('({width:document.getElementById("feature-stage").clientWidth,height:document.getElementById("feature-stage").clientHeight})');assert.ok(Math.abs(movie.width/movie.height-2.25)<.02);
+  const renderedImage=await native('({width:document.getElementById("feature-image").clientWidth,height:document.getElementById("feature-image").clientHeight})');
+  assert.ok(Math.abs(renderedImage.width-movie.width)<1 && Math.abs(renderedImage.height-movie.height)<1,JSON.stringify({movie,renderedImage}));
+  assert.equal(await native('document.querySelectorAll("object,embed").length'),0);
+  assert.equal(await native('document.getElementById("feature-caption-link").href'),'https://www.sloutchevsky.com/demos/pearl-jam-ten-game/');
+  assert.equal(await native('document.getElementById("feature-image").parentElement.href'),'https://www.sloutchevsky.com/demos/pearl-jam-ten-game/');
+  pass('Flash Gallery has a 78px title, the exact attached image in its 9:4 area, and Pearl Jam image/caption links; existing saved cards remain intact');
+  for(const theme of ['current','light']) {
+    if((await state()).settings.theme!==theme)await command('theme');
+    await poll(()=>native('document.documentElement.dataset.theme'),value=>value===theme);
+    const layout=await native('(()=>{var s=document.getElementById("filter").getBoundingClientRect(),c=document.querySelector("figcaption").getBoundingClientRect(),i=document.getElementById("introduction").getBoundingClientRect(),b=document.getElementById("gallery-bolt").getBoundingClientRect(),word=document.querySelector(".gallery-word").getBoundingClientRect();return {background:getComputedStyle(document.body).backgroundColor,card:getComputedStyle(document.querySelector(".card")).backgroundColor,border:getComputedStyle(document.querySelector(".card")).borderWidth,search:s.top,caption:c.bottom,introduction:i.top,boltLeft:b.left,wordRight:word.right,boltTop:b.top,wordTop:word.top,plays:document.getElementById("gallery-bolt").dataset.plays,state:document.getElementById("gallery-bolt").dataset.state}})()');
+    assert.equal(layout.background,theme==='light'?'rgb(222, 222, 222)':'rgb(23, 23, 23)');assert.equal(layout.card,layout.background);assert.equal(layout.border,'0px');assert.ok(layout.search>layout.caption&&layout.search<layout.introduction);assert.ok(layout.boltLeft>=layout.wordRight&&layout.boltTop<=layout.wordTop);assert.equal(layout.plays,'1');assert.equal(layout.state,'idle');
+    await native('document.getElementById("filter").blur()');
+    const read='(()=>{var s=getComputedStyle(document.getElementById("filter"));return {background:s.backgroundColor,width:s.borderWidth,outline:s.outlineStyle,shadow:s.boxShadow}})()';
+    const background=theme==='light'?'rgb(204, 204, 204)':'rgb(51, 51, 51)',focusedBackground=theme==='light'?'rgb(255, 255, 255)':'rgb(77, 77, 77)';
+    await poll(()=>native(read),s=>s.background===background);
+    assert.deepEqual(await native(read),{background,width:'0px',outline:'none',shadow:'none'});
+    await native('document.getElementById("filter").focus()');
+    await poll(()=>native(read),s=>s.background===focusedBackground);
+    assert.deepEqual(await native(read),{background:focusedBackground,width:'0px',outline:'none',shadow:'none'});
+    await native('document.querySelector("[data-edit]").click();document.activeElement.blur()');
+    for(const selector of ['#page-form [name=title]','#page-form [name=description]']){
+      const fieldRead='(()=>{var s=getComputedStyle(document.querySelector('+JSON.stringify(selector)+'));return {background:s.backgroundColor,width:s.borderWidth,outline:s.outlineStyle,shadow:s.boxShadow}})()';
+      await poll(()=>native(fieldRead),s=>s.background===background);
+      assert.deepEqual(await native(fieldRead),{background,width:'0px',outline:'none',shadow:'none'});
+      await native('document.querySelector('+JSON.stringify(selector)+').focus()');
+      await poll(()=>native(fieldRead),s=>s.background===focusedBackground);
+      assert.deepEqual(await native(fieldRead),{background:focusedBackground,width:'0px',outline:'none',shadow:'none'});
+      await native('document.activeElement.blur()');
+    }
+    await native('document.getElementById("page-editor").close();document.getElementById("filter").blur()');await wait(170);await capture('gallery-'+theme);
+  }
+  if((await state()).settings.theme!=='current')await command('theme');
+  pass('Gallery search, editor inputs and textareas brighten on focus in both themes without borders, outlines or shadows');
+  await native('document.querySelector("[data-edit]").click();document.querySelector("[name=title]").value="Edited Alpha";document.querySelector("[name=year]").value="2006";document.getElementById("page-form").requestSubmit()');
+  await poll(state,s=>s.library.find(i=>i.id===items[0].id)?.title==='Edited Alpha');
+  await poll(()=>native('!document.getElementById("page-editor").open'),Boolean);
+  await native('document.getElementById("filter").value="Bravo";document.getElementById("filter").dispatchEvent(new Event("input"))');
+  assert.equal(await native('document.querySelectorAll(".card").length'),1);
+  await native('document.getElementById("filter").value="";document.getElementById("filter").dispatchEvent(new Event("input"));window.scrollTo(0,document.body.scrollHeight)');
+  const points=await native('Array.from(document.querySelectorAll(".card")).map(el=>{var r=el.getBoundingClientRect();return {x:r.left+70,y:r.top+35}})');
+  await mouse('mouseMove',points[2].x,points[2].y);await mouse('mouseDown',points[2].x,points[2].y);await mouse('mouseMove',points[0].x,points[0].y-15);
+  const ghost=await native('(()=>{var g=document.querySelector("[data-drag-preview]");return g?{opacity:getComputedStyle(g).opacity,left:g.getBoundingClientRect().left,top:g.getBoundingClientRect().top,hit:document.elementFromPoint('+points[0].x+','+(points[0].y-15)+').closest("[data-drag-preview]")!==null}:null})()');
+  assert.equal(ghost?.opacity,'0.5');assert.equal(ghost.hit,false);await capture('hosted-library-drag');
+  await mouse('mouseUp',points[0].x,points[0].y-15);await poll(state,s=>s.library[0].id===items[2].id);
+  assert.equal(await native('document.querySelectorAll("[data-drag-preview]").length'),0);
+  pass('Card editing and filtering work; a 50% transparent drag preview follows the pointer and the new order is saved');
+  await command('theme');await poll(()=>native('document.documentElement.dataset.theme'),t=>t==='light');
+  await native('window.scrollTo(0,0)');await poll(()=>native('document.getElementById("notice").hidden'),Boolean);await capture('hosted-library-light');
+  await command('theme');await poll(()=>native('document.documentElement.dataset.theme'),t=>t==='current');await capture('hosted-library-dark');
+  pass('The hosted Gallery follows Flashborn’s light and dark themes');
+  const libraryTab=(await state()).panelPage.id;await command('bookmark');await command('panel',{name:'bookmarks'});
+  const bookmarkRow=ui.locator('#item-list [data-reorder-id]').first();await bookmarkRow.waitFor();const bookmarkRect=await bookmarkRow.boundingBox();
+  await ui.mouse.move(bookmarkRect.x+50,bookmarkRect.y+20);await ui.mouse.down();await ui.mouse.move(bookmarkRect.x+90,bookmarkRect.y+35);
+  assert.equal(await ui.locator('[data-drag-preview]').evaluate(el=>getComputedStyle(el).opacity),'0.5');await ui.mouse.up();assert.equal(await ui.locator('[data-drag-preview]').count(),0);
+  pass('The browser’s own collection cards also use the 50% transparent pointer preview');
+  await command('panel',{name:'library'});assert.equal((await state()).panelPage.id,libraryTab);
+  await native('document.getElementById("add-page").click();document.querySelector("[name=title]").value="Added website";document.querySelector("[name=source]").value='+JSON.stringify(base+'/added')+';document.getElementById("page-form").requestSubmit()');
+  await poll(state,s=>s.library.some(i=>i.title==='Added website'));
+  await native('document.getElementById("edit-introduction").click();document.querySelector("[name=introduction]").value="Edited collection introduction";document.getElementById("introduction-form").requestSubmit()');
+  await poll(state,s=>s.libraryHeading.subtitle==='Edited collection introduction');
+  pass('The existing Library pane is reused; adding pages and editing the introduction save in the local manifest');
+  const saved=JSON.parse(fs.readFileSync(path.join(profile,'Flash Library','manifest.json')));assert.deepEqual(saved.items.filter(i=>items.some(original=>original.id===i.id)).map(i=>i.id),[items[2].id,items[0].id,items[1].id]);assert.equal(saved.heading.subtitle,'Edited collection introduction');
+  await native('document.querySelector("[data-edit]").click()');await app.evaluate(()=>global.__flashborn.activeContent().native.call('test-key',{key:'Escape'}));await poll(()=>native('document.getElementById("page-editor").open'),x=>x===false);
+  pass('Escape closes the editor inside the hosted Library');
+  await app.evaluate(({app})=>app.exit(0)).catch(()=>{});app=null;await launch();await command('panel',{name:'library'});await poll(()=>native('!document.getElementById("browse-page").hidden'),Boolean);
+  assert.deepEqual((await state()).library.filter(i=>items.some(original=>original.id===i.id)).map(i=>i.id),[items[2].id,items[0].id,items[1].id]);assert.equal(await native('document.getElementById("edit-introduction").textContent'),'Edited collection introduction');
+  pass('Edits and card order survive a full Flashborn restart');
+  const libraryId=(await state()).panelPage.id;
+  assert.equal(await native('document.querySelectorAll(".card [data-open],.card [data-image],.card [title=Play]").length'),0);
+  for(const selector of ['.card-art','.card-description','.card-title','.card']){
+    await native('document.querySelector('+JSON.stringify(selector)+').click()');await poll(state,s=>s.panel===null&&s.tabs.some(t=>t.url===base+'/added'));await command('panel',{name:'library'});
+  }
+  await native('document.querySelector(".card").focus()');assert.equal(await native('getComputedStyle(document.querySelector(".card")).outlineStyle'),'none');
+  await native('document.querySelector("[data-edit]").click()');assert.equal((await state()).panelPage.id,libraryId);assert.equal(await native('document.getElementById("page-editor").open'),true);assert.deepEqual(await native('Array.from(document.querySelectorAll(".credit-fields input")).map(el=>el.name)'),['createdBy','year']);assert.equal(await native('document.getElementById("change-page-image").hidden'),false);await native('document.getElementById("page-editor").close();document.querySelector("[data-remove]").click()');await poll(state,s=>!s.library.some(i=>i.title==='Added website'));assert.equal((await state()).panelPage.id,libraryId);
+  pass('The image, description, title and card background open the site; edit and remove remain separate, with creator before year');
+  const frameHTML='<!doctype html><script>parent.postMessage({type:"flashborn-library-request",id:"frame-probe",action:"state"},"*");parent.postMessage({type:"frame-ready"},"*")</script>';
+  await native('window.bridgeProbeCount=0;window.bridgeFrameReady=false;window.addEventListener("message",function(e){if(e.data&&e.data.type==="frame-ready")bridgeFrameReady=true;if(e.data&&e.data.id==="frame-probe"&&e.data.type==="flashborn-library-response")bridgeProbeCount++;});var probe=document.createElement("iframe");probe.srcdoc='+JSON.stringify(frameHTML)+';document.body.appendChild(probe);true');await poll(()=>native('bridgeFrameReady'),Boolean);await wait(500);assert.equal(await native('bridgeProbeCount'),0);
+  await app.evaluate(({},url)=>global.__flashborn.activeContent().native.call('navigate',{url}),base+'/foreign.html');await poll(()=>native('document.title'),title=>title==='Library fixture');await poll(state,s=>s.panelPage.url===base+'/foreign.html');
+  await native('window.bridgeProbeCount=0;window.addEventListener("message",function(e){if(e.data&&e.data.type==="flashborn-library-response")bridgeProbeCount++;});window.postMessage({type:"flashborn-library-request",id:"foreign-probe",action:"state"},location.origin);window.postMessage({type:"flashborn-library-request",id:"foreign-mutate",action:"heading",args:{subtitle:"Forbidden edit"}},location.origin)');await wait(500);assert.equal(await native('bridgeProbeCount'),0);assert.equal((await state()).libraryHeading.subtitle,'Edited collection introduction');
+  pass('Embedded frames and unrelated pages cannot read or mutate the local collection');
+  fs.writeFileSync(path.join(out,liveSite?'hosted-library-published-results.json':'hosted-library-results.json'),JSON.stringify({passed,profile,movie,libraryURL,liveSite},null,2));
+ }catch(error){if(app){console.log('FAILURE_STATE',JSON.stringify(await state()));console.log('FAILURE_PAGE',await native('document.body.innerText.slice(0,2200)'));await capture('hosted-library-failure').catch(()=>{});}throw error;}finally{if(app)await app.evaluate(({app})=>app.exit(0)).catch(()=>{});server.closeAllConnections();await new Promise(r=>server.close(r));}
+})().catch(error=>{console.error(error.stack);process.exitCode=1;});
